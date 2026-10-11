@@ -1,0 +1,8 @@
+target/
+crm-mail.properties
+respuesta.html
+sql/usuarios.sql
+doc/*.doc
+doc/*.docx
+doc/*.pdf
+doc/~$*

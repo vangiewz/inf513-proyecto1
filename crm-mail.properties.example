@@ -1,0 +1,26 @@
+# Copiar a /etc/crm-mail/crm-mail.properties (chmod 600, dueño crmmail) y completar las contraseñas.
+# Este archivo de ejemplo no lleva datos reales.
+
+# Lector POP3: buzón del sistema en el servidor de la facultad (Dovecot)
+pop3.host=mail.tecnoweb.org.bo
+pop3.puerto=110
+pop3.usuario=grupo05sa
+pop3.password=__PASSWORD_GRUPO__
+
+# Emisor SMTP: Gmail con STARTTLS y contraseña de aplicación
+# (mail.tecnoweb.org.bo responde 550 Relaying denied a dominios externos)
+smtp.host=smtp.gmail.com
+smtp.puerto=587
+smtp.usuario=__CUENTA_GMAIL_DEL_SISTEMA__
+smtp.password=__CONTRASENA_DE_APLICACION__
+
+# Reply-To de las respuestas: las réplicas del usuario vuelven al buzón del sistema
+buzon.sistema=grupo05sa@tecnoweb.org.bo
+
+# PostgreSQL de la facultad, esquema crm
+db.url=jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?currentSchema=crm&ApplicationName=crm-mail
+db.usuario=grupo05sa
+db.password=__PASSWORD_GRUPO__
+
+# Cada cuántos segundos se revisa el buzón
+intervalo.segundos=10

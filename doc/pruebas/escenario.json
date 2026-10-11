@@ -1,0 +1,248 @@
+[
+ {
+  "rol": "Administrador",
+  "comando": "HELP[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "ASIGNARCOORDINADOR[\"desarrollo-web\",\"2\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Coordinador",
+  "comando": "REGISTRARPROSPECTO[\"4715292\",\"Juan Carlos\",\"Perez Seras\",\"71055123\",\"juanperez@uagrm.edu.bo\",\"Facebook\",\"desarrollo-web\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Coordinador",
+  "comando": "REGISTRARPROSPECTO[\"4715299\",\"Pedro\",\"Rojas\",\"71055124\",\"\",\"Feria\",\"ciberseguridad\"]",
+  "esperado": "Error",
+  "obtenido": "Error"
+ },
+ {
+  "rol": "Visitante",
+  "comando": "LISTAROFERTA[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Visitante",
+  "comando": "REGISTRARINTERES[\"desarrollo-web-m1\",\"5551234\",\"Ana\",\"López Vaca\",\"71111111\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Visitante",
+  "comando": "VERTABLERO[]",
+  "esperado": "Denegado",
+  "obtenido": "Denegado"
+ },
+ {
+  "rol": "Visitante",
+  "comando": "hola, quisiera información",
+  "esperado": "Ignorado",
+  "obtenido": "Ignorado"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "LISTARBOLSA[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "TOMARPROSPECTO[\"1\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Coordinador",
+  "comando": "IMPORTARPROSPECTOS[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Coordinador",
+  "comando": "ASIGNARAUTOMATICO[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "MOVERTARJETA[\"1\",\"en contacto\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "MOVERTARJETA[1,\"Perdido\"]",
+  "esperado": "Error",
+  "obtenido": "Error"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "REGISTRARINTERACCION[\"1\",\"WhatsApp\",\"Se envió el PDF del diplomado\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "PROGRAMARRECORDATORIO[\"1\",\"2026-12-15 10:00\",\"Llamar para confirmar el pago\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "MOVERTARJETA[\"1\",\"Promesa de Pago\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "VALIDARCONVERSION[\"1\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "CONVERTIRPROSPECTO[\"1\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "INSERTARUSUARIO[\"X\",\"Y\",\"x@y.com\",\"70000000\",\"vendedor\"]",
+  "esperado": "Denegado",
+  "obtenido": "Denegado"
+ },
+ {
+  "rol": "Vendedor 2",
+  "comando": "MOVERTARJETA[\"1\",\"Seguimiento\"]",
+  "esperado": "Error",
+  "obtenido": "Error"
+ },
+ {
+  "rol": "Vendedor 2",
+  "comando": "LISTARMOTIVOS[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "MARCARPERDIDO[\"2\",\"1\",\"No le alcanza este mes\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "INSERTARMOTIVO[\"Prefiere clases presenciales\",\"incompatibilidad\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Coordinador",
+  "comando": "VERTABLERO[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "VERHISTORIAL[\"1\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Vendedor 1",
+  "comando": "LISTARRECORDATORIOS[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "REPORTEEMBUDO[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "REPORTEVENDEDORES[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "REPORTEPERDIDAS[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Coordinador",
+  "comando": "REPORTEOFERTA[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Coordinador",
+  "comando": "LISTARMATRICULAS[]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "LISTARUSUARIOS[\"vendedor\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "INSERTARUSUARIO[\"Ana\",\"Rojas Vaca\",\"ANA.ROJAS@example.com\",\"71234567\",\"vendedor\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "INSERTARUSUARIO[\"Ana\",\"Rojas Vaca\",\"ana.rojas@example.com\",\"71234567\",\"vendedor\"]",
+  "esperado": "Error",
+  "obtenido": "Error"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "ELIMINARUSUARIO[\"4\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "LISTARPROSPECTOS[\"perez\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "NOEXISTE[]",
+  "esperado": "Error",
+  "obtenido": "Error"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "LISTARUSUARIOS[\"a\",\"b\"]",
+  "esperado": "Error",
+  "obtenido": "Error"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "MODIFICARUSUARIO[\"5\",\"Admin\",\"Pruebas\",\"<correo del admin>\",\"70000001\",\"vendedor\",\"activo\"]",
+  "esperado": "Error",
+  "obtenido": "Error"
+ },
+ {
+  "rol": "Administrador",
+  "comando": "VERBITACORA[\"8\"]",
+  "esperado": "Éxito",
+  "obtenido": "Éxito"
+ }
+]

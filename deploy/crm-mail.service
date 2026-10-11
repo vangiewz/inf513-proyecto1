@@ -1,0 +1,20 @@
+[Unit]
+Description=CRM via e-mail - INF513 Grupo 05 SA (POP3 mail.tecnoweb.org.bo, SMTP smtp.gmail.com, PostgreSQL db.tecnoweb.org.bo)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=crmmail
+Group=crmmail
+WorkingDirectory=/opt/crm-mail
+ExecStart=/usr/bin/java -Duser.timezone=America/La_Paz -Xmx256m -jar /opt/crm-mail/crm-mail.jar /etc/crm-mail/crm-mail.properties
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
