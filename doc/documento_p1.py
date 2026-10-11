@@ -21,7 +21,7 @@ PENDIENTES = []
 # Datos que el grupo aún debe entregar: None = pendiente (se imprime en rojo).
 EMPRESA = None            # nombre de la unidad o empresa real (sección III)
 CORREO_DOCENTE = None     # correo con el que el docente probará el sistema (se registra como administrador)
-GITHUB = None             # https://www.github.com/<cuenta>/inf513-proyecto1
+GITHUB = 'https://github.com/vangiewz/inf513-proyecto1'
 FECHA = None              # "14 de octubre de 2026" al entregar
 
 d = Informe()
@@ -35,13 +35,19 @@ def rojo(texto):
     return par
 
 
-def fig(archivo, titulo, ancho=16.0, nota=None):
+def fig(archivo, titulo, ancho=16.0, nota=None, horizontal=False):
+    """Figura de EA. horizontal=True: va sola en una página apaisada (diagramas anchos, legibles al imprimir)."""
     ruta = DIA / archivo
+    if horizontal: d.orientacion(True); ancho = 22.9
     if ruta.exists():
-        d.figura(ruta, titulo, nota, ancho)
+        import pymupdf
+        px = pymupdf.Pixmap(str(ruta))
+        alto_max = 14.0 if horizontal else 20.5   # cm disponibles bajo el rótulo
+        d.figura(ruta, titulo, nota, min(ancho, alto_max * px.width / px.height))
     else:
         d.rotulo('Figura', titulo)
         rojo(f'figura de Enterprise Architect diagramas/{archivo} (lista en P1_CORREO.md § Diagramas)')
+    if horizontal: d.orientacion(False)
 
 
 def dato(valor, que):
@@ -321,7 +327,7 @@ d.p('El usuario escribe desde su cuenta de correo. El mensaje llega por SMTP al 
     'que corre en un VPS con Fedora Linux 44, lee ese buzón por POP3 (Dovecot, puerto 110), consulta y actualiza la base '
     'db_grupo05sa en PostgreSQL 18.6 (puerto 5432) y responde por smtp.gmail.com (puerto 587 con STARTTLS), porque el SMTP de la '
     'facultad rechaza el reenvío a dominios externos con "550 5.7.1 Relaying denied".')
-fig('despliegue.png', 'Diagrama de despliegue')
+fig('despliegue.png', 'Diagrama de despliegue', horizontal=True)
 d.h('Diseño lógico: capas', 3)
 d.tabla('Capas del sistema', ['Capa', 'Paquete Java', 'Clases'], [
     ('Presentación', 'bo.uagrm.crm.presentacion', 'Pop3Client (lector POP3 con sockets), SmtpSender (emisor SMTP), Correo (MIME)'),
@@ -329,15 +335,15 @@ d.tabla('Capas del sistema', ['Capa', 'Paquete Java', 'Clases'], [
     ('Dominio', 'bo.uagrm.crm.dominio.<cu>', 'Un paquete por caso de uso con su servicio y sus entidades: usuarios, captacion, asignacion, embudo, perdidas, conversion, seguimiento, reportes'),
     ('Persistencia', 'bo.uagrm.crm.persistencia', 'DatabaseService: conexión JDBC, consultas parametrizadas y transacciones'),
 ], anchos=[2.8, 4.6, 8.6])
-fig('capas.png', 'Diagrama de capas')
+fig('capas.png', 'Diagrama de capas', horizontal=True)
 d.h('Diagramas de secuencia', 3)
 for cu, v in CU.items():
     fig(f'sd-{cu.lower()}.png', f'Diagrama de secuencia {cu}: {v[0]}')
 d.h('Diseño procedimental', 3)
 for cu, v in CU.items():
-    fig(f'cls-{cu.lower()}.png', f'Diseño procedimental {cu}: {v[0]}')
+    fig(f'cls-{cu.lower()}.png', f'Diseño procedimental {cu}: {v[0]}', horizontal=True)
 d.h('Diseño de datos: clases y mapeo', 3)
-fig('clases-datos.png', 'Diagrama de clases del modelo de datos')
+fig('clases-datos.png', 'Diagrama de clases del modelo de datos', horizontal=True)
 
 
 def tablas_sql():
@@ -363,7 +369,7 @@ for nombre, cols in tablas_sql():
 
 d.h('Flujo de Trabajo: Implementación', 2)
 d.h('Implementación de la arquitectura', 3)
-fig('componentes.png', 'Diagrama de componentes')
+fig('componentes.png', 'Diagrama de componentes', horizontal=True)
 d.p('El corazón del sistema es la verificación en cuatro pasos de cada correo, en este orden: formato del comando '
     '(CommandParser), identidad del remitente (tabla usuario), permiso del rol (la subclase de RolCommandProcessor) y, recién '
     'entonces, el servicio del caso de uso. Un comando no permitido se responde como "Denegado" sin abrir una conexión a la '
