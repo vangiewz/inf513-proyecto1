@@ -60,17 +60,39 @@ class EA:
             c.ClientEnd.Update(); c.SupplierEnd.Update(); c.Update()
         return c
 
-    def mensaje_seq(self, d, a, b, texto, n, retorno=False):
-        c = a.Connectors.AddNew(texto, 'Sequence'); c.SupplierID = b.ElementID; c.DiagramID = d.DiagramID; c.SequenceNo = n; c.Update()
-        if retorno: self.r.Execute(f"UPDATE t_connector SET PDATA4='1' WHERE Connector_ID={c.ConnectorID}")
+    def asociacion(self, a, b, rol, card='1', vis='Private'):
+        """Asociación navegable de a hacia b: el campo `rol` de a (con su visibilidad) y su multiplicidad."""
+        c = a.Connectors.AddNew('', 'Association'); c.SupplierID = b.ElementID; c.Direction = 'Source -> Destination'; c.Update()
+        c.SupplierEnd.Role = rol; c.SupplierEnd.Cardinality = card; c.SupplierEnd.Navigable = 'Navigable'; c.SupplierEnd.Visibility = vis
+        c.SupplierEnd.Update()
+        c.ClientEnd.Navigable = 'Non-Navigable'; c.ClientEnd.Update(); c.Update()
+        # Actualizar un extremo invierte Direction en EA 15: se fija al final, directo en la tabla.
+        self.r.Execute(f"UPDATE t_connector SET Direction='Source -> Destination', DestIsNavigable=TRUE, SourceIsNavigable=FALSE "
+                       f"WHERE Connector_ID={c.ConnectorID}")
         return c
 
-    def mensaje_com(self, d, enlace, a, b, texto, numero, n, apilado, color):
-        """Mensaje de comunicación colgado de su enlace (SourceIsAggregate), como los crea EA."""
+    def interfaz(self, comp, nombre, tipo, clasificador):
+        """Interfaz provista (lollipop) o requerida (socket) expuesta en el borde de un componente."""
+        e = comp.EmbeddedElements.AddNew(nombre, tipo); e.ClassifierID = clasificador.ElementID; e.Update()
+        return e
+
+    def mensaje_seq(self, d, a, b, texto, n, tipo='call', args=''):
+        """tipo: 'call' (síncrono), 'signal' (asíncrono: un correo) o 'return'. args se muestra entre paréntesis."""
+        c = a.Connectors.AddNew(texto, 'Sequence'); c.SupplierID = b.ElementID; c.DiagramID = d.DiagramID; c.SequenceNo = n; c.Update()
+        p1, p3 = ('Asynchronous', 'Signal') if tipo == 'signal' else ('Synchronous', 'Call')
+        p2 = f"retval=void;params={args};paramsDlg={args};" if args else ''
+        self.r.Execute(f"UPDATE t_connector SET PDATA1='{p1}', PDATA2='{p2}', PDATA3='{p3}', PDATA4='{int(tipo == 'return')}', "
+                       f"StateFlags='IsReturn={str(tipo == 'return').lower()};' WHERE Connector_ID={c.ConnectorID}")
+        return c
+
+    def mensaje_com(self, d, enlace, a, b, texto, numero, n, apilado, color, args='', vertical=False):
+        """Mensaje de comunicación colgado de su enlace (SourceIsAggregate), como los crea EA.
+        args: lo que va entre paréntesis (el diagrama usa SuppressBrackets: un comando no lleva paréntesis)."""
         c = a.Connectors.AddNew(texto, 'Collaboration'); c.SupplierID = b.ElementID; c.DiagramID = d.DiagramID
         c.SequenceNo = n; c.Direction = 'Source -> Destination'; c.Color = color; c.Update()
-        sy = 18 + 15 * apilado
-        self.r.Execute(f"UPDATE t_connector SET PDATA1='Synchronous', PDATA3='Call', PDATA4='{numero}', "
+        sy = 18 + (30 if vertical else 15) * apilado
+        p2 = f"retval=void;params={args};paramsDlg={args};" if args else ''
+        self.r.Execute(f"UPDATE t_connector SET PDATA1='Synchronous', PDATA2='{p2}', PDATA3='Call', PDATA4='{numero}', "
                        f"PDATA5='SX=-15;SY={sy};EX=15;EY={sy};EDGE=2;', SourceIsAggregate={enlace.ConnectorID}, RouteStyle=1, "
                        f"DestIsNavigable=TRUE, StateFlags='IsReturn=false;', SourceTS='instance', DestTS='instance' "
                        f"WHERE Connector_ID={c.ConnectorID}")
@@ -82,21 +104,24 @@ class EA:
         d.Update(); self.r.ReloadDiagram(d.DiagramID)
         ruta = SALIDA / archivo
         if not self.pi.PutDiagramImageToFile(d.DiagramGUID, str(ruta), 1): raise SystemExit('no se exportó ' + archivo)
+        # EMF (vectorial): word_export.ps1 lo pone en lugar del PNG para que el PDF y la impresión salgan nítidos
+        if not self.pi.PutDiagramImageToFile(d.DiagramGUID, str(ruta.with_suffix('.emf')), 0): raise SystemExit('no se exportó EMF ' + archivo)
         self.exportados.append(archivo); print('  ', archivo)
 
 
 def clase(ea, pkg, spec, tipo='Class'):
-    """spec: 'Nombre|estereotipo|-attr: T; -attr2: T|+op(p: T, q: T): R; #op2(): R'."""
+    """spec: 'Nombre|estereotipo|-attr: T; -attr2: T|+op(p: T, q: T): R; #op2(): R'. '$' tras la visibilidad = static."""
     nombre, st, attrs, ops = (spec.split('|') + ['', '', ''])[:4]
     e = ea.elemento(pkg, nombre, tipo, st)
     vis = {'+': 'Public', '-': 'Private', '#': 'Protected'}
     for i, a in enumerate(filter(None, (x.strip() for x in attrs.split(';')))):
         n, t = (a[1:].split(':') + [''])[:2]
-        at = e.Attributes.AddNew(n.strip(), t.strip()); at.Visibility = vis[a[0]]; at.Pos = i; at.Update()
+        at = e.Attributes.AddNew(n.strip().lstrip('$'), t.strip()); at.Visibility = vis[a[0]]; at.Pos = i
+        at.IsStatic = n.startswith('$'); at.Update()
     for o in filter(None, (x.strip() for x in ops.split(';'))):
-        m = re.match(r'([+\-#])(\w+)\((.*)\)(?::\s*(.+))?$', o)
-        v, n, ps, ret = m.groups()
-        mt = e.Methods.AddNew(n, (ret or 'void').strip()); mt.Visibility = vis[v]; mt.Update()
+        m = re.match(r'([+\-#])(\$?)(\w+)\((.*)\)(?::\s*(.+))?$', o)
+        v, est, n, ps, ret = m.groups()
+        mt = e.Methods.AddNew(n, (ret or 'void').strip()); mt.Visibility = vis[v]; mt.IsStatic = bool(est); mt.Update()
         for i, p in enumerate(filter(None, (x.strip() for x in ps.split(',')))):
             pn, pt = p.split(':')
             pa = mt.Parameters.AddNew(pn.strip(), pt.strip()); pa.Position = i; pa.Update()
@@ -126,6 +151,9 @@ def actores(cu):
 
 SERVICIO = {'CU1': 'UsuarioService', 'CU2': 'ProspectoService', 'CU3': 'AsignacionService', 'CU4': 'EmbudoService',
             'CU5': 'PerdidaService', 'CU6': 'ConversionService', 'CU7': 'SeguimientoService', 'CU8': 'ReporteService'}
+# Campo de RolCommandProcessor que referencia a cada servicio
+CAMPO = {'UsuarioService': 'usuarios', 'ProspectoService': 'prospectos', 'AsignacionService': 'asignacion', 'EmbudoService': 'embudo',
+         'PerdidaService': 'perdidas', 'ConversionService': 'conversion', 'SeguimientoService': 'seguimiento', 'ReporteService': 'reportes'}
 ENTIDAD = {'CU1': 'Usuario', 'CU2': 'Prospecto', 'CU3': 'Interes', 'CU4': 'Interes', 'CU5': 'MotivoPerdida',
            'CU6': 'Matricula', 'CU7': 'Recordatorio', 'CU8': 'Interes'}
 # Operaciones mostradas en colaboración y secuencia: (actor, comando, método del servicio, método de DatabaseService)
@@ -163,28 +191,36 @@ OPS = {
 
 # Clases de diseño (firmas reales de p1/src)
 CLASES = [
+    'Pop3Client|||+stat(): int; +tamano(n: int): long; +retr(n: int): byte[]; +top(n: int, lineas: int): byte[]; +dele(n: int): void; +quit(): void; +close(): void',
+    'SmtpSender|||+enviar(para: String, asunto: String, html: String, texto: String): void; +getRemitente(): String',
     'Command||-nombre: String; -tipo: Comando; -params: List<String>; -valido: boolean; -mensajeError: String; -remitente: String; -adjunto: String'
     '|+getNombre(): String; +getTipo(): Comando; +getParam(i: int): String; +cantidad(): int; +isValido(): boolean; +getMensajeError(): String; +getRemitente(): String; +getAdjunto(): String',
-    'CommandParser|||+parse(asunto: String, remitente: String, adjunto: String): Command; +pareceComando(asunto: String): boolean',
-    'CommandProcessor||-parser: CommandParser; -fmt: ResponseFormatter; -usuarios: UsuarioService; -seguimiento: SeguimientoService'
-    '|+procesarEmail(remitente: String, asunto: String, adjunto: String): Respuesta; +bitacora(remitente: String, usuarioId: Integer, asunto: String, resultado: String, detalle: String): void',
-    'RolCommandProcessor|abstract|#fmt: ResponseFormatter|+comandos(): Set<Comando>; +rol(): String; +procesar(cmd: Command, u: Usuario): Respuesta; -ejecutar(c: Command, u: Usuario): Respuesta',
-    'AdministradorCommandProcessor||-COMANDOS: Set<Comando>|+comandos(): Set<Comando>; +rol(): String',
-    'CoordinadorCommandProcessor||-COMANDOS: Set<Comando>|+comandos(): Set<Comando>; +rol(): String',
-    'VendedorCommandProcessor||-COMANDOS: Set<Comando>|+comandos(): Set<Comando>; +rol(): String',
-    'PublicoCommandProcessor||-COMANDOS: Set<Comando>|+comandos(): Set<Comando>; +rol(): String; #mensajeDenegado(cmd: Command): String',
+    'CommandParser|||+parse(asunto: String, remitente: String, adjunto: String): Command; +$pareceComando(asunto: String): boolean',
+    'CommandProcessor||-parser: CommandParser; -fmt: ResponseFormatter; -usuarios: UsuarioService; -seguimiento: SeguimientoService; -porRol: Map<Rol, RolCommandProcessor>; -publico: PublicoCommandProcessor'
+    '|+procesarEmail(remitente: String, asunto: String, adjunto: String): Respuesta; +bitacora(remitente: String, usuarioId: Integer, asunto: String, resultado: String, detalle: String): void; '
+    '+formatter(): ResponseFormatter; +procesadores(): Map<String, RolCommandProcessor>',
+    'RolCommandProcessor|abstract|#fmt: ResponseFormatter; #usuarios: UsuarioService; #prospectos: ProspectoService; #asignacion: AsignacionService; #embudo: EmbudoService; '
+    '#perdidas: PerdidaService; #conversion: ConversionService; #seguimiento: SeguimientoService; #reportes: ReporteService'
+    '|+comandos(): Set<Comando>; +rol(): String; +procesar(cmd: Command, u: Usuario): Respuesta; #mensajeDenegado(cmd: Command): String; -ejecutar(c: Command, u: Usuario): Respuesta',
+    'AdministradorCommandProcessor||-$COMANDOS: Set<Comando>|+comandos(): Set<Comando>; +rol(): String',
+    'CoordinadorCommandProcessor||-$COMANDOS: Set<Comando>|+comandos(): Set<Comando>; +rol(): String',
+    'VendedorCommandProcessor||-$COMANDOS: Set<Comando>|+comandos(): Set<Comando>; +rol(): String',
+    'PublicoCommandProcessor||-$COMANDOS: Set<Comando>|+comandos(): Set<Comando>; +rol(): String; #mensajeDenegado(cmd: Command): String',
     'ResponseFormatter|||+success(titulo: String, mensaje: String): Respuesta; +successTable(titulo: String, mensaje: String, columnas: String[], filas: List<String[]>): Respuesta; '
-    '+error(comando: String, mensaje: String): Respuesta; +denegado(comando: String, mensaje: String): Respuesta; +estadoBadge(estado: String): String; +html(r: Respuesta, asuntoRecibido: String): String',
-    'DatabaseService||-url: String; -usuario: String; -password: String|+getConnection(): Connection; +enTransaccion(trabajo: Trabajo): T; +lista(c: Connection, mapeo: Mapeo, sql: String, params: Object[]): List<T>; '
-    '+uno(c: Connection, mapeo: Mapeo, sql: String, params: Object[]): T; +filas(c: Connection, sql: String, params: Object[]): List<String[]>; +actualizar(c: Connection, sql: String, params: Object[]): int; +insertar(c: Connection, sql: String, params: Object[]): int',
-    'UsuarioService||-db: DatabaseService|+buscarPorCorreo(correo: String): Usuario; +listar(rol: String): List<Usuario>; +insertar(nombre: String, apellido: String, correo: String, telefono: String, rol: String): Usuario; '
+    '+successTable(titulo: String, mensaje: String, bloques: Bloque...): Respuesta; +aviso(titulo: String, mensaje: String, bloques: Bloque...): Respuesta; '
+    '+error(comando: String, mensaje: String): Respuesta; +denegado(comando: String, mensaje: String): Respuesta; +estadoBadge(estado: String): String; +html(r: Respuesta, asuntoRecibido: String): String; '
+    '+texto(r: Respuesta, asuntoRecibido: String): String',
+    'DatabaseService||-url: String; -usuario: String; -password: String|+getConnection(): Connection; +enTransaccion(trabajo: Trabajo): T; +$lista(c: Connection, mapeo: Mapeo, sql: String, params: Object...): List<T>; '
+    '+$uno(c: Connection, mapeo: Mapeo, sql: String, params: Object...): T; +$filas(c: Connection, sql: String, params: Object...): List<String[]>; +$actualizar(c: Connection, sql: String, params: Object...): int; '
+    '+$insertar(c: Connection, sql: String, params: Object...): int; +$texto(v: Object): String',
+    'UsuarioService||-db: DatabaseService|+buscarPorCorreo(correo: String): Usuario; +buscarPorId(id: int): Usuario; +listar(rol: String): List<Usuario>; +insertar(nombre: String, apellido: String, correo: String, telefono: String, rol: String): Usuario; '
     '+modificar(actor: Usuario, id: int, nombre: String, apellido: String, correo: String, telefono: String, rol: String, estado: String): Usuario; +eliminar(actor: Usuario, id: int): int',
     'ProspectoService||-db: DatabaseService|+listarOferta(todas: boolean): List<Oferta>; +registrar(actor: Usuario, ci: String, nombre: String, apellido: String, telefono: String, correo: String, origen: String, codigoOferta: String): Alta; '
     '+importar(actor: Usuario, csv: String): List<String[]>; +listar(u: Usuario, texto: String): List<Interes>; +modificar(u: Usuario, ci: String, nombre: String, apellido: String, telefono: String, correo: String, origen: String): Prospecto; '
     '+eliminar(ci: String): Prospecto; +asignarCoordinador(codigoPrograma: String, coordinadorId: int): int',
     'AsignacionService||-db: DatabaseService|+bolsa(u: Usuario): List<Interes>; +asignar(u: Usuario, tarjetaId: int, vendedorId: int): Asignacion; +asignarAutomatico(u: Usuario): List<Asignacion>; +tomar(u: Usuario, tarjetaId: int): Interes',
-    'EmbudoService||-db: DatabaseService|+tablero(u: Usuario): List<Interes>; +mover(u: Usuario, id: int, estado: String): Interes; +tarjeta(c: Connection, u: Usuario, id: int, modificar: boolean): Interes; '
-    '+registrarMovimiento(c: Connection, interesId: int, usuarioId: Integer, anterior: String, nuevo: String, detalle: String): void',
+    'EmbudoService||-db: DatabaseService|+tablero(u: Usuario): List<Interes>; +mover(u: Usuario, id: int, estado: String): Interes; +$tarjeta(c: Connection, u: Usuario, id: int, modificar: boolean): Interes; '
+    '+$registrarMovimiento(c: Connection, interesId: int, usuarioId: Integer, anterior: String, nuevo: String, detalle: String): void',
     'PerdidaService||-db: DatabaseService|+listarMotivos(): List<MotivoPerdida>; +insertarMotivo(nombre: String, categoria: String): MotivoPerdida; +modificarMotivo(id: int, nombre: String, categoria: String): MotivoPerdida; '
     '+eliminarMotivo(id: int): MotivoPerdida; +marcarPerdido(u: Usuario, tarjetaId: int, motivoId: int, detalle: String): Interes',
     'ConversionService||-db: DatabaseService|+validar(u: Usuario, tarjetaId: int): List<Requisito>; +convertir(u: Usuario, tarjetaId: int): Matricula; +listarMatriculas(u: Usuario): List<Matricula>',
@@ -192,25 +228,73 @@ CLASES = [
     '+listarRecordatorios(u: Usuario): List<Recordatorio>; +completarRecordatorio(u: Usuario, id: int): Recordatorio; +historial(u: Usuario, tarjetaId: int): Historial; '
     '+registrarComando(remitente: String, usuarioId: Integer, asunto: String, resultado: String, detalle: String): void; +bitacora(cantidad: int): List<String[]>; +vencidos(): List<Recordatorio>; +marcarNotificado(id: int): void',
     'ReporteService||-db: DatabaseService|+embudo(u: Usuario): List<String[]>; +vendedores(u: Usuario): List<String[]>; +perdidasPorMotivo(u: Usuario): List<String[]>; +perdidasPorCategoria(u: Usuario): List<String[]>; +oferta(u: Usuario): List<String[]>',
-    'Usuario|record|-id: int; -nombre: String; -apellido: String; -correo: String; -telefono: String; -rol: Rol; -estado: String|+getNombreCompleto(): String; +activo(): boolean; +fila(): String[]',
-    'Oferta|record|-id: int; -codigo: String; -nombre: String; -tipo: String; -programa: String; -numModulos: int; -precio: BigDecimal; -estado: String; -coordinadorId: Integer|+abierta(): boolean; +descripcionTipo(): String; +fila(): String[]',
-    'Prospecto|record|-id: int; -ci: String; -nombre: String; -apellido: String; -telefono: String; -correo: String; -origen: String|+getNombreCompleto(): String',
-    'Interes|record|-id: int; -estado: String; -prospecto: Prospecto; -ofertaCodigo: String; -ofertaEstado: String; -precio: BigDecimal; -coordinadorId: Integer; -vendedorId: Integer; -motivo: String|+cerrada(): boolean; +nombreVendedor(): String; +fila(): String[]',
-    'MotivoPerdida|record|-id: int; -nombre: String; -categoria: String; -usos: int|+fila(): String[]',
-    'Matricula|record|-id: int; -tarjetaId: int; -ci: String; -prospecto: String; -oferta: String; -monto: BigDecimal; -estado: String; -fecha: String|+fila(): String[]',
-    'Interaccion|record|-id: int; -tarjetaId: int; -tipo: String; -descripcion: String; -fecha: String|',
-    'Recordatorio|record|-id: int; -tarjetaId: int; -fechaHora: String; -descripcion: String; -estado: String; -usuarioId: int; -correoUsuario: String|+fila(): String[]',
+    'Usuario|record|-id: int; -nombre: String; -apellido: String; -correo: String; -telefono: String; -rol: Rol; -estado: String|+$de(rs: ResultSet): Usuario; +getNombreCompleto(): String; +activo(): boolean; +fila(): String[]',
+    'Oferta|record|-id: int; -codigo: String; -nombre: String; -tipo: String; -programa: String; -numModulos: int; -precio: BigDecimal; -estado: String; -coordinadorId: Integer; -coordinador: String|+$de(rs: ResultSet): Oferta; +abierta(): boolean; +descripcionTipo(): String; +fila(): String[]',
+    'Prospecto|record|-id: int; -ci: String; -nombre: String; -apellido: String; -telefono: String; -correo: String; -origen: String|+$de(rs: ResultSet): Prospecto; +getNombreCompleto(): String',
+    'Interes|record|-id: int; -estado: String; -prospecto: Prospecto; -ofertaCodigo: String; -ofertaNombre: String; -ofertaEstado: String; -precio: BigDecimal; -coordinadorId: Integer; -vendedorId: Integer; -vendedor: String; -motivo: String; -creadoEn: String|+$de(rs: ResultSet): Interes; +cerrada(): boolean; +nombreVendedor(): String; +fila(): String[]',
+    'MotivoPerdida|record|-id: int; -nombre: String; -categoria: String; -usos: int|+$de(rs: ResultSet): MotivoPerdida; +fila(): String[]',
+    'Matricula|record|-id: int; -tarjetaId: int; -ci: String; -prospecto: String; -oferta: String; -monto: BigDecimal; -estado: String; -registradoPor: String; -fecha: String|+$de(rs: ResultSet): Matricula; +fila(): String[]',
+    'Interaccion|record|-id: int; -tarjetaId: int; -tipo: String; -descripcion: String; -fecha: String|+$de(rs: ResultSet): Interaccion',
+    'Recordatorio|record|-id: int; -tarjetaId: int; -prospecto: String; -telefono: String; -fechaHora: String; -descripcion: String; -estado: String; -usuarioId: int; -usuario: String; -correoUsuario: String|+$de(rs: ResultSet): Recordatorio; +fila(): String[]',
     'Alta|record|-tarjeta: Interes; -prospectoNuevo: boolean|',
     'Asignacion|record|-tarjeta: Interes; -vendedor: Usuario|',
     'Requisito|record|-nombre: String; -valor: String; -cumple: boolean|+fila(): String[]',
     'Historial|record|-tarjeta: Interes; -eventos: List<String[]>|',
 ]
 ROL_ENUM = 'Rol|enumeration||+nombre(): String; +deNombre(rol: String): Rol'
+# Núcleo del diseño (firmas reales de p1/src); los tipos anidados llevan el nombre calificado de Java.
+NUCLEO = [
+    'App||-$MAX_POR_CICLO: int; -$MAX_BYTES: long; -cfg: Config; -procesador: CommandProcessor; -seguimiento: SeguimientoService; -smtp: SmtpSender; -fmt: ResponseFormatter'
+    '|+$main(args: String[]): void; -ejecutar(): void; -ciclo(): void; -atender(m: Recibido): void; -enviar(para: String, r: Respuesta, asuntoRecibido: String): void; -avisarRecordatorios(): void',
+    'Config|record|-pop3Host: String; -pop3Puerto: int; -pop3Usuario: String; -pop3Password: String; -smtpHost: String; -smtpPuerto: int; -smtpUsuario: String; '
+    '-smtpPassword: String; -buzonSistema: String; -dbUrl: String; -dbUsuario: String; -dbPassword: String; -intervaloSegundos: int|+$cargar(archivo: Path): Config',
+    'Correo|record|-remitente: String; -asunto: String; -adjuntoCsv: String; -automatico: boolean|+$leer(crudo: byte[]): Correo',
+    'Respuesta|record|-resultado: String; -titulo: String; -mensaje: String; -bloques: List<Bloque>; -avisos: List<Aviso>|+conAvisos(nuevos: List<Aviso>): Respuesta; +asunto(): String',
+    'Respuesta.Tabla|record|-titulo: String; -columnas: String[]; -filas: List<String[]>|',
+    'Respuesta.Carril|record|-estado: String; -tarjetas: List<String[]>|',
+    'Respuesta.Aviso|record|-para: String; -contenido: Respuesta|',
+]
+INTERFACES = {'Closeable': '+close(): void', 'Respuesta.Bloque': '', 'DatabaseService.Mapeo<T>': '+de(rs: ResultSet): T',
+              'DatabaseService.Trabajo<T, E>': '+ejecutar(c: Connection): T'}
 PROC_ROL = {'Administrador': 'AdministradorCommandProcessor', 'Coordinador': 'CoordinadorCommandProcessor',
             'Vendedor': 'VendedorCommandProcessor', 'Visitante': 'PublicoCommandProcessor'}
 ENTIDADES_CU = {'CU1': ['Usuario', 'Rol'], 'CU2': ['Oferta', 'Prospecto', 'Interes', 'Alta'], 'CU3': ['Interes', 'Usuario', 'Asignacion'],
                 'CU4': ['Interes'], 'CU5': ['MotivoPerdida', 'Interes'], 'CU6': ['Matricula', 'Requisito', 'Interes'],
                 'CU7': ['Interaccion', 'Recordatorio', 'Historial'], 'CU8': []}
+MAPEADAS = ('Usuario', 'Oferta', 'Prospecto', 'Interes', 'MotivoPerdida', 'Matricula', 'Interaccion', 'Recordatorio')
+
+
+def firma(clase_, metodo):
+    """Nombres de los parámetros del método según CLASES (los del código)."""
+    spec = next(c for c in CLASES if c.startswith(clase_ + '|'))
+    ps = re.search(r'[+#-]\$?' + metodo + r'\(([^)]*)\)', spec).group(1)
+    return ', '.join(x.split(':')[0].strip() for x in ps.split(',') if x.strip())
+
+
+def retorno(clase_, metodo):
+    """Tipo de retorno declarado del método (vacío si es void)."""
+    spec = next(c for c in CLASES if c.startswith(clase_ + '|'))
+    ret = re.search(r'[+#-]\$?' + metodo + r'\([^)]*\):\s*([^;|]+)', spec).group(1).strip()
+    return '' if ret == 'void' else ret
+
+
+def tipo_bd(servicio, met, dbm):
+    """Retorno de DatabaseService con el parámetro T ya ligado al tipo que devuelve el servicio."""
+    r = retorno('DatabaseService', dbm[:-2])
+    return retorno(servicio, met[:-2]) if r in ('T', 'List<T>') else r
+
+
+def corta(args):
+    """Argumentos para un mensaje de comunicación: los reales si caben en la etiqueta, si no '...' ('' -> paréntesis vacíos)."""
+    return ' ' if not args else (args if len(args) <= 14 else '...')
+
+
+def entidad_mapeada(cu, metodo):
+    """Entidad que DatabaseService construye con su método de() para el resultado del servicio (None si devuelve filas o int)."""
+    spec = next(c for c in CLASES if c.startswith(SERVICIO[cu] + '|'))
+    ret = re.search(r'[+#-]\$?' + metodo[:-2] + r'\([^)]*\):\s*([\w<>\[\]]+)', spec).group(1)
+    tipo = ret[5:-1] if ret.startswith('List<') else ret
+    return tipo if tipo in MAPEADAS else None
 
 
 def main():
@@ -239,7 +323,7 @@ def construir(ea):
         acts = actores(k)
         for i, a in enumerate(acts):
             ea.poner(d, act[a], 60, 40 + i * 110, 45, 80)
-        ea.poner(d, uc[k], 420, 40 + (len(acts) - 1) * 55 + 10, 190, 70)
+        ea.poner(d, uc[k], 420, 40 + (len(acts) - 1) * 55, 220, 90)
         ea.exportar(d, f'uc-{k.lower()}.png')
     d = ea.diagrama(req, 'Modelo de casos de uso', 'Use Case')
     frontera = ea.elemento(req, 'CRM vía e-mail', 'Boundary')
@@ -247,7 +331,7 @@ def construir(ea):
     for i, k in enumerate(CU):
         ea.poner(d, uc[k], 310, 55 + i * 95, 230, 75, seq=1)
     ea.poner(d, act['Administrador'], 60, 520, 45, 80); ea.poner(d, act['Coordinador'], 60, 280, 45, 80)
-    ea.conector(act['Administrador'], act['Coordinador'], 'Generalization')
+    gen = ea.conector(act['Administrador'], act['Coordinador'], 'Generalization')
     for (a_, k_), c_ in asoc.items():   # el administrador hereda las asociaciones del coordinador
         if a_ == 'Administrador':
             dl = d.DiagramLinks.AddNew('', ''); dl.ConnectorID = c_.ConnectorID; dl.IsHidden = True; dl.Update()
@@ -257,9 +341,11 @@ def construir(ea):
     # ---------------------------------------------------------------- Análisis: paquetes
     PAQ = [('Administración', ['CU1']), ('Captación y Asignación', ['CU2', 'CU3']),
            ('Gestión del Embudo', ['CU4', 'CU5', 'CU7']), ('Conversión y Reportes', ['CU6', 'CU8'])]
-    paqs = [ea.paquete(ana, n) for n, _ in PAQ]
+    # Los paquetes de análisis cuelgan del mismo paquete que los CU: EA no rotula "(from ...)" y el
+    # encapsulamiento puede mostrar los CU y sus actores dentro del paquete, como el P1 aprobado.
+    paqs = [ea.paquete(req, n) for n, _ in PAQ]
     traces = []
-    d = ea.diagrama(ana, 'Paquetes de análisis', 'Package')
+    d = ea.diagrama(req, 'Paquetes de análisis', 'Package')
     for i, p in enumerate(paqs):
         ea.poner(d, p, 40 + i * 230, 60, 190, 110)
     ea.exportar(d, 'pkg-paquetes.png')
@@ -272,10 +358,16 @@ def construir(ea):
         ea.exportar(d, f'pkg-trace-{i}.png')
     for i, ((n, cus), p) in enumerate(zip(PAQ, paqs), 1):
         d = ea.diagrama(req, f'Encapsulamiento del paquete {n}', 'Package')
-        ea.poner(d, p, 40, 30, 280, 90 + len(cus) * 95, seq=50)
+        acts = [a for a in ROLES if any(a in actores(k) for k in cus)]
+        filas = max(len(acts), len(cus))
+        ea.poner(d, p, 40, 30, 600, 70 + filas * 115, seq=50)
+        for j, a in enumerate(acts):
+            ea.poner(d, act[a], 110, 80 + j * 115 + (filas - len(acts)) * 57, 45, 80, seq=1)
         for j, k in enumerate(cus):
-            ea.poner(d, uc[k], 70, 80 + j * 95, 220, 70, seq=1)
-        for tr in traces:   # el encapsulamiento muestra la contención, no la dependencia
+            ea.poner(d, uc[k], 360, 75 + j * 115 + (filas - len(cus)) * 57, 230, 90, seq=1)
+        # contención y asociaciones, no la dependencia; el administrador hereda del coordinador (como en el modelo de CU)
+        ocultos = traces + [c_ for (a_, k_), c_ in asoc.items() if a_ == 'Administrador']
+        for tr in ocultos:
             dl = d.DiagramLinks.AddNew('', ''); dl.ConnectorID = tr.ConnectorID; dl.IsHidden = True; dl.Update()
         ea.exportar(d, f'pkg-encap-{i}.png')
 
@@ -285,9 +377,9 @@ def construir(ea):
     cp = ea.elemento(col, 'CommandProcessor', 'Object', 'control')
     rcp = ea.elemento(col, 'RolCommandProcessor', 'Object', 'control')
     servs = {k: ea.elemento(col, SERVICIO[k], 'Object', 'control') for k in CU}
+    dbo = ea.elemento(col, 'DatabaseService', 'Object', 'entity')
+    act_col = {n: ea.elemento(col, n, 'Actor') for n in ROLES}   # actores del modelo de análisis
     ents = {}
-    for k in CU:
-        if ENTIDAD[k] not in ents: ents[ENTIDAD[k]] = ea.elemento(col, ENTIDAD[k], 'Object', 'entity')
     enlaces = {}
 
     def enlace(a, b):
@@ -297,25 +389,37 @@ def construir(ea):
 
     for k in CU:
         d = ea.diagrama(col, f'Colaboración {k}: {CORTO[k]}', 'Collaboration')
+        d.StyleEx = 'SuppressBrackets=1;'; d.Update()   # los paréntesis los ponen los argumentos
         acts = list(dict.fromkeys(o[0] for o in OPS[k]))
+        Y = 200
+        sitio_act = [(30, Y - 10), (307, Y + 190), (307, Y - 190)]   # izquierda, debajo y encima del cliente de correo
         for i, a in enumerate(acts):
-            ea.poner(d, act[a], 30, 40 + i * 140, 45, 80)
-        pos = [(bnd, 330, 60), (cp, 640, 60), (rcp, 950, 60), (servs[k], 950, 400), (ents[ENTIDAD[k]], 640, 400)]
+            ea.poner(d, act_col[a], *sitio_act[i], 45, 80)
+        mapeadas = list(dict.fromkeys(e for o in OPS[k] if (e := entidad_mapeada(k, o[2]))))
+        for e in mapeadas:
+            if e not in ents: ents[e] = ea.elemento(col, e, 'Object', 'entity')
+        pos = [(bnd, 300, Y), (cp, 550, Y), (rcp, 800, Y), (servs[k], 1050, Y), (dbo, 1300, Y)]
+        pos += [(ents[e], *[(1550, Y), (1300, Y + 210)][i]) for i, e in enumerate(mapeadas)]
         for e, x, y in pos:
             ea.poner(d, e, x, y, 60, 60)
-        cadena = [bnd, cp, rcp, servs[k], ents[ENTIDAD[k]]]
         apil = {}
         n = 0
         for j, (a, cmd, met, dbm) in enumerate(OPS[k], 1):
-            pasos = [(act[a], bnd, cmd.split('[')[0], f'{j}'), (bnd, cp, 'procesarEmail()', f'{j}.1'), (cp, rcp, 'procesar()', f'{j}.2'),
-                     (rcp, servs[k], met, f'{j}.3'), (servs[k], ents[ENTIDAD[k]], dbm, f'{j}.4')]
-            for o, dst, txt, num in pasos:
+            nombre_cmd = cmd.split('[')[0] + ('[]' if '[]' in cmd else '[...]')
+            pasos = [(act_col[a], bnd, nombre_cmd, f'{j}', ''),
+                     (bnd, cp, 'procesarEmail', f'{j}.1', corta(firma('CommandProcessor', 'procesarEmail'))),
+                     (cp, rcp, 'procesar', f'{j}.2', firma('RolCommandProcessor', 'procesar')),
+                     (rcp, servs[k], met[:-2], f'{j}.3', corta(firma(SERVICIO[k], met[:-2]))),
+                     (servs[k], dbo, dbm[:-2], f'{j}.4', corta(firma('DatabaseService', dbm[:-2])))]
+            if (e := entidad_mapeada(k, met)): pasos.append((dbo, ents[e], 'de', f'{j}.5', 'rs'))
+            for o, dst, txt, num, args in pasos:
                 ln = enlace(o, dst); n += 1
                 c = apil.get(ln.ConnectorID, 0); apil[ln.ConnectorID] = c + 1
-                ea.mensaje_com(d, ln, o, dst, txt, num, n, c, COLORES[(j - 1) % 4])
+                vertical = (o is act_col[a] and acts.index(a) > 0) or (dst in ents.values() and mapeadas.index(dst.Name) == 1)
+                ea.mensaje_com(d, ln, o, dst, txt, num, n, c, COLORES[(j - 1) % 4], args, vertical)
         ea.exportar(d, f'com-{k.lower()}.png')
 
-    d = ea.diagrama(ana, 'Dependencia de paquetes', 'Package')
+    d = ea.diagrama(req, 'Dependencia de paquetes', 'Package')
     for i, p in enumerate(paqs):
         ea.poner(d, p, [40, 330, 330, 620][i], [190, 40, 340, 190][i], 190, 110)
     for a, b in [(1, 0), (2, 0), (3, 0), (3, 2), (2, 1)]:
@@ -327,57 +431,68 @@ def construir(ea):
     d = ea.diagrama(dep, 'Diagrama de despliegue', 'Deployment')
     pc = ea.elemento(dep, 'PC o celular del usuario', 'Device')
     cli = ea.elemento(dep, 'Navegador o app de Gmail', 'ExecutionEnvironment', padre=pc)
-    goo = ea.elemento(dep, 'Google (Gmail)', 'Device')
-    gweb = ea.elemento(dep, 'Gmail: buzón del usuario y smtp.gmail.com', 'ExecutionEnvironment', padre=goo)
-    fac = ea.elemento(dep, 'web.tecnoweb.org.bo 139.99.68.169 (mail / db)', 'Device')
+    goo = ea.elemento(dep, 'Google', 'Node', 'External System')
+    gweb = ea.elemento(dep, 'Gmail (mail.google.com): buzón del usuario', 'ExecutionEnvironment', padre=goo)
+    gsmtp = ea.elemento(dep, 'smtp.gmail.com (SMTP 587)', 'ExecutionEnvironment', padre=goo)
+    fac = ea.elemento(dep, 'Servidor tecnoweb.org.bo 139.99.68.169 (mail, db)', 'Device')
     so_f = ea.elemento(dep, 'Linux', 'ExecutionEnvironment', padre=fac)
-    dove = ea.elemento(dep, 'Dovecot (POP3 110)', 'ExecutionEnvironment', padre=so_f)
     pg = ea.elemento(dep, 'PostgreSQL 18.6 (5432)', 'ExecutionEnvironment', padre=so_f)
     bd = ea.elemento(dep, 'db_grupo05sa, esquema crm', 'Artifact', padre=pg)
+    tablas_c = ea.elemento(dep, '10 tablas (crm_p1.sql)', 'Component', padre=bd)
+    bitac_c = ea.elemento(dep, 'Bitácora (log_comando)', 'Component', padre=bd)
+    dove = ea.elemento(dep, 'Dovecot (POP3 110)', 'ExecutionEnvironment', padre=so_f)
     smail = ea.elemento(dep, 'Sendmail (SMTP 25, MX tecnoweb.org.bo)', 'ExecutionEnvironment', padre=so_f)
-    buzon = ea.elemento(dep, 'buzón grupo05sa', 'Artifact', padre=smail)
+    buzon = ea.elemento(dep, 'buzón grupo05sa', 'Artifact', 'file', padre=so_f)
     vps = ea.elemento(dep, 'VPS Contabo 164.68.96.50', 'Device')
     so_v = ea.elemento(dep, 'Fedora Linux 44', 'ExecutionEnvironment', padre=vps)
+    unidad = ea.elemento(dep, '/etc/systemd/system/crm-mail.service', 'Artifact', 'file', padre=so_v)
+    props = ea.elemento(dep, '/etc/crm-mail/crm-mail.properties', 'Artifact', 'file', padre=so_v)
     jvm = ea.elemento(dep, 'OpenJDK 25.0.4', 'ExecutionEnvironment', padre=so_v)
-    jar = ea.elemento(dep, 'crm-mail.jar', 'Artifact', padre=jvm)
-    unidad = ea.elemento(dep, '/etc/systemd/system/crm-mail.service', 'Artifact', padre=so_v)
-    props = ea.elemento(dep, '/etc/crm-mail/crm-mail.properties', 'Artifact', padre=so_v)
-    for e, x, y, w, h, s in [(pc, 30, 220, 260, 160, 9), (cli, 50, 280, 220, 80, 1),
-                             (fac, 380, 30, 470, 480, 9), (so_f, 400, 80, 430, 410, 8),
-                             (dove, 420, 130, 390, 70, 2), (pg, 420, 215, 390, 130, 2), (bd, 560, 265, 230, 50, 1),
-                             (smail, 420, 360, 390, 110, 2), (buzon, 600, 405, 190, 45, 1),
-                             (goo, 380, 590, 470, 140, 9), (gweb, 400, 645, 430, 70, 1),
-                             (vps, 950, 60, 400, 420, 9), (so_v, 970, 110, 360, 350, 8), (jvm, 990, 160, 320, 100, 2), (jar, 1110, 200, 180, 45, 1),
-                             (unidad, 990, 290, 320, 50, 1), (props, 990, 370, 320, 50, 1)]:
-        ea.poner(d, e, x, y, w, h, s)
+    jar = ea.elemento(dep, '/opt/crm-mail/crm-mail.jar', 'Artifact', 'executable', padre=jvm)
+    capas_jar = [ea.elemento(dep, n, 'Component', padre=jar) for n in ('Presentación', 'Aplicación', 'Dominio', 'Persistencia')]
+    for e, x, y, w, h, s_ in [(pc, 30, 450, 260, 160, 9), (cli, 50, 510, 220, 80, 1),
+                              (fac, 380, 30, 520, 530, 9), (so_f, 400, 80, 480, 460, 8),
+                              (pg, 420, 120, 440, 180, 2), (bd, 440, 170, 400, 115, 2), (tablas_c, 460, 215, 175, 55, 1), (bitac_c, 650, 215, 175, 55, 1),
+                              (dove, 620, 320, 240, 70, 2), (smail, 620, 440, 240, 80, 2), (buzon, 420, 390, 170, 50, 1),
+                              (vps, 980, 30, 600, 530, 9), (so_v, 1000, 80, 560, 460, 8),
+                              (unidad, 1020, 110, 260, 50, 1), (props, 1300, 110, 240, 50, 1),
+                              (jvm, 1020, 300, 520, 230, 3), (jar, 1040, 350, 480, 165, 2),
+                              (capas_jar[0], 1060, 392, 210, 52, 1), (capas_jar[1], 1290, 392, 210, 52, 1),
+                              (capas_jar[2], 1060, 455, 210, 52, 1), (capas_jar[3], 1290, 455, 210, 52, 1),
+                              (goo, 380, 650, 1200, 150, 9), (gweb, 420, 705, 440, 70, 1), (gsmtp, 1100, 705, 440, 70, 1)]:
+        ea.poner(d, e, x, y, w, h, s_)
     for a, b, t_ in [(cli, gweb, 'HTTPS 443'), (gweb, smail, 'SMTP 25'), (jvm, dove, 'POP3 110'),
-                     (jvm, pg, 'JDBC TCP 5432'), (jvm, gweb, 'SMTP 587 STARTTLS')]:
+                     (jvm, pg, 'JDBC TCP 5432'), (jvm, gsmtp, 'SMTP 587 STARTTLS')]:
         ea.conector(a, b, 'CommunicationPath', t_, dirigido=True)
+    for a, b, t_ in [(unidad, jar, 'ExecStart'), (jar, props, 'lee'), (smail, buzon, 'entrega'), (dove, buzon, 'lee')]:
+        ea.conector(a, b, 'Dependency', t_, dirigido=True)
     ea.exportar(d, 'despliegue.png')
 
     # ---------------------------------------------------------------- Diseño: capas
     cap = ea.paquete(dis, 'Capas')
     d = ea.diagrama(cap, 'Diagrama de capas', 'Package')
-    capas = [('Capa de Presentación', ['Lector de Correos POP3 (Pop3Client)', 'Emisor SMTP (SmtpSender)', 'Correo (MIME)']),
-             ('Capa de Aplicación', ['CommandProcessor y procesadores por rol']),
-             ('Capa de Dominio', ['usuarios', 'captacion', 'asignacion', 'embudo', 'perdidas', 'conversion', 'seguimiento', 'reportes']),
-             ('Capa de Persistencia', ['DatabaseService (PostgreSQL)'])]
+    capas = [('Capa de Presentación', 20, 270), ('Capa de Aplicación', 310, 150), ('Capa de Dominio', 480, 150), ('Capa de Persistencia', 650, 150)]
+    for nombre, y, h in capas:
+        ea.poner(d, ea.elemento(cap, nombre, 'Boundary'), 30, y, 1180, h, seq=50)
     pk = {}
-    for i, (nombre, hijos) in enumerate(capas):
-        b = ea.elemento(cap, nombre, 'Boundary')
-        ea.poner(d, b, 30, 20 + i * 170, 1180, 150, seq=50)
-        ancho = 1100 // max(len(hijos), 1)
-        for j, h in enumerate(hijos):
-            p = ea.paquete(cap, h); pk[h] = p
-            w = min(ancho - 20, 260)
-            x = 30 + (1180 - len(hijos) * (w + 20)) // 2 + j * (w + 20)
-            ea.poner(d, p, x, 60 + i * 170, w, 80, seq=1)
-    for a in ['Lector de Correos POP3 (Pop3Client)', 'Emisor SMTP (SmtpSender)', 'Correo (MIME)']:
-        ea.conector(pk['CommandProcessor y procesadores por rol'] if a == 'Emisor SMTP (SmtpSender)' else pk[a],
-                    pk[a] if a == 'Emisor SMTP (SmtpSender)' else pk['CommandProcessor y procesadores por rol'], 'Dependency', dirigido=True)
-    for h in capas[2][1]:
-        ea.conector(pk['CommandProcessor y procesadores por rol'], pk[h], 'Dependency', dirigido=True)
-        ea.conector(pk[h], pk['DatabaseService (PostgreSQL)'], 'Dependency', dirigido=True)
+    W_ = 260
+    sitio = {'App (servicio crm-mail)': (490, 60), 'Lector de Correos POP3 (Pop3Client)': (60, 180), 'Correo (MIME)': (360, 180),
+             'Emisor SMTP (SmtpSender)': (700, 180), 'CommandProcessor y procesadores por rol': (490, 350),
+             'DatabaseService (PostgreSQL)': (490, 690)}
+    dominio = ['usuarios', 'captacion', 'asignacion', 'embudo', 'perdidas', 'conversion', 'seguimiento', 'reportes']
+    for j, h in enumerate(dominio):
+        sitio[h] = (45 + j * 145, 520)
+    CPR = 'CommandProcessor y procesadores por rol'
+    for h, (x, y) in sitio.items():
+        pk[h] = ea.paquete(cap, h)
+        ea.poner(d, pk[h], x - (20 if h == CPR else 0), y, 125 if h in dominio else (170 if h == 'Correo (MIME)' else (300 if h == CPR else W_)), 80, seq=1)
+    APP, CPR, DBS = 'App (servicio crm-mail)', 'CommandProcessor y procesadores por rol', 'DatabaseService (PostgreSQL)'
+    for b in ['Lector de Correos POP3 (Pop3Client)', 'Correo (MIME)', 'Emisor SMTP (SmtpSender)', CPR]:
+        ea.conector(pk[APP], pk[b], 'Dependency', dirigido=True)
+    ea.conector(pk[CPR], pk[DBS], 'Dependency', dirigido=True)
+    for h in dominio:
+        ea.conector(pk[CPR], pk[h], 'Dependency', dirigido=True)
+        ea.conector(pk[h], pk[DBS], 'Dependency', dirigido=True)
     ea.exportar(d, 'capas.png')
 
     # ---------------------------------------------------------------- Diseño: clases (código)
@@ -394,61 +509,154 @@ def construir(ea):
 
     # ---------------------------------------------------------------- Diseño: secuencia por CU
     seq = ea.paquete(dis, 'Secuencia')
+    ANCHO = 150   # separación entre líneas de vida
+    X0 = 210      # margen izquierdo libre para la etiqueta alt y la guarda de cada operando
+    ROBUSTEZ = {'Pop3Client': 'boundary', 'SmtpSender': 'boundary', 'DatabaseService': 'entity'}
     for k in CU:
-        d = ea.diagrama(seq, f'{k}: {CORTO[k]}', 'Sequence')
-        acts = list(dict.fromkeys(o[0] for o in OPS[k]))
-        vidas = {a: ea.elemento(seq, a, 'Actor') for a in acts}
-        nombres = ['App', 'CommandProcessor', 'CommandParser', 'RolCommandProcessor', SERVICIO[k], 'DatabaseService']
-        obj = {n: ea.elemento(seq, f':{n}', 'Object') for n in nombres}
-        cols = list(vidas.values()) + [obj[n] for n in nombres]
-        filas = sum(8 for _ in OPS[k])
-        alto = 120 + filas * 35.2 + 60
-        for i, e in enumerate(cols):
-            ea.poner(d, e, 30 + i * 140, 40, 115 if i >= len(acts) else 60, int(alto))
-        n = 0
-        tam = []
-        for j, (a, cmd, met, dbm) in enumerate(OPS[k], 1):
-            pasos = [(vidas[a], obj['App'], f'{j}. {cmd}', False), (obj['App'], obj['CommandProcessor'], f'{j}.1 procesarEmail', False),
-                     (obj['CommandProcessor'], obj['CommandParser'], f'{j}.2 parse', False),
-                     (obj['CommandProcessor'], obj['RolCommandProcessor'], f'{j}.3 procesar', False),
-                     (obj['RolCommandProcessor'], obj[SERVICIO[k]], f'{j}.4 {met[:-2]}', False),
-                     (obj[SERVICIO[k]], obj['DatabaseService'], f'{j}.5 {dbm[:-2]}', False),
-                     (obj['DatabaseService'], obj[SERVICIO[k]], '', True),
-                              (obj['App'], vidas[a], f'{j}.6 enviar (correo HTML)', False)]
-            for o, dst, txt, ret in pasos:
-                n += 1; ea.mensaje_seq(d, o, dst, txt, n, ret)
-            tam.append(len(pasos) * 35.2)
-        fr = ea.elemento(seq, 'comando recibido', 'InteractionFragment'); fr.Subtype = 0; fr.Update()
-        # La API de EA 15 falla con más de dos operandos: se crean dos y se escribe la lista completa en t_xref.
-        for _ in range(2):
-            part = fr.Partitions.AddNew('x', ''); part.Size = 100
-        fr.Update()
-        pars = ''.join(f"@PAR;Name={cmd.split('[')[0]};Size={int(t)};GUID={{{str(uuid.uuid4()).upper()}}};@ENDPAR;"
-                       for (a, cmd, *_), t in reversed(list(zip(OPS[k], tam))))
-        ea.r.Execute(f"UPDATE t_xref SET Description='{pars}' WHERE Client='{fr.ElementGUID}' AND Name='Partitions'")
-        ea.poner(d, fr, 15, 100, len(cols) * 140 + 10, int(sum(tam)) + 35, seq=60)
-        ea.exportar(d, f'sd-{k.lower()}.png')
+        partes = [OPS[k][i:i + 2] for i in range(0, len(OPS[k]), 2)]   # 2 comandos por figura: legible impreso
+        for p_, ops in enumerate(partes, 1):
+            nombre_d = f'{k}: {CORTO[k]}' + (f' ({p_}/{len(partes)})' if len(partes) > 1 else '')
+            d = ea.diagrama(seq, nombre_d, 'Sequence')
+            d.StyleEx = 'SuppressBrackets=1;'; d.Update()   # los paréntesis los ponen los argumentos reales
+            acts = list(dict.fromkeys(o[0] for o in ops))
+            vidas = {a: ea.elemento(seq, a, 'Actor') for a in acts}
+            sv = SERVICIO[k]
+            nombres = (['Pop3Client', 'SmtpSender', 'App', 'CommandProcessor', 'CommandParser']
+                       + (['UsuarioService'] if sv != 'UsuarioService' else []) + ['RolCommandProcessor', sv, 'DatabaseService'])
+            # Cada línea de vida lleva el nombre de la variable o del campo que la referencia en el código.
+            instancia = {'Pop3Client': 'pop', 'SmtpSender': 'smtp', 'App': '', 'CommandProcessor': 'procesador', 'CommandParser': 'parser',
+                         'UsuarioService': 'usuarios', 'RolCommandProcessor': '', sv: CAMPO[sv], 'DatabaseService': 'db'}
+            obj = {n: ea.elemento(seq, f'{instancia[n]}:{n}', 'Object', ROBUSTEZ.get(n, 'control')) for n in nombres}
+            cols = list(vidas.values()) + [obj[n] for n in nombres]
+            alto = 120 + len(ops) * 19 * 33 + 40
+            for i, e in enumerate(cols):
+                w = 60 if i < len(acts) else max(140, 8 * len(e.Name.split(':')[-1]))   # ancho del nombre de la clase
+                y = 50 if e.Stereotype == 'entity' else 40               # el icono entity es más bajo: se alinea el nombre
+                ea.poner(d, e, X0 + i * ANCHO + 70 - w // 2, y, w, int(alto))
+            n = 0
+            tam = []
+            for j, (a, cmd, met, dbm) in enumerate(ops, (p_ - 1) * 2 + 1):
+                sv = SERVICIO[k]
+                pasos = [(vidas[a], obj['Pop3Client'], f'{j}. {cmd}', 'signal', ''),
+                         (obj['App'], obj['Pop3Client'], f'{j}.1 retr', 'call', 'n'),
+                         (obj['Pop3Client'], obj['App'], 'byte[]', 'return', ''),
+                         (obj['App'], obj['CommandProcessor'], f'{j}.2 procesarEmail', 'call', firma('CommandProcessor', 'procesarEmail')),
+                         (obj['CommandProcessor'], obj['CommandParser'], f'{j}.3 parse', 'call', firma('CommandParser', 'parse')),
+                         (obj['CommandParser'], obj['CommandProcessor'], 'Command', 'return', ''),
+                         # identidad del remitente: CommandProcessor busca al usuario por su correo antes de delegar al rol
+                         (obj['CommandProcessor'], obj['UsuarioService'], f'{j}.4 buscarPorCorreo', 'call', firma('UsuarioService', 'buscarPorCorreo')),
+                         (obj['UsuarioService'], obj['CommandProcessor'], 'Usuario', 'return', ''),
+                         (obj['CommandProcessor'], obj['RolCommandProcessor'], f'{j}.5 procesar', 'call', firma('RolCommandProcessor', 'procesar')),
+                         (obj['RolCommandProcessor'], obj[sv], f'{j}.6 {met[:-2]}', 'call', firma(sv, met[:-2]) or ' '),
+                         (obj[sv], obj['DatabaseService'], f'{j}.7 {dbm[:-2]}', 'call', firma('DatabaseService', dbm[:-2]) or ' '),
+                         (obj['DatabaseService'], obj[sv], tipo_bd(sv, met, dbm), 'return', ''),
+                         (obj[sv], obj['RolCommandProcessor'], retorno(sv, met[:-2]), 'return', ''),
+                         (obj['RolCommandProcessor'], obj['CommandProcessor'], 'Respuesta', 'return', ''),
+                         # todo comando queda en la bitácora (log_comando), también los denegados
+                         (obj['CommandProcessor'], obj['CommandProcessor'], f'{j}.8 bitacora', 'call', firma('CommandProcessor', 'bitacora')),
+                         (obj['CommandProcessor'], obj['App'], 'Respuesta', 'return', ''),
+                         (obj['App'], obj['SmtpSender'], f'{j}.9 enviar', 'call', firma('SmtpSender', 'enviar')),
+                         (obj['SmtpSender'], vidas[a], f'{j}.10 respuesta HTML', 'signal', '')]
+                for o, dst, txt, tipo, args in pasos:
+                    n += 1; ea.mensaje_seq(d, o, dst, txt, n, tipo, args)
+                tam.append(len(pasos) * 35.2)
+            if len(ops) == 1:   # un solo comando: sin fragmento alt (un alt de un operando no tiene alternativas)
+                ea.exportar(d, f'sd-{k.lower()}' + (f'-{p_}' if len(partes) > 1 else '') + '.png')
+                continue
+            fr = ea.elemento(seq, 'comando recibido', 'InteractionFragment'); fr.Subtype = 0; fr.Update()
+            # La API de EA 15 falla con más de dos operandos: se crean dos y se escribe la lista completa en t_xref.
+            for _ in range(2):
+                part = fr.Partitions.AddNew('x', ''); part.Size = 100
+            fr.Update()
+            pars = ''.join(f"@PAR;Name={cmd.split('[')[0]};Size={int(t) - 14};GUID={{{str(uuid.uuid4()).upper()}}};@ENDPAR;"
+                           for (a, cmd, *_), t in reversed(list(zip(ops, tam))))
+            ea.r.Execute(f"UPDATE t_xref SET Description='{pars}' WHERE Client='{fr.ElementGUID}' AND Name='Partitions'")
+            ea.poner(d, fr, 15, 120, X0 + (len(cols) - 1) * ANCHO + 150, int(sum(tam)) + 35, seq=60)
+            ea.exportar(d, f'sd-{k.lower()}' + (f'-{p_}' if len(partes) > 1 else '') + '.png')
 
-    # ---------------------------------------------------------------- Diseño: procedimental por CU (clases)
-    comunes = ['Command', 'CommandParser', 'CommandProcessor', 'RolCommandProcessor', 'ResponseFormatter', 'DatabaseService']
-    usos = [('CommandParser', 'Command'), ('CommandProcessor', 'CommandParser'), ('CommandProcessor', 'RolCommandProcessor'),
-            ('CommandProcessor', 'ResponseFormatter'), ('RolCommandProcessor', 'ResponseFormatter'), ('RolCommandProcessor', 'Command')]
+    # ---------------------------------------------------------------- Diseño: procedimental por CU (como el P1 aprobado)
+    # Un diagrama de clases por CU con CommandProcessor, CommandParser, Command, ResponseFormatter, el procesador de cada rol
+    # del CU, los servicios que intervienen, las entidades y DatabaseService; todas con sus miembros y unidas por dependencias.
+    # Única diferencia con el aprobado: aquí procesar() está en RolCommandProcessor y cada rol la hereda (extends), y se dibuja.
     hechos = set()
 
-    def uso(a, b):
+    def dep(a, b):
         if (a, b) not in hechos:
             hechos.add((a, b)); ea.conector(cls[a], cls[b], 'Dependency', dirigido=True)
 
-    for a, b in usos: uso(a, b)
+    for a, b in [('CommandProcessor', 'CommandParser'), ('CommandProcessor', 'Command'), ('CommandProcessor', 'ResponseFormatter'),
+                 ('CommandProcessor', 'RolCommandProcessor'), ('CommandProcessor', 'UsuarioService'), ('CommandProcessor', 'SeguimientoService'),
+                 ('CommandParser', 'Command'), ('RolCommandProcessor', 'Command'), ('RolCommandProcessor', 'ResponseFormatter'),
+                 ('UsuarioService', 'Usuario'), ('Usuario', 'Rol'), ('Interes', 'Prospecto'), ('Alta', 'Interes'),
+                 ('Asignacion', 'Interes'), ('Asignacion', 'Usuario'), ('Historial', 'Interes')]:
+        dep(a, b)
     for k in CU:
+        dep('RolCommandProcessor', SERVICIO[k]); dep(SERVICIO[k], 'DatabaseService')
+        for e in ENTIDADES_CU[k]: dep(SERVICIO[k], e)
+    dep('UsuarioService', 'DatabaseService'); dep('SeguimientoService', 'DatabaseService')
+
+    def alto(nombre):
+        e = cls[nombre]; e.Attributes.Refresh(); e.Methods.Refresh()   # EA no actualiza Count sin Refresh
+        n = e.Attributes.Count + e.Methods.Count
+        return 44 + 14 * n + (10 if e.Attributes.Count and e.Methods.Count else 0) + (16 if e.Stereotype else 0)   # medido en el PNG
+
+    def ancho(nombre):
+        """Ancho justo para el miembro más largo (medido: ~6,3 unidades por carácter en Calibri 8)."""
+        e = cls[nombre]; e.Attributes.Refresh(); e.Methods.Refresh()   # EA no carga las colecciones sin Refresh
+        textos = [e.Name] + [f'{a.Name}: {a.Type}' for a in e.Attributes]
+        textos += [f'{m.Name}({", ".join(pa.Type for pa in m.Parameters)}): {m.ReturnType}' for m in e.Methods]
+        return int(50 + 6.3 * max(len(t) for t in textos))
+
+    for k in CU:
+        d = ea.diagrama(cls_pkg, f'{k}_' + re.sub(r'\W+', '_', CORTO[k]).strip('_'), 'Logical')
+        # Grilla fija como el P1 aprobado (clases relacionadas lado a lado, flechas cortas y rectas):
+        #   fila A:  CommandParser | CommandProcessor  | UsuarioService | DatabaseService
+        #   fila B:  Command       | RolCommandProcessor | servicio del CU | entidades (Usuario arriba)
+        #   fila C:  ResponseFormatter
+        #   fila D:  procesadores de cada rol, bajo RolCommandProcessor (la herencia sube sin cruzar nada)
+        sv = SERVICIO[k]
+        ORDEN = {'CU1': ['Usuario', 'Rol'], 'CU2': ['Usuario', 'Oferta', 'Alta', 'Interes', 'Prospecto'],
+                 'CU3': ['Usuario', 'Interes', 'Asignacion'], 'CU4': ['Usuario', 'Interes'], 'CU5': ['Usuario', 'MotivoPerdida', 'Interes'],
+                 'CU6': ['Usuario', 'Matricula', 'Requisito', 'Interes'], 'CU7': ['Usuario', 'Interaccion', 'Recordatorio', 'Historial'],
+                 'CU8': ['Usuario']}
+        ents = ORDEN[k]
+        assert set(ents) == set(ENTIDADES_CU[k] + ['Usuario'] + (['Rol'] if k == 'CU1' else [])), k
         roles = [PROC_ROL[a] for a in actores(k)]
-        for r_ in roles: pass
-        uso('RolCommandProcessor', SERVICIO[k]); uso(SERVICIO[k], 'DatabaseService')
-        for e in ENTIDADES_CU[k]: uso(SERVICIO[k], e)
-        d = ea.diagrama(cls_pkg, f'Diseño procedimental {k}: {CORTO[k]}', 'Logical')
-        for nombre in comunes + roles + [SERVICIO[k]] + ENTIDADES_CU[k]:
-            ea.poner(d, cls[nombre], 10, 10, 200, 120)
-        ea.ordenar(d)
+        filaB2 = [sv] if sv != 'UsuarioService' else []
+        G = 90                                                   # separación entre columnas y filas
+        w0 = max(ancho(n) for n in ('CommandParser', 'Command', 'ResponseFormatter'))
+        w1 = max(ancho(n) for n in ('CommandProcessor', 'RolCommandProcessor'))
+        w2 = max(ancho(n) for n in ['UsuarioService'] + filaB2)
+        w3 = max(ancho(n) for n in ['DatabaseService'] + ents)
+        x0, x1 = 30, 30 + w0 + G
+        x2 = x1 + w1 + G; x3 = x2 + w2 + G
+        yA = 30
+        yB = yA + max(alto(n) for n in ('CommandParser', 'CommandProcessor', 'UsuarioService', 'DatabaseService')) + G
+        yC = yB + alto('Command') + G
+        sitio = {'CommandParser': (x0, yA), 'CommandProcessor': (x1, yA), 'UsuarioService': (x2, yA), 'DatabaseService': (x3, yA),
+                 'Command': (x0, yB), 'RolCommandProcessor': (x1, yB), 'ResponseFormatter': (x0, yC)}
+        if filaB2: sitio[sv] = (x2, yB)
+        # Usuario (y Rol) bajo DatabaseService, junto a UsuarioService; las entidades del CU en una fila bajo su servicio,
+        # en orden de dependencia (cada una al lado de la que usa): las flechas bajan o van de lado sin atravesar clases.
+        y = yB
+        for e in [e for e in ents if e in ('Usuario', 'Rol')]:
+            sitio[e] = (x3, y); y += alto(e) + 50
+        fila = [e for e in ents if e not in ('Usuario', 'Rol')]
+        yE = yB + max([alto(n) for n in filaB2] + [0]) + G
+        if any(sitio[e][1] + alto(e) > yE - 20 and True for e in ents if e in sitio):   # que la fila pase bajo Usuario
+            yE = max(yE, max(sitio[e][1] + alto(e) for e in ents if e in sitio) + 50) if len(fila) > 2 else yE
+        xe = x2
+        for e in fila:
+            sitio[e] = (xe, yE); xe += ancho(e) + 50
+        wr = max(ancho(r) for r in roles)
+        ancho_fila = len(roles) * (wr + 30) - 30
+        xr = max(30, x1 + w1 // 2 - ancho_fila // 2)          # centrada bajo RolCommandProcessor
+        # justo debajo de lo que tenga encima (solo las cajas que comparten franja horizontal con la fila)
+        fondo = max(y_ + alto(n) for n, (x_, y_) in sitio.items() if x_ < xr + ancho_fila and x_ + ancho(n) > xr)
+        for i, r_ in enumerate(roles):
+            sitio[r_] = (xr + i * (wr + 30), fondo + G)
+        for nombre, (x, y_) in sitio.items():
+            ea.poner(d, cls[nombre], x, y_, ancho(nombre), alto(nombre))
         ea.exportar(d, f'cls-{k.lower()}.png')
 
     # ---------------------------------------------------------------- Diseño: modelo de datos
@@ -466,9 +674,12 @@ def construir(ea):
             fk = re.search(r'REFERENCES (\w+)', resto)
             if fk: fks.append((nombre, fk.group(1), 'NOT NULL' in resto, col_))
         e.Update(); tablas[nombre] = e
-    for nombre, (x, y) in {'oferta': (280, 30), 'usuario': (760, 30), 'log_comando': (1180, 30),
-                           'prospecto': (30, 330), 'interes': (520, 330), 'motivo_perdida': (1000, 360),
-                           'matricula': (30, 660), 'movimiento': (350, 660), 'interaccion': (670, 660), 'recordatorio': (990, 660)}.items():
+    # usuario arriba e interes abajo; las tablas que referencian a ambos van en la fila del medio (sin cruces),
+    # con un hueco central para la asociación directa interes.vendedor_id -> usuario.
+    for nombre, (x, y) in {'usuario': (715, 30), 'log_comando': (1150, 30),
+                           'prospecto': (30, 330), 'oferta': (290, 330), 'matricula': (560, 330),
+                           'movimiento': (900, 330), 'interaccion': (1150, 330), 'recordatorio': (1400, 330),
+                           'interes': (715, 660), 'motivo_perdida': (1150, 660)}.items():
         ea.poner(d, tablas[nombre], x, y, 220, 175)
     unicos = {('matricula', 'interes')}
     for hijo, padre, obligatorio, col_ in fks:
@@ -477,31 +688,62 @@ def construir(ea):
     ea.exportar(d, 'clases-datos.png')
 
     # ---------------------------------------------------------------- Implementación: componentes
+    # Capas como componentes contenedores (como el P2 aprobado), interfaces provistas/requeridas con conectores de
+    # ensamblaje hacia los servicios externos y el artefacto ejecutable que manifiesta las capas.
     d = ea.diagrama(imp, 'Diagrama de componentes', 'Component')
-    jarc = ea.elemento(imp, 'crm-mail.jar', 'Component', 'executable')
-    capas_c = {n: ea.elemento(imp, n, 'Component', 'subsystem', padre=jarc) for n in ('Presentación', 'Aplicación', 'Dominio', 'Persistencia')}
-    ipop = ea.elemento(imp, 'POP3 (RFC 1939)', 'Interface')
-    ismtp = ea.elemento(imp, 'SMTP (RFC 5321) + STARTTLS', 'Interface')
-    ijdbc = ea.elemento(imp, 'JDBC', 'Interface')
-    dov = ea.elemento(imp, 'Dovecot mail.tecnoweb.org.bo:110', 'Component', 'system extern')
-    gm = ea.elemento(imp, 'Gmail smtp.gmail.com:587', 'Component', 'system extern')
-    pgc = ea.elemento(imp, 'PostgreSQL 18.6 db.tecnoweb.org.bo:5432', 'Component', 'Database')
-    angus = ea.elemento(imp, 'Angus Mail 2.0.5 (Jakarta Mail 2.1.5)', 'Component', 'library')
-    pgj = ea.elemento(imp, 'PostgreSQL JDBC 42.7.13', 'Component', 'library')
-    for e, x, y, w, h, s in [(jarc, 40, 40, 520, 520, 9), (capas_c['Presentación'], 120, 90, 360, 70, 1), (capas_c['Aplicación'], 120, 200, 360, 70, 1),
-                             (capas_c['Dominio'], 120, 310, 360, 70, 1), (capas_c['Persistencia'], 120, 420, 360, 70, 1),
-                             (ipop, 640, 50, 170, 70, 1), (ismtp, 640, 170, 170, 70, 1), (ijdbc, 640, 420, 170, 70, 1),
-                             (dov, 860, 40, 260, 80, 1), (gm, 860, 160, 260, 80, 1), (pgc, 860, 410, 260, 80, 1),
-                             (angus, 620, 290, 230, 60, 1), (pgj, 620, 560, 230, 60, 1)]:
-        ea.poner(d, e, x, y, w, h, s)
-    for a, b in [('Presentación', 'Aplicación'), ('Aplicación', 'Dominio'), ('Dominio', 'Persistencia')]:
-        ea.conector(capas_c[a], capas_c[b], 'Dependency', dirigido=True)
-    for prov, itf in [(dov, ipop), (gm, ismtp), (pgc, ijdbc)]:
-        ea.conector(prov, itf, 'Realisation', dirigido=True)
-    for cli_, itf in [(capas_c['Presentación'], ipop), (capas_c['Presentación'], ismtp), (capas_c['Persistencia'], ijdbc)]:
-        ea.conector(cli_, itf, 'Usage', dirigido=True)
-    ea.conector(capas_c['Presentación'], angus, 'Usage', dirigido=True)
-    ea.conector(capas_c['Persistencia'], pgj, 'Usage', dirigido=True)
+
+    def comp(nombre, st='', padre=None):
+        return ea.elemento(imp, nombre, 'Component', st, padre=padre)
+
+    c_sis = comp('Sistema CRM vía e-mail', 'subsystem')
+    c_pre, c_apl, c_dom, c_per = (comp(n, padre=c_sis) for n in ('Capa de Presentación', 'Capa de Aplicación', 'Capa de Dominio', 'Capa de Persistencia'))
+    app_c = comp('App (bucle del servicio)', padre=c_pre)
+    lector = comp('Lector de correo (Pop3Client, Correo)', padre=c_pre)
+    emisor = comp('Emisor SMTP (SmtpSender)', padre=c_pre)
+    proc = comp('Procesador de comandos (CommandProcessor, CommandParser)', padre=c_apl)
+    porrol = comp('Procesadores por rol (RolCommandProcessor y 4 subclases)', padre=c_apl)
+    fmt_c = comp('Formateador (ResponseFormatter)', padre=c_apl)
+    servs_c = [comp(SERVICIO[k], 'service', padre=c_dom) for k in CU]
+    dbs = comp('DatabaseService', padre=c_per)
+    angus = comp('Angus Mail 2.0.5', 'library')
+    pgj = comp('PostgreSQL JDBC 42.7.13', 'library')
+    dov = comp('Dovecot mail.tecnoweb.org.bo', 'system extern')
+    gm = comp('Gmail smtp.gmail.com', 'system extern')
+    pgc = comp('PostgreSQL 18.6 db.tecnoweb.org.bo', 'Database')
+    jar_a = ea.elemento(imp, 'crm-mail.jar', 'Artifact', 'executable')
+    i_pop = ea.elemento(imp, 'POP3 (RFC 1939)', 'Interface')
+    i_mail = ea.elemento(imp, 'Jakarta Mail API', 'Interface')
+    i_smtp = ea.elemento(imp, 'SMTP (RFC 5321) + STARTTLS', 'Interface')
+    i_jdbc = ea.elemento(imp, 'JDBC (java.sql)', 'Interface')
+    i_pgp = ea.elemento(imp, 'Protocolo PostgreSQL v3', 'Interface')
+    # interfaces expuestas: (componente, nombre, tipo, clasificador, x, y)
+    expuestas = [(lector, ' ', 'RequiredInterface', i_pop, 932, 82), (dov, 'POP3 :110', 'ProvidedInterface', i_pop, 1452, 82),
+                 (emisor, ' ', 'RequiredInterface', i_mail, 932, 192), (angus, 'Jakarta Mail API', 'ProvidedInterface', i_mail, 1082, 192),
+                 (angus, ' ', 'RequiredInterface', i_smtp, 1282, 192), (gm, 'SMTP :587', 'ProvidedInterface', i_smtp, 1452, 192),
+                 (dbs, ' ', 'RequiredInterface', i_jdbc, 732, 862), (pgj, 'JDBC', 'ProvidedInterface', i_jdbc, 1082, 862),
+                 (pgj, ' ', 'RequiredInterface', i_pgp, 1282, 862), (pgc, 'PostgreSQL v3 :5432', 'ProvidedInterface', i_pgp, 1452, 862)]
+    for e, x, y, w, h, s_ in [(c_sis, 255, -50, 770, 990, 10),
+                              (c_pre, 280, 20, 720, 250, 9), (app_c, 310, 90, 190, 80, 1), (lector, 640, 55, 300, 70, 1), (emisor, 640, 165, 300, 70, 1),
+                              (c_apl, 280, 300, 720, 230, 9), (proc, 300, 355, 240, 70, 1), (porrol, 760, 355, 225, 70, 1), (fmt_c, 560, 455, 200, 60, 1),
+                              (c_dom, 280, 560, 720, 200, 9), (c_per, 280, 800, 720, 120, 9), (dbs, 540, 835, 200, 60, 1),
+                              (angus, 1090, 165, 200, 70, 1), (pgj, 1090, 830, 200, 70, 1),
+                              (dov, 1460, 45, 260, 80, 1), (gm, 1460, 155, 260, 80, 1), (pgc, 1460, 820, 260, 90, 1),
+                              (jar_a, 20, 430, 190, 70, 1)]:
+        ea.poner(d, e, x, y + 60, w, h, s_)   # +60: cabecera del subsistema contenedor
+    for i, sv in enumerate(servs_c):
+        ea.poner(d, sv, 300 + (i % 4) * 172, 665 + (i // 4) * 75, 160, 60, 1)
+    pts = {}
+    for e, n_, t_, cl, x, y in expuestas:
+        pts[(e.ElementID, t_)] = ie = ea.interfaz(e, n_, t_, cl)
+        ea.poner(d, ie, x, y + 60, 16, 16, 0)
+    for ra, pa, nombre in [(lector, dov, 'sockets TCP 110'), (emisor, angus, ''), (angus, gm, 'STARTTLS'), (dbs, pgj, ''), (pgj, pgc, 'TCP')]:
+        c = pts[(ra.ElementID, 'RequiredInterface')].Connectors.AddNew(nombre, 'Assembly')
+        c.SupplierID = pts[(pa.ElementID, 'ProvidedInterface')].ElementID; c.Update()
+    for a_, b_, t_ in [(app_c, lector, 'retr()'), (app_c, emisor, 'enviar()'), (app_c, proc, 'procesarEmail()'), (app_c, fmt_c, 'html()'),
+                       (proc, porrol, 'procesar()'), (proc, fmt_c, ''), (porrol, fmt_c, ''), (porrol, c_dom, 'invoca el servicio del CU'),
+                       (c_dom, dbs, 'enTransaccion(), lista(), filas()')]:
+        ea.conector(a_, b_, 'Dependency', t_, dirigido=True)
+    ea.conector(jar_a, c_sis, 'Manifest', dirigido=True)
     ea.exportar(d, 'componentes.png')
 
 

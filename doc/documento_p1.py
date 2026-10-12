@@ -35,14 +35,20 @@ def rojo(texto):
     return par
 
 
-def fig(archivo, titulo, ancho=16.0, nota=None, horizontal=False):
-    """Figura de EA. horizontal=True: va sola en una página apaisada (diagramas anchos, legibles al imprimir)."""
+def fig(archivo, titulo, ancho=16.0, nota=None, horizontal=False, titulos=()):
+    """Figura de EA. horizontal=True: va sola en una página apaisada (diagramas anchos, legibles al imprimir).
+    titulos: [(texto, nivel)] que encabezan la página apaisada, para que no queden huérfanos en la página anterior."""
     ruta = DIA / archivo
+    if horizontal and ruta.exists():
+        import pymupdf
+        px = pymupdf.Pixmap(str(ruta))
+        if px.width / px.height < 1.3: horizontal = False; ancho = 16.0   # más alta que ancha: rinde más en vertical
     if horizontal: d.orientacion(True); ancho = 22.9
+    for t, nivel in titulos: d.h(t, nivel)
     if ruta.exists():
         import pymupdf
         px = pymupdf.Pixmap(str(ruta))
-        alto_max = 14.0 if horizontal else 20.5   # cm disponibles bajo el rótulo
+        alto_max = (15.0 if horizontal else 20.5) - 1.2 * len(titulos)   # cm disponibles bajo el rótulo
         d.figura(ruta, titulo, nota, min(ancho, alto_max * px.width / px.height))
     else:
         d.rotulo('Figura', titulo)
@@ -314,9 +320,18 @@ for i, (p, _, _) in enumerate(PAQ, 1):
 d.h('Encapsulamiento de casos de uso por paquetes', 3)
 for i, (p, _, _) in enumerate(PAQ, 1):
     fig(f'pkg-encap-{i}.png', f'Encapsulamiento del paquete {p}', ancho=13)
-d.h('Diagramas de colaboración', 3)
-for cu, v in CU.items():
-    fig(f'com-{cu.lower()}.png', f'Diagrama de colaboración {cu}: {v[0]}')
+cus = list(CU.items())
+# diagramas anchos y bajos: dos por página apaisada (la primera lleva el título y el texto, y uno solo)
+for i, j in [(0, 1), (1, 3), (3, 5), (5, 7), (7, 8)]:
+    d.orientacion(True)
+    if i == 0:
+        d.h('Diagramas de colaboración', 3)
+        d.p('Cada diagrama sigue el análisis de robustez: el actor envía el comando a la clase de interfaz (boundary, el cliente de '
+            'correo), las clases de control lo validan y lo ejecutan, y las entidades guardan los datos. Los mensajes van numerados por '
+            'comando y con un color por operación; cuando el resultado es una entidad, DatabaseService la construye con su método de().')
+    for cu, v in cus[i:j]:
+        fig(f'com-{cu.lower()}.png', f'Diagrama de colaboración {cu}: {v[0]}', ancho=20.5)
+    d.orientacion(False)
 d.h('Dependencia de paquetes', 3)
 fig('pkg-dependencias.png', 'Dependencia de paquetes', ancho=13)
 
@@ -326,24 +341,40 @@ d.p('El usuario escribe desde su cuenta de correo. El mensaje llega por SMTP al 
     'tecnoweb.org.bo: mail.tecnoweb.org.bo, 139.99.68.169), donde Sendmail lo deja en el buzón grupo05sa. El servicio crm-mail, '
     'que corre en un VPS con Fedora Linux 44, lee ese buzón por POP3 (Dovecot, puerto 110), consulta y actualiza la base '
     'db_grupo05sa en PostgreSQL 18.6 (puerto 5432) y responde por smtp.gmail.com (puerto 587 con STARTTLS), porque el SMTP de la '
-    'facultad rechaza el reenvío a dominios externos con "550 5.7.1 Relaying denied".')
+    'facultad rechaza el reenvío a dominios externos con "550 5.7.1 Relaying denied". En el VPS, la unidad systemd '
+    '/etc/systemd/system/crm-mail.service arranca /opt/crm-mail/crm-mail.jar con la configuración /etc/crm-mail/crm-mail.properties.')
 fig('despliegue.png', 'Diagrama de despliegue', horizontal=True)
+d.p('En el diagrama, cada servidor es un nodo «device» con sus entornos de ejecución («executionEnvironment»: sistema operativo, '
+    'máquina virtual y servicios). Los artefactos llevan su ruta real y su estereotipo («executable» para el .jar, «file» para la '
+    'unidad systemd, la configuración y el buzón) y contienen los componentes que despliegan: las cuatro capas en el .jar y las '
+    'tablas y la bitácora en la base de datos. Las dependencias entre artefactos muestran quién arranca o lee a quién, y cada '
+    'ruta de comunicación lleva su protocolo y puerto. Google, que no administra el grupo, se modela como «External System».')
 d.h('Diseño lógico: capas', 3)
 d.tabla('Capas del sistema', ['Capa', 'Paquete Java', 'Clases'], [
-    ('Presentación', 'bo.uagrm.crm.presentacion', 'Pop3Client (lector POP3 con sockets), SmtpSender (emisor SMTP), Correo (MIME)'),
+    ('Presentación', 'bo.uagrm.crm.presentacion y bo.uagrm.crm', 'App (bucle del servicio: lee, procesa y responde), Pop3Client (lector POP3 con sockets), SmtpSender (emisor SMTP), Correo (MIME)'),
     ('Aplicación', 'bo.uagrm.crm.aplicacion', 'CommandParser, Command, Comando, CommandProcessor, RolCommandProcessor y sus cuatro subclases por rol, ResponseFormatter, Respuesta'),
     ('Dominio', 'bo.uagrm.crm.dominio.<cu>', 'Un paquete por caso de uso con su servicio y sus entidades: usuarios, captacion, asignacion, embudo, perdidas, conversion, seguimiento, reportes'),
     ('Persistencia', 'bo.uagrm.crm.persistencia', 'DatabaseService: conexión JDBC, consultas parametrizadas y transacciones'),
 ], anchos=[2.8, 4.6, 8.6])
 fig('capas.png', 'Diagrama de capas', horizontal=True)
 d.h('Diagramas de secuencia', 3)
+d.p('Cada diagrama tiene un fragmento alt con un operando por comando del caso de uso. Los correos (el comando que llega al '
+    'buzón y la respuesta HTML) son mensajes asíncronos; las demás llamadas son síncronas y llevan los parámetros del código.')
+d.p('Las líneas de vida usan los estereotipos de robustez del análisis (boundary para los clientes POP3 y SMTP, control para '
+    'la lógica y entity para DatabaseService) y se nombran con la variable o el campo que las referencia en el código '
+    '(pop, smtp, procesador, parser, usuarios, db). Cada comando sigue el orden real de CommandProcessor.procesarEmail(): '
+    'analiza el asunto, identifica al remitente con buscarPorCorreo(), delega en el procesador de su rol y registra el '
+    'resultado en la bitácora antes de responder. Cada llamada síncrona tiene su retorno con el tipo que devuelve. Para que se '
+    'lean impresos, los casos de uso con más de dos comandos se dividen en figuras de dos comandos cada una.')
 for cu, v in CU.items():
-    fig(f'sd-{cu.lower()}.png', f'Diagrama de secuencia {cu}: {v[0]}')
-d.h('Diseño procedimental', 3)
-for cu, v in CU.items():
-    fig(f'cls-{cu.lower()}.png', f'Diseño procedimental {cu}: {v[0]}', horizontal=True)
-d.h('Diseño de datos: clases y mapeo', 3)
-fig('clases-datos.png', 'Diagrama de clases del modelo de datos', horizontal=True)
+    partes = sorted(DIA.glob(f'sd-{cu.lower()}-*.png')) or [DIA / f'sd-{cu.lower()}.png']
+    for i, ruta in enumerate(partes, 1):
+        sufijo = f' ({i}/{len(partes)})' if len(partes) > 1 else ''
+        fig(ruta.name, f'Diagrama de secuencia {cu}{sufijo}: {v[0]}')
+for i, (cu, v) in enumerate(CU.items()):
+    fig(f'cls-{cu.lower()}.png', f'Diseño procedimental {cu}: {v[0]}', horizontal=True,
+        titulos=[('Diseño procedimental', 3)] if i == 0 else ())
+fig('clases-datos.png', 'Diagrama de clases del modelo de datos', horizontal=True, titulos=[('Diseño de datos: clases y mapeo', 3)])
 
 
 def tablas_sql():
@@ -367,9 +398,13 @@ d.p('Las clases persistentes se transforman en tablas del esquema crm. Cada tabl
 for nombre, cols in tablas_sql():
     d.tabla(f'Mapeo de la tabla {nombre}', ['Columna', 'Tipo', 'Clave', 'Nulo'], cols, anchos=[4.4, 4.0, 5.2, 2.4], tam=9)
 
-d.h('Flujo de Trabajo: Implementación', 2)
-d.h('Implementación de la arquitectura', 3)
-fig('componentes.png', 'Diagrama de componentes', horizontal=True)
+fig('componentes.png', 'Diagrama de componentes', horizontal=True,
+    titulos=[('Flujo de Trabajo: Implementación', 2), ('Implementación de la arquitectura', 3)])
+d.p('El subsistema agrupa las cuatro capas como componentes contenedores, y el artefacto crm-mail.jar lo manifiesta («manifest»). '
+    'Las dependencias internas llevan la operación que se invoca. Hacia afuera, cada componente expone una interfaz requerida '
+    '(semicírculo) que se une por un conector de ensamblaje con la interfaz provista (círculo) de quien la implementa: el lector '
+    'de correo con el POP3 de Dovecot (puerto 110), el emisor SMTP con la API Jakarta Mail de Angus Mail y esta con el SMTP de '
+    'Gmail (587), y DatabaseService con JDBC de PostgreSQL JDBC y este con el protocolo de PostgreSQL 18.6 (puerto 5432).')
 d.p('El corazón del sistema es la verificación en cuatro pasos de cada correo, en este orden: formato del comando '
     '(CommandParser), identidad del remitente (tabla usuario), permiso del rol (la subclase de RolCommandProcessor) y, recién '
     'entonces, el servicio del caso de uso. Un comando no permitido se responde como "Denegado" sin abrir una conexión a la '
