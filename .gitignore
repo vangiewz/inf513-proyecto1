@@ -6,3 +6,6 @@ doc/*.doc
 doc/*.docx
 doc/*.pdf
 doc/~$*
+doc/diagramas/.teselas/
+__pycache__/
+*.ldb

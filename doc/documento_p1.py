@@ -19,8 +19,6 @@ MATRIZ = list(csv.reader((DOC / 'matriz-acceso.tsv').read_text(encoding='utf-8')
 PENDIENTES = []
 
 # Datos que el grupo aún debe entregar: None = pendiente (se imprime en rojo).
-EMPRESA = None            # nombre de la unidad o empresa real (sección III)
-CORREO_DOCENTE = None     # correo con el que el docente probará el sistema (se registra como administrador)
 GITHUB = 'https://github.com/vangiewz/inf513-proyecto1'
 FECHA = None              # "14 de octubre de 2026" al entregar
 
@@ -76,12 +74,12 @@ d.caratula('Sistema CRM de Captación de Prospectos vía E-mail',
 d.revision('Datos para la Revisión', [
     ('Correo del sistema', 'grupo05sa@tecnoweb.org.bo', True),
     ('Primer comando', 'Enviar un correo a esa dirección con el asunto HELP[]', True),
-    ('Cuenta de prueba', f'Administrador: {dato(CORREO_DOCENTE, "correo del docente")}', False),
+    ('Cuentas de prueba', 'Administrador, coordinador y vendedores registrados por el grupo; se muestran en la defensa', False),
     ('Repositorio', dato(GITHUB, 'URL de GitHub inf513-proyecto1'), False),
     ('Base de datos', 'PostgreSQL 18.6, db.tecnoweb.org.bo:5432, db_grupo05sa, esquema crm', False),
     ('Servicio', 'crm-mail.service en el VPS Fedora 44 (164.68.96.50); revisa el buzón cada 10 segundos', False),
-], 'El remitente se identifica por su correo: el correo de la cuenta de prueba se registra como administrador antes de la defensa. '
-   'Un correo no registrado actúa como visitante (consulta la oferta y registra su interés).')
+], 'El remitente se identifica por su correo: el rol lo da la cuenta registrada (el administrador crea las demás con '
+   'INSERTARUSUARIO). Un correo no registrado actúa como visitante (consulta la oferta y registra su interés).')
 d.indices()
 
 # ---------------------------------------------------------------- I
@@ -131,14 +129,63 @@ d.lista(['El administrador gestiona los usuarios y sus roles, y pone cada progra
          'Cada tarjeta guarda su historial cronológico y los recordatorios llegan por correo a su hora.',
          'Coordinación y administración obtienen reportes del embudo, de vendedores, de pérdidas y por oferta.'])
 d.h('Descripción de la Empresa', 2)
-if EMPRESA:
-    d.p(EMPRESA)
-else:
-    rojo('nombre, misión, visión, historia, imagen corporativa, web y redes de la unidad o empresa real')
+d.p('La **Unidad de Capacitación** de la Facultad de Ingeniería en Ciencias de la Computación y Telecomunicaciones (FICCT) de '
+    'la Universidad Autónoma Gabriel René Moreno (UAGRM) es la dependencia que organiza y vende la oferta de formación continua '
+    'de la facultad. Atiende a estudiantes y egresados de la FICCT y a cualquier persona que quiera actualizarse en tecnología.')
+d.h('Reseña histórica', 3)
+d.p('La unidad nació para ordenar los cursos cortos que la facultad dictaba de forma aislada en sus laboratorios. Con el tiempo '
+    'agrupó esos cursos en programas de cinco módulos que se pueden cursar completos o por módulo. Hoy oferta cinco programas: '
+    'Desarrollo de Aplicaciones Web, Inteligencia Artificial Aplicada, Ciberseguridad, Redes y Administración de Servidores, y '
+    'Análisis de Datos y Business Intelligence. La demanda creció más rápido que su personal, y la captación de interesados se '
+    'sigue haciendo con planillas y mensajes, que es el problema que aborda este proyecto.')
+d.h('Misión', 3)
+d.p('Ofrecer a estudiantes, profesionales y a la comunidad programas de capacitación en tecnologías de la información, '
+    'prácticos y al día con el mercado, con el respaldo académico de la FICCT y a un costo accesible.')
+d.h('Visión', 3)
+d.p('Ser la referencia en formación continua en tecnología de Santa Cruz, reconocida por la calidad de sus programas y por '
+    'acompañar a cada interesado desde la primera consulta hasta su inscripción.')
+d.h('Servicios', 3)
+d.lista(['Programas de cinco módulos con certificación de la facultad.',
+         'Módulos independientes para quien necesita un tema puntual.',
+         'Asesoría a los interesados para elegir programa, horario y forma de pago.'])
+d.h('Imagen corporativa, web y redes', 3)
+d.p('La unidad no tiene un logotipo ni un sitio propios: usa la imagen institucional de la FICCT y de la UAGRM, y difunde su '
+    'oferta por los canales oficiales de la universidad (uagrm.edu.bo) y de la facultad. La inscripción académica la registra el '
+    'sistema académico de la facultad (el SIS del Grupo 06 SA), que también publica la oferta que consume este CRM.')
 d.h('Estructura Organizacional', 2)
-rojo('organigrama de la unidad (niveles administrativo y operativo)')
+d.p('La Unidad de Capacitación es un departamento pequeño de la Facultad de Ingeniería en Ciencias de la Computación y '
+    'Telecomunicaciones (FICCT) que oferta cursos, programas de varios módulos y módulos independientes a estudiantes de la '
+    'facultad y a cualquier persona que quiera inscribirse. No tiene personería propia: depende del Decanato y su personal es '
+    'reducido. Su estructura se organiza en tres niveles, y cada cargo corresponde a un rol del sistema, de modo que los actores '
+    'de la Captura de Requisitos salen de este organigrama.')
+d.h('Nivel directivo', 3)
+d.lista(['Decanato de la FICCT: autoridad de la que depende la unidad; aprueba la oferta de cursos y programas.',
+         'Jefatura de la Unidad: un jefe de unidad dirige la oferta, el personal y las metas de inscripción. En el sistema es el '
+         'administrador: gestiona los usuarios y sus roles y pone cada programa a cargo de un coordinador.'])
+d.h('Nivel de coordinación', 3)
+d.lista(['Coordinación de Programas: dos coordinadores, cada uno a cargo de un grupo de programas. Registran e importan '
+         'prospectos, reparten la bolsa común, supervisan el avance de sus programas y revisan los motivos de pérdida. En el '
+         'sistema tienen el rol coordinador.'])
+d.h('Nivel operativo', 3)
+d.lista(['Equipo Comercial: asesores comerciales que contactan a los interesados, en su mayoría desde el celular, les dan '
+         'seguimiento y cierran la inscripción. En el sistema tienen el rol vendedor.'])
+d.p('Las personas interesadas en un curso no forman parte de la unidad: cuando escriben sin estar registradas, el sistema las '
+    'atiende como visitantes.')
+fig('organigrama.png', 'Organigrama de la Unidad de Capacitación', ancho=11.0,
+    nota='Elaboración propia. Cada cargo indica el rol que ocupa en el sistema.')
 d.h('Ubicación e Infraestructura', 2)
-rojo('ubicación geográfica (mapa) e infraestructura física')
+d.p('La unidad funciona en el edificio de la FICCT, módulo 236 de la Ciudad Universitaria de la UAGRM, sobre la avenida '
+    'Dr. Enrique Aponte Canseco, entre la avenida Busch y la avenida 26 de Febrero (segundo anillo), en la ciudad de Santa Cruz de '
+    'la Sierra, Bolivia (17°46\'34" S, 63°11\'42" O).')
+fig('ubicacion.png', 'Ubicación de la FICCT en Santa Cruz de la Sierra y en la Ciudad Universitaria',
+    nota='Elaboración propia sobre mapas de OpenStreetMap (© colaboradores de OpenStreetMap, licencia ODbL). Coordenadas del '
+         'edificio según OpenStreetMap, consultado el 13 de octubre de 2026.')
+d.p('Por ser una unidad pequeña, ocupa una oficina con tres áreas de trabajo y comparte el resto de la infraestructura de la '
+    'facultad:')
+d.lista(['Oficina de la jefatura y de la coordinación, donde también se atiende a los interesados que llegan en persona.',
+         'Área del equipo comercial; los asesores trabajan casi siempre fuera de ella, desde el celular.',
+         'Laboratorios de computación de la FICCT, donde se dictan los módulos en horarios que no chocan con las materias de la carrera.',
+         'Servicios de red y correo de la facultad (tecnoweb.org.bo), sobre los que funciona el sistema de este proyecto.'])
 
 # ---------------------------------------------------------------- IV
 d.h('IV. Objetivos', 1)
@@ -219,7 +266,7 @@ d.tabla('Casos de uso aprobados', ['ID', 'Caso de uso'], [
     ('CU3', 'Gestión de Asignar Prospectos (Leads)'), ('CU4', 'Gestión de Embudo de Ventas en Tablero Kanban'),
     ('CU5', 'Gestión de Pérdida de Prospectos y Clasificación de Motivos'), ('CU6', 'Gestión de Validar Datos y Procesar Conversión a Matrícula'),
     ('CU7', 'Gestión de Bitácora, Interacciones y Recordatorios'), ('CU8', 'Reportes y Estadísticas')],
-    anchos=[1.6, 14.4], nota_txt='Nota. Títulos tal como los aprobó el docente el 05/10/2026. En CU1 los actores son los roles de RF1.1: administrador, coordinador y vendedor.')
+    anchos=[1.6, 14.4], nota_txt='Títulos tal como los aprobó el docente el 05/10/2026. En CU1 los actores son los roles de RF1.1: administrador, coordinador y vendedor.')
 d.h('Priorizar casos de uso', 3)
 PRIO = {'CU1': 'Alta', 'CU2': 'Alta', 'CU3': 'Alta', 'CU4': 'Alta', 'CU5': 'Media', 'CU6': 'Alta', 'CU7': 'Media', 'CU8': 'Baja'}
 d.tabla('Priorización de casos de uso', ['ID', 'Actores involucrados', 'Comandos', 'Prioridad'],
@@ -298,13 +345,14 @@ d.h('Detallar casos de uso', 3)
 for cu, (nombre, desc, iniciador, pre, flujo, post, exc) in CU.items():
     d.h(f'{cu}: {nombre}', 3)
     fig(f'uc-{cu.lower()}.png', f'Detalle {cu}: {nombre}', ancho=13)
+    # Qué puede hacer cada actor en el CU, tomado de la matriz de acceso del código (no solo la lista de actores)
+    permisos = '\n'.join(f'{a}: ' + ', '.join(c.split('[')[0] for c in comandos(cu, 'Público' if a == 'Visitante' else a))
+                         for a in actores(cu))
     d.tabla(f'Detalle de {cu}: {nombre}', ['Elemento', 'Descripción'], [
-        ('Descripción', desc), ('Actores', ', '.join(actores(cu))), ('Actor iniciador', iniciador), ('Precondición', pre),
+        ('Descripción', desc), ('Actores y comandos', permisos), ('Actor iniciador', iniciador), ('Precondición', pre),
         ('Flujo principal', '\n'.join(f'{i}. {t}' for i, t in enumerate(flujo, 1))), ('Postcondición', post), ('Excepción', exc),
-        ('Comandos', ', '.join(c.split('[')[0] for c in comandos(cu))),
     ], anchos=[3.4, 12.6])
-d.h('Estructurar el modelo de casos de uso', 3)
-fig('uc-modelo.png', 'Modelo de casos de uso')
+fig('uc-modelo.png', 'Modelo de casos de uso', horizontal=True, titulos=[('Estructurar el modelo de casos de uso', 3)])
 
 d.h('Flujo de Trabajo: Análisis', 2)
 d.h('Identificar paquetes', 3)
@@ -320,18 +368,14 @@ for i, (p, _, _) in enumerate(PAQ, 1):
 d.h('Encapsulamiento de casos de uso por paquetes', 3)
 for i, (p, _, _) in enumerate(PAQ, 1):
     fig(f'pkg-encap-{i}.png', f'Encapsulamiento del paquete {p}', ancho=13)
-cus = list(CU.items())
-# diagramas anchos y bajos: dos por página apaisada (la primera lleva el título y el texto, y uno solo)
-for i, j in [(0, 1), (1, 3), (3, 5), (5, 7), (7, 8)]:
-    d.orientacion(True)
-    if i == 0:
-        d.h('Diagramas de colaboración', 3)
-        d.p('Cada diagrama sigue el análisis de robustez: el actor envía el comando a la clase de interfaz (boundary, el cliente de '
-            'correo), las clases de control lo validan y lo ejecutan, y las entidades guardan los datos. Los mensajes van numerados por '
-            'comando y con un color por operación; cuando el resultado es una entidad, DatabaseService la construye con su método de().')
-    for cu, v in cus[i:j]:
-        fig(f'com-{cu.lower()}.png', f'Diagrama de colaboración {cu}: {v[0]}', ancho=20.5)
-    d.orientacion(False)
+
+d.h('Diagramas de colaboración', 3)
+d.p('Cada diagrama sigue el análisis de robustez: el actor envía el comando a la clase de interfaz (boundary, el cliente de '
+    'correo), las clases de control lo validan y lo ejecutan, y las entidades guardan los datos. Los mensajes van numerados por '
+    'comando y con un color por operación; cuando el resultado es una entidad, DatabaseService la construye con su método de(). '
+    'Los objetos se disponen en U: la fila superior recibe y despacha el comando, la inferior lo resuelve contra la base de datos.')
+for cu, v in CU.items():
+    fig(f'com-{cu.lower()}.png', f'Diagrama de colaboración {cu}: {v[0]}')
 d.h('Dependencia de paquetes', 3)
 fig('pkg-dependencias.png', 'Dependencia de paquetes', ancho=13)
 
@@ -358,14 +402,18 @@ d.tabla('Capas del sistema', ['Capa', 'Paquete Java', 'Clases'], [
 ], anchos=[2.8, 4.6, 8.6])
 fig('capas.png', 'Diagrama de capas', horizontal=True)
 d.h('Diagramas de secuencia', 3)
-d.p('Cada diagrama tiene un fragmento alt con un operando por comando del caso de uso. Los correos (el comando que llega al '
-    'buzón y la respuesta HTML) son mensajes asíncronos; las demás llamadas son síncronas y llevan los parámetros del código.')
-d.p('Las líneas de vida usan los estereotipos de robustez del análisis (boundary para los clientes POP3 y SMTP, control para '
-    'la lógica y entity para DatabaseService) y se nombran con la variable o el campo que las referencia en el código '
-    '(pop, smtp, procesador, parser, usuarios, db). Cada comando sigue el orden real de CommandProcessor.procesarEmail(): '
-    'analiza el asunto, identifica al remitente con buscarPorCorreo(), delega en el procesador de su rol y registra el '
-    'resultado en la bitácora antes de responder. Cada llamada síncrona tiene su retorno con el tipo que devuelve. Para que se '
-    'lean impresos, los casos de uso con más de dos comandos se dividen en figuras de dos comandos cada una.')
+d.p('Todo comando se recibe y se responde igual: App descarga el correo por POP3, CommandProcessor analiza el asunto e identifica '
+    'al remitente por su correo, y al final registra el resultado en la bitácora y App envía la respuesta HTML por SMTP. Esas dos '
+    'partes se detallan una sola vez, en los diagramas Recibir comando y Registrar y responder. En cada caso de uso el comando llega '
+    'a procesador y el diagrama muestra solo lo propio: el procesador del rol, el servicio del caso de uso y DatabaseService; cierra '
+    'con bitacora() y la respuesta HTML que recibe el actor. Cuando una figura tiene dos comandos, un fragmento alt los separa.')
+d.p('Los correos (el comando que llega al buzón y la respuesta HTML) son mensajes asíncronos; las demás llamadas son síncronas, '
+    'llevan los parámetros del código y su retorno con el tipo que devuelven. Las líneas de vida usan los estereotipos de robustez '
+    '(boundary para los clientes POP3 y SMTP, control para la lógica y entity para DatabaseService) y se nombran con la variable o '
+    'el campo que las referencia en el código (pop, smtp, procesador, parser, usuarios, db). Cuando la lista de parámetros no cabe '
+    'en la etiqueta se muestran los primeros y puntos suspensivos; la lista completa de cada comando está en el Anexo A.')
+fig('sd-recibir.png', 'Diagrama de secuencia común: Recibir comando')
+fig('sd-responder.png', 'Diagrama de secuencia común: Registrar y responder')
 for cu, v in CU.items():
     partes = sorted(DIA.glob(f'sd-{cu.lower()}-*.png')) or [DIA / f'sd-{cu.lower()}.png']
     for i, ruta in enumerate(partes, 1):
@@ -514,7 +562,7 @@ d.h('XII. Anexos', 1)
 d.h('Anexo A. Comandos por rol', 2)
 d.tabla('Comandos del sistema por rol', ['CU', 'Comando', 'Adm.', 'Coord.', 'Vend.', 'Públ.'],
         [(f[0], f[1], f[2], f[3], f[4], f[5]) for f in MATRIZ], anchos=[1.6, 9.6, 1.2, 1.3, 1.2, 1.1], tam=8, centrar_desde=2,
-        nota_txt='Nota. Generada con java -jar crm-mail.jar --anexo a partir de las clases AdministradorCommandProcessor, '
+        nota_txt='Generada con java -jar crm-mail.jar --anexo a partir de las clases AdministradorCommandProcessor, '
                  'CoordinadorCommandProcessor, VendedorCommandProcessor y PublicoCommandProcessor. Los parámetros entre paréntesis son opcionales.')
 d.tabla('Ejemplo de uso de cada comando', ['Comando', 'Ejemplo de asunto'],
         [(f[1].split('[')[0], f[6]) for f in MATRIZ], anchos=[4.6, 11.4], tam=8)

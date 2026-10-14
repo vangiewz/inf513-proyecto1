@@ -13,7 +13,7 @@ BASE = pathlib.Path(r'C:/Program Files (x86)/Sparx Systems/EA Trial/EABase.eapx'
 SQL = (P1 / 'sql' / 'crm_p1.sql').read_text(encoding='utf-8')
 
 NEGRO, ROJO, VERDE, AZUL = 0x000000, 0x0000C0, 0x008000, 0xC00000   # COLORREF (0xBBGGRR)
-COLORES = [NEGRO, ROJO, VERDE, AZUL]
+COLORES = [NEGRO, ROJO, VERDE, AZUL]   # en colaboración EA colorea solo por número de mensaje (paleta propia desde el 5.º)
 
 
 class EA:
@@ -85,15 +85,15 @@ class EA:
                        f"StateFlags='IsReturn={str(tipo == 'return').lower()};' WHERE Connector_ID={c.ConnectorID}")
         return c
 
-    def mensaje_com(self, d, enlace, a, b, texto, numero, n, apilado, color, args='', vertical=False):
+    def mensaje_com(self, d, enlace, a, b, texto, numero, n, apilado, color, args='', vertical=False, centrado=False, sx=-15):
         """Mensaje de comunicación colgado de su enlace (SourceIsAggregate), como los crea EA.
         args: lo que va entre paréntesis (el diagrama usa SuppressBrackets: un comando no lleva paréntesis)."""
         c = a.Connectors.AddNew(texto, 'Collaboration'); c.SupplierID = b.ElementID; c.DiagramID = d.DiagramID
         c.SequenceNo = n; c.Direction = 'Source -> Destination'; c.Color = color; c.Update()
-        sy = 18 + (30 if vertical else 15) * apilado
+        sy = 18 + (30 if vertical else 15) * apilado - (centrado or 0)   # centrado: desplazamiento que lleva la pila al medio del enlace
         p2 = f"retval=void;params={args};paramsDlg={args};" if args else ''
         self.r.Execute(f"UPDATE t_connector SET PDATA1='Synchronous', PDATA2='{p2}', PDATA3='Call', PDATA4='{numero}', "
-                       f"PDATA5='SX=-15;SY={sy};EX=15;EY={sy};EDGE=2;', SourceIsAggregate={enlace.ConnectorID}, RouteStyle=1, "
+                       f"PDATA5='SX={sx};SY={sy};EX={sx + 30};EY={sy};EDGE=2;', SourceIsAggregate={enlace.ConnectorID}, RouteStyle=1, "
                        f"DestIsNavigable=TRUE, StateFlags='IsReturn=false;', SourceTS='instance', DestTS='instance' "
                        f"WHERE Connector_ID={c.ConnectorID}")
 
@@ -165,7 +165,11 @@ OPS = {
     'CU2': [('Visitante', 'LISTAROFERTA[]', 'listarOferta()', 'lista()'),
             ('Visitante', 'REGISTRARINTERES["codigo_oferta","ci","nombre","apellido","telefono"]', 'registrar()', 'enTransaccion()'),
             ('Vendedor', 'REGISTRARPROSPECTO["ci",...,"origen","codigo_oferta"]', 'registrar()', 'enTransaccion()'),
-            ('Coordinador', 'IMPORTARPROSPECTOS[] + .csv', 'importar()', 'enTransaccion()')],
+            ('Coordinador', 'IMPORTARPROSPECTOS[] + .csv', 'importar()', 'enTransaccion()'),
+            ('Vendedor', 'LISTARPROSPECTOS["texto"]', 'listar()', 'getConnection()'),
+            ('Vendedor', 'MODIFICARPROSPECTO["ci",...,"origen"]', 'modificar()', 'enTransaccion()'),
+            ('Administrador', 'ELIMINARPROSPECTO["ci"]', 'eliminar()', 'enTransaccion()'),
+            ('Administrador', 'ASIGNARCOORDINADOR["codigo_programa","id_coordinador"]', 'asignarCoordinador()', 'enTransaccion()')],
     'CU3': [('Vendedor', 'LISTARBOLSA[]', 'bolsa()', 'lista()'),
             ('Vendedor', 'TOMARPROSPECTO["id_tarjeta"]', 'tomar()', 'enTransaccion()'),
             ('Coordinador', 'ASIGNARPROSPECTO["id_tarjeta","id_vendedor"]', 'asignar()', 'enTransaccion()'),
@@ -175,12 +179,15 @@ OPS = {
     'CU5': [('Vendedor', 'LISTARMOTIVOS[]', 'listarMotivos()', 'lista()'),
             ('Vendedor', 'MARCARPERDIDO["id_tarjeta","id_motivo","detalle"]', 'marcarPerdido()', 'enTransaccion()'),
             ('Coordinador', 'INSERTARMOTIVO["nombre","categoria"]', 'insertarMotivo()', 'enTransaccion()'),
+            ('Coordinador', 'MODIFICARMOTIVO["id","nombre","categoria"]', 'modificarMotivo()', 'enTransaccion()'),
             ('Coordinador', 'ELIMINARMOTIVO["id"]', 'eliminarMotivo()', 'enTransaccion()')],
     'CU6': [('Vendedor', 'VALIDARCONVERSION["id_tarjeta"]', 'validar()', 'getConnection()'),
             ('Vendedor', 'CONVERTIRPROSPECTO["id_tarjeta"]', 'convertir()', 'enTransaccion()'),
             ('Coordinador', 'LISTARMATRICULAS[]', 'listarMatriculas()', 'lista()')],
     'CU7': [('Vendedor', 'REGISTRARINTERACCION["id_tarjeta","tipo","descripcion"]', 'registrarInteraccion()', 'enTransaccion()'),
             ('Vendedor', 'PROGRAMARRECORDATORIO["id_tarjeta","fecha_hora","descripcion"]', 'programarRecordatorio()', 'enTransaccion()'),
+            ('Vendedor', 'LISTARRECORDATORIOS[]', 'listarRecordatorios()', 'getConnection()'),
+            ('Vendedor', 'COMPLETARRECORDATORIO["id_recordatorio"]', 'completarRecordatorio()', 'enTransaccion()'),
             ('Vendedor', 'VERHISTORIAL["id_tarjeta"]', 'historial()', 'filas()'),
             ('Administrador', 'VERBITACORA["cantidad"]', 'bitacora()', 'filas()')],
     'CU8': [('Vendedor', 'REPORTEEMBUDO[]', 'embudo()', 'filas()'),
@@ -327,15 +334,13 @@ def construir(ea):
         ea.exportar(d, f'uc-{k.lower()}.png')
     d = ea.diagrama(req, 'Modelo de casos de uso', 'Use Case')
     frontera = ea.elemento(req, 'CRM vía e-mail', 'Boundary')
-    ea.poner(d, frontera, 260, 20, 330, 8 * 95 + 50, seq=50)
+    ea.poner(d, frontera, 460, 20, 330, 8 * 95 + 50, seq=50)
     for i, k in enumerate(CU):
-        ea.poner(d, uc[k], 310, 55 + i * 95, 230, 75, seq=1)
-    ea.poner(d, act['Administrador'], 60, 520, 45, 80); ea.poner(d, act['Coordinador'], 60, 280, 45, 80)
-    gen = ea.conector(act['Administrador'], act['Coordinador'], 'Generalization')
-    for (a_, k_), c_ in asoc.items():   # el administrador hereda las asociaciones del coordinador
-        if a_ == 'Administrador':
-            dl = d.DiagramLinks.AddNew('', ''); dl.ConnectorID = c_.ConnectorID; dl.IsHidden = True; dl.Update()
-    ea.poner(d, act['Vendedor'], 800, 420, 45, 80); ea.poner(d, act['Visitante'], 800, 90, 45, 80)
+        ea.poner(d, uc[k], 510, 55 + i * 95, 230, 75, seq=1)
+    # Sin generalización entre actores (el docente no generaliza en requisitos: el modelo es el menú por actor) y como en el
+    # código, donde AdministradorCommandProcessor y CoordinadorCommandProcessor son hermanos bajo RolCommandProcessor.
+    ea.poner(d, act['Administrador'], 60, 300, 45, 80); ea.poner(d, act['Coordinador'], 60, 470, 45, 80)
+    ea.poner(d, act['Vendedor'], 1200, 470, 45, 80); ea.poner(d, act['Visitante'], 1200, 140, 45, 80)
     ea.exportar(d, 'uc-modelo.png')
 
     # ---------------------------------------------------------------- Análisis: paquetes
@@ -354,7 +359,7 @@ def construir(ea):
         ea.poner(d, p, 40, 40 + (len(cus) - 1) * 60, 200, 110)
         for j, k in enumerate(cus):
             traces.append(ea.conector(p, uc[k], 'Dependency', st='trace', dirigido=True))
-            ea.poner(d, uc[k], 430, 40 + j * 120, 200, 70)
+            ea.poner(d, uc[k], 410, 35 + j * 120, 240, 85)
         ea.exportar(d, f'pkg-trace-{i}.png')
     for i, ((n, cus), p) in enumerate(zip(PAQ, paqs), 1):
         d = ea.diagrama(req, f'Encapsulamiento del paquete {n}', 'Package')
@@ -363,13 +368,42 @@ def construir(ea):
         ea.poner(d, p, 40, 30, 600, 70 + filas * 115, seq=50)
         for j, a in enumerate(acts):
             ea.poner(d, act[a], 110, 80 + j * 115 + (filas - len(acts)) * 57, 45, 80, seq=1)
+        cus = sorted(cus, key=lambda k: len(actores(k)))   # el CU con más actores abajo, cerca de los últimos
         for j, k in enumerate(cus):
             ea.poner(d, uc[k], 360, 75 + j * 115 + (filas - len(cus)) * 57, 230, 90, seq=1)
-        # contención y asociaciones, no la dependencia; el administrador hereda del coordinador (como en el modelo de CU)
-        ocultos = traces + [c_ for (a_, k_), c_ in asoc.items() if a_ == 'Administrador']
-        for tr in ocultos:
+        # contención y asociaciones directas de cada actor, no la dependencia «trace»
+        for tr in traces:
             dl = d.DiagramLinks.AddNew('', ''); dl.ConnectorID = tr.ConnectorID; dl.IsHidden = True; dl.Update()
         ea.exportar(d, f'pkg-encap-{i}.png')
+
+    # ---------------------------------------------------------------- Análisis: explosión de cada CU en sus comandos
+    # La explosión va en el análisis (no en requisitos): cada CU aprobado se abre en un caso de uso por comando, y cada actor
+    # se une solo a los comandos que le permite la matriz de acceso del código (doc/matriz-acceso.tsv).
+    # Los elementos van en el paquete de los actores (req), como los encapsulamientos: así EA no rotula "(from ...)".
+    col = {'Administrador': 2, 'Coordinador': 3, 'Vendedor': 4, 'Visitante': 5}
+    PASO_C, Y0, ALTO_UC = 108, 60, 94   # EA dibuja el óvalo con ancho = 1,5 x alto: el alto da el ancho
+    for k in CU:
+        filas = [f for f in MATRIZ if f[0] == k]
+        d = ea.diagrama(req, f'Explosión {k}: {CORTO[k]}', 'Use Case')
+        alto = Y0 + len(filas) * PASO_C
+        ea.poner(d, ea.elemento(req, f'{k}: {CORTO[k]}', 'Boundary'), 320, 20, 360, alto, seq=50)
+        cmd = {}
+        for j, f in enumerate(filas):
+            cmd[f[1]] = ea.elemento(req, f[1].split('[')[0], 'UseCase')
+            ea.poner(d, cmd[f[1]], 360, Y0 + j * PASO_C, 280, ALTO_UC, seq=1)
+        usados = [a for a in ROLES if any(f[col[a]] == 'Sí' for f in filas)]
+        # cada actor a la altura media de sus comandos (menos cruces), separados al menos 130 en su lado
+        for lado, x in ((('Administrador', 'Coordinador'), 90), (('Vendedor', 'Visitante'), 900)):
+            ys = sorted((sum(Y0 + j * PASO_C + ALTO_UC // 2 for j, f in enumerate(filas) if f[col[a]] == 'Sí') /
+                         sum(f[col[a]] == 'Sí' for f in filas), a) for a in lado if a in usados)
+            for j in range(1, len(ys)):
+                if ys[j][0] - ys[j - 1][0] < 130: ys[j] = (ys[j - 1][0] + 130, ys[j][1])
+            for y, a in ys:
+                ea.poner(d, act[a], x, int(y) - 40, 45, 80)
+        for f in filas:
+            for a in usados:
+                if f[col[a]] == 'Sí': ea.conector(act[a], cmd[f[1]], 'Association')
+        ea.exportar(d, f'uc-exp-{k.lower()}.png')
 
     # ---------------------------------------------------------------- Análisis: colaboración por CU
     col = ea.paquete(ana, 'Colaboración')
@@ -391,15 +425,22 @@ def construir(ea):
         d = ea.diagrama(col, f'Colaboración {k}: {CORTO[k]}', 'Collaboration')
         d.StyleEx = 'SuppressBrackets=1;'; d.Update()   # los paréntesis los ponen los argumentos
         acts = list(dict.fromkeys(o[0] for o in OPS[k]))
-        Y = 200
-        sitio_act = [(30, Y - 10), (307, Y + 190), (307, Y - 190)]   # izquierda, debajo y encima del cliente de correo
+        # En U, para que quepa en media página con letra legible: arriba actor → cliente de correo → controles,
+        # abajo (de derecha a izquierda) servicio → DatabaseService → entidad.
+        extra = max(0, len(OPS[k]) - 4)   # la fila de arriba baja y la pila vertical crece con los comandos del CU
+        Y, DX = 200 + extra * 30, 250
+        Y2 = Y + 360 + extra * 45
+        sitio_act = [(30, Y - 10), (307, Y + 190), (307, Y - 190), (30, Y + 190)]   # izquierda, debajo, encima y abajo a la izquierda
+        # con dos actores el segundo va encima: así el marco de EA abarca la pila de etiquetas de la fila superior
+        sitio = lambda a: ([0, 2] if len(acts) == 2 else [0, 1, 2, 3])[acts.index(a)]
         for i, a in enumerate(acts):
-            ea.poner(d, act_col[a], *sitio_act[i], 45, 80)
+            ea.poner(d, act_col[a], *sitio_act[sitio(a)], 45, 80)
         mapeadas = list(dict.fromkeys(e for o in OPS[k] if (e := entidad_mapeada(k, o[2]))))
         for e in mapeadas:
             if e not in ents: ents[e] = ea.elemento(col, e, 'Object', 'entity')
-        pos = [(bnd, 300, Y), (cp, 550, Y), (rcp, 800, Y), (servs[k], 1050, Y), (dbo, 1300, Y)]
-        pos += [(ents[e], *[(1550, Y), (1300, Y + 210)][i]) for i, e in enumerate(mapeadas)]
+        x1, x2, x3 = 300, 300 + DX, 300 + 2 * DX
+        pos = [(bnd, x1, Y), (cp, x2, Y), (rcp, x3, Y), (servs[k], x3, Y2), (dbo, x2, Y2)]
+        pos += [(ents[e], *[(x1, Y2), (x2, Y2 + 200), (x1, Y2 + 200)][i]) for i, e in enumerate(mapeadas)]
         for e, x, y in pos:
             ea.poner(d, e, x, y, 60, 60)
         apil = {}
@@ -415,8 +456,11 @@ def construir(ea):
             for o, dst, txt, num, args in pasos:
                 ln = enlace(o, dst); n += 1
                 c = apil.get(ln.ConnectorID, 0); apil[ln.ConnectorID] = c + 1
-                vertical = (o is act_col[a] and acts.index(a) > 0) or (dst in ents.values() and mapeadas.index(dst.Name) == 1)
-                ea.mensaje_com(d, ln, o, dst, txt, num, n, c, COLORES[(j - 1) % 4], args, vertical)
+                vertical = ((o is act_col[a] and sitio(a) > 0) or (dst in ents.values() and mapeadas.index(dst.Name) == 1)
+                            or (o is rcp and dst is servs[k]))
+                # enlace vertical de un actor: la etiqueta al costado de la línea (el eje se invierte según el actor esté abajo o arriba)
+                sx = {1: 25, 2: -55}.get(sitio(a), -15) if o is act_col[a] else -15
+                ea.mensaje_com(d, ln, o, dst, txt, num, n, c, COLORES[(j - 1) % 4], args, vertical, 15 * len(OPS[k]) + 15 if (o is rcp and dst is servs[k]) else (75 if vertical and dst in ents.values() else 0), sx)
         ea.exportar(d, f'com-{k.lower()}.png')
 
     d = ea.diagrama(req, 'Dependencia de paquetes', 'Package')
@@ -464,7 +508,7 @@ def construir(ea):
     for a, b, t_ in [(cli, gweb, 'HTTPS 443'), (gweb, smail, 'SMTP 25'), (jvm, dove, 'POP3 110'),
                      (jvm, pg, 'JDBC TCP 5432'), (jvm, gsmtp, 'SMTP 587 STARTTLS')]:
         ea.conector(a, b, 'CommunicationPath', t_, dirigido=True)
-    for a, b, t_ in [(unidad, jar, 'ExecStart'), (jar, props, 'lee'), (smail, buzon, 'entrega'), (dove, buzon, 'lee')]:
+    for a, b, t_ in [(unidad, jar, 'ExecStart'), (jar, props, 'lee'), (smail, buzon, 'entrega'), (dove, buzon, 'lee'), (gsmtp, gweb, 'entrega')]:
         ea.conector(a, b, 'Dependency', t_, dirigido=True)
     ea.exportar(d, 'despliegue.png')
 
@@ -473,7 +517,9 @@ def construir(ea):
     d = ea.diagrama(cap, 'Diagrama de capas', 'Package')
     capas = [('Capa de Presentación', 20, 270), ('Capa de Aplicación', 310, 150), ('Capa de Dominio', 480, 150), ('Capa de Persistencia', 650, 150)]
     for nombre, y, h in capas:
-        ea.poner(d, ea.elemento(cap, nombre, 'Boundary'), 30, y, 1180, h, seq=50)
+        # EA centra el nombre de un boundary, justo donde pasan las dependencias verticales: se rotula arriba a la izquierda
+        ea.poner(d, ea.elemento(cap, '', 'Boundary'), 30, y, 1180, h, seq=50)
+        ea.poner(d, ea.elemento(cap, nombre, 'Text', notas=nombre), 40, y + 6, 200, 20, seq=40)
     pk = {}
     W_ = 260
     sitio = {'App (servicio crm-mail)': (490, 60), 'Lector de Correos POP3 (Pop3Client)': (60, 180), 'Correo (MIME)': (360, 180),
@@ -508,58 +554,128 @@ def construir(ea):
     cls['RolCommandProcessor'].Abstract = '1'; cls['RolCommandProcessor'].Update()
 
     # ---------------------------------------------------------------- Diseño: secuencia por CU
+    # La recepción (POP3, análisis, identidad del remitente) y el envío (SMTP) son iguales para todo comando: van una vez en
+    # dos diagramas comunes. Cada CU muestra solo lo propio con 5 o 6 líneas de vida, como el P1 aprobado, sin fragmentos ref.
     seq = ea.paquete(dis, 'Secuencia')
-    ANCHO = 150   # separación entre líneas de vida
-    X0 = 210      # margen izquierdo libre para la etiqueta alt y la guarda de cada operando
+    SLOT = 35.2   # alto que EA da a cada mensaje (medido en el PNG)
+    Y1 = 133      # y del primer mensaje con las líneas de vida en y=40
     ROBUSTEZ = {'Pop3Client': 'boundary', 'SmtpSender': 'boundary', 'DatabaseService': 'entity'}
+
+    def vida(clase_, campo):
+        """Línea de vida con el nombre de la variable o del campo que la referencia en el código."""
+        return ea.elemento(seq, f'{campo}:{clase_}', 'Object', ROBUSTEZ.get(clase_, 'control'))
+
+    def lineas(d, cols, xs, alto):
+        for e, x in zip(cols, xs):
+            w = 60 if e.Type == 'Actor' else max(120, 8 * len(e.Name.split(':')[-1]))   # ancho del nombre de la clase
+            ea.poner(d, e, x - w // 2, 50 if e.Stereotype == 'entity' else 40, w, int(alto))   # el icono entity es más bajo
+
+    def ancho_msg(texto):
+        return 30 + 4.4 * len(texto)   # medido en el PNG: ~4,4 unidades por carácter, más la punta de la flecha
+
+    def args_msg(args, max_=24):
+        """Parámetros reales; si no caben en la etiqueta, los primeros y '...'."""
+        if len(args) <= max_: return args
+        corto = ''
+        for a in args.split(', '):
+            if len(corto) + len(a) > max_ - 5: break
+            corto += a + ', '
+        return corto + '...'
+
+    def cmd_msg(cmd, max_=30):
+        """Comando con sus parámetros reales; si es largo, los primeros y '...' (la lista completa está en el Anexo A)."""
+        if len(cmd) <= max_ or '[' not in cmd or cmd.endswith('[]'): return cmd
+        nombre, ps = cmd.split('[', 1)
+        corto = []
+        for x in ps.rstrip(']').split(','):
+            if x == '...': continue
+            if corto and len(nombre) + len(','.join(corto + [x])) > max_ - 6: break   # al menos el primero
+            corto.append(x)
+        return f"{nombre}[{','.join(corto + ['...'])}]"
+
+    def xs_de(cols, etiquetas):
+        """Centro de cada línea de vida: lo justo para la etiqueta más larga entre cada par de columnas vecinas."""
+        xs = [80]
+        for i in range(1, len(cols)):
+            gap = 110 if cols[i].Type == 'Actor' else max([130] + [ancho_msg(t) for (a, b), t in etiquetas if {a, b} == {i - 1, i}])
+            xs.append(int(xs[-1] + gap))
+        return xs
+
+    rem = 'Remitente'
+    campo_c = {'Pop3Client': 'pop', 'SmtpSender': 'smtp', 'App': '', 'CommandProcessor': 'procesador', 'CommandParser': 'parser',
+               'UsuarioService': 'usuarios'}
+    for titulo, archivo, nombres, pasos_f in [
+        ('Recibir comando', 'sd-recibir.png', ['Pop3Client', 'App', 'CommandProcessor', 'CommandParser', 'UsuarioService'],
+         lambda o: [(o[rem], o['Pop3Client'], '1. COMANDO[...]', 'signal', ''),
+                    (o['App'], o['Pop3Client'], '1.1 retr', 'call', 'n'),
+                    (o['Pop3Client'], o['App'], 'byte[]', 'return', ''),
+                    (o['App'], o['CommandProcessor'], '1.2 procesarEmail', 'call', firma('CommandProcessor', 'procesarEmail')),
+                    (o['CommandProcessor'], o['CommandParser'], '1.3 parse', 'call', firma('CommandParser', 'parse')),
+                    (o['CommandParser'], o['CommandProcessor'], 'Command', 'return', ''),
+                    (o['CommandProcessor'], o['UsuarioService'], '1.4 buscarPorCorreo', 'call', firma('UsuarioService', 'buscarPorCorreo')),
+                    (o['UsuarioService'], o['CommandProcessor'], 'Usuario', 'return', '')]),
+        ('Registrar y responder', 'sd-responder.png', ['App', 'CommandProcessor', 'SmtpSender'],
+         lambda o: [(o['CommandProcessor'], o['CommandProcessor'], '1. bitacora', 'call', firma('CommandProcessor', 'bitacora')),
+                    (o['CommandProcessor'], o['App'], 'Respuesta', 'return', ''),
+                    (o['App'], o['SmtpSender'], '2. enviar', 'call', firma('SmtpSender', 'enviar')),
+                    (o['SmtpSender'], o[rem], '3. respuesta HTML', 'signal', '')])]:
+        d = ea.diagrama(seq, titulo, 'Sequence')
+        d.StyleEx = 'SuppressBrackets=1;'; d.Update()
+        o = {rem: ea.elemento(seq, rem, 'Actor')} | {n: vida(n, campo_c[n]) for n in nombres}
+        cols = list(o.values())
+        pasos = pasos_f(o)
+        idx = {e.ElementID: i for i, e in enumerate(cols)}
+        etiq = [((idx[a.ElementID], idx[b.ElementID]), t + (f'({args})' if args else '')) for a, b, t, _, args in pasos]
+        xs = xs_de(cols, etiq)
+        if titulo == 'Registrar y responder':   # la etiqueta del self-message bitacora() se extiende a la derecha
+            xs[3] += 260
+        lineas(d, cols, xs, Y1 + len(pasos) * SLOT + 60)
+        for n, (a, b, t, tipo, args) in enumerate(pasos, 1):
+            ea.mensaje_seq(d, a, b, t, n, tipo, args)
+        ea.exportar(d, archivo)
+
     for k in CU:
-        partes = [OPS[k][i:i + 2] for i in range(0, len(OPS[k]), 2)]   # 2 comandos por figura: legible impreso
+        partes = [OPS[k][i:i + 2] for i in range(0, len(OPS[k]), 2)]   # 2 comandos por figura
         for p_, ops in enumerate(partes, 1):
             nombre_d = f'{k}: {CORTO[k]}' + (f' ({p_}/{len(partes)})' if len(partes) > 1 else '')
             d = ea.diagrama(seq, nombre_d, 'Sequence')
             d.StyleEx = 'SuppressBrackets=1;'; d.Update()   # los paréntesis los ponen los argumentos reales
             acts = list(dict.fromkeys(o[0] for o in ops))
-            vidas = {a: ea.elemento(seq, a, 'Actor') for a in acts}
             sv = SERVICIO[k]
-            nombres = (['Pop3Client', 'SmtpSender', 'App', 'CommandProcessor', 'CommandParser']
-                       + (['UsuarioService'] if sv != 'UsuarioService' else []) + ['RolCommandProcessor', sv, 'DatabaseService'])
-            # Cada línea de vida lleva el nombre de la variable o del campo que la referencia en el código.
-            instancia = {'Pop3Client': 'pop', 'SmtpSender': 'smtp', 'App': '', 'CommandProcessor': 'procesador', 'CommandParser': 'parser',
-                         'UsuarioService': 'usuarios', 'RolCommandProcessor': '', sv: CAMPO[sv], 'DatabaseService': 'db'}
-            obj = {n: ea.elemento(seq, f'{instancia[n]}:{n}', 'Object', ROBUSTEZ.get(n, 'control')) for n in nombres}
-            cols = list(vidas.values()) + [obj[n] for n in nombres]
-            alto = 120 + len(ops) * 19 * 33 + 40
-            for i, e in enumerate(cols):
-                w = 60 if i < len(acts) else max(140, 8 * len(e.Name.split(':')[-1]))   # ancho del nombre de la clase
-                y = 50 if e.Stereotype == 'entity' else 40               # el icono entity es más bajo: se alinea el nombre
-                ea.poner(d, e, X0 + i * ANCHO + 70 - w // 2, y, w, int(alto))
-            n = 0
-            tam = []
+            vidas = {a: ea.elemento(seq, a, 'Actor') for a in acts}
+            obj = {'CommandProcessor': vida('CommandProcessor', 'procesador'), 'RolCommandProcessor': vida('RolCommandProcessor', ''),
+                   sv: vida(sv, CAMPO[sv]), 'DatabaseService': vida('DatabaseService', 'db')}
+            cols = list(vidas.values()) + list(obj.values())
+            iP = len(acts)                                       # columna de procesador
+            # Sin ref: la recepción (POP3, parse, remitente) y el envío (SMTP) están en sd-recibir y sd-responder. Aquí cada comando
+            # termina con lo que hace procesador en procesarEmail(): bitacora() y la respuesta HTML que le llega al actor por correo.
+            pasos, tam, etiq = [], [], []
+            arg_b = args_msg(firma('CommandProcessor', 'bitacora'))
             for j, (a, cmd, met, dbm) in enumerate(ops, (p_ - 1) * 2 + 1):
-                sv = SERVICIO[k]
-                pasos = [(vidas[a], obj['Pop3Client'], f'{j}. {cmd}', 'signal', ''),
-                         (obj['App'], obj['Pop3Client'], f'{j}.1 retr', 'call', 'n'),
-                         (obj['Pop3Client'], obj['App'], 'byte[]', 'return', ''),
-                         (obj['App'], obj['CommandProcessor'], f'{j}.2 procesarEmail', 'call', firma('CommandProcessor', 'procesarEmail')),
-                         (obj['CommandProcessor'], obj['CommandParser'], f'{j}.3 parse', 'call', firma('CommandParser', 'parse')),
-                         (obj['CommandParser'], obj['CommandProcessor'], 'Command', 'return', ''),
-                         # identidad del remitente: CommandProcessor busca al usuario por su correo antes de delegar al rol
-                         (obj['CommandProcessor'], obj['UsuarioService'], f'{j}.4 buscarPorCorreo', 'call', firma('UsuarioService', 'buscarPorCorreo')),
-                         (obj['UsuarioService'], obj['CommandProcessor'], 'Usuario', 'return', ''),
-                         (obj['CommandProcessor'], obj['RolCommandProcessor'], f'{j}.5 procesar', 'call', firma('RolCommandProcessor', 'procesar')),
-                         (obj['RolCommandProcessor'], obj[sv], f'{j}.6 {met[:-2]}', 'call', firma(sv, met[:-2]) or ' '),
-                         (obj[sv], obj['DatabaseService'], f'{j}.7 {dbm[:-2]}', 'call', firma('DatabaseService', dbm[:-2]) or ' '),
-                         (obj['DatabaseService'], obj[sv], tipo_bd(sv, met, dbm), 'return', ''),
-                         (obj[sv], obj['RolCommandProcessor'], retorno(sv, met[:-2]), 'return', ''),
-                         (obj['RolCommandProcessor'], obj['CommandProcessor'], 'Respuesta', 'return', ''),
-                         # todo comando queda en la bitácora (log_comando), también los denegados
-                         (obj['CommandProcessor'], obj['CommandProcessor'], f'{j}.8 bitacora', 'call', firma('CommandProcessor', 'bitacora')),
-                         (obj['CommandProcessor'], obj['App'], 'Respuesta', 'return', ''),
-                         (obj['App'], obj['SmtpSender'], f'{j}.9 enviar', 'call', firma('SmtpSender', 'enviar')),
-                         (obj['SmtpSender'], vidas[a], f'{j}.10 respuesta HTML', 'signal', '')]
-                for o, dst, txt, tipo, args in pasos:
-                    n += 1; ea.mensaje_seq(d, o, dst, txt, n, tipo, args)
-                tam.append(len(pasos) * 35.2)
+                ini_op = len(pasos)
+                arg_s, arg_d = args_msg(firma(sv, met[:-2])), args_msg(firma('DatabaseService', dbm[:-2]))
+                pasos += [(vidas[a], obj['CommandProcessor'], f'{j}. {cmd_msg(cmd)}', 'signal', ''),
+                          (obj['CommandProcessor'], obj['RolCommandProcessor'], f'{j}.1 procesar', 'call', firma('RolCommandProcessor', 'procesar')),
+                          (obj['RolCommandProcessor'], obj[sv], f'{j}.2 {met[:-2]}', 'call', arg_s or ' '),
+                          (obj[sv], obj['DatabaseService'], f'{j}.3 {dbm[:-2]}', 'call', arg_d or ' '),
+                          (obj['DatabaseService'], obj[sv], tipo_bd(sv, met, dbm), 'return', ''),
+                          (obj[sv], obj['RolCommandProcessor'], retorno(sv, met[:-2]), 'return', ''),
+                          (obj['RolCommandProcessor'], obj['CommandProcessor'], 'Respuesta', 'return', ''),
+                          (obj['CommandProcessor'], obj['CommandProcessor'], f'{j}.4 bitacora', 'call', arg_b),
+                          (obj['CommandProcessor'], vidas[a], f'{j}.5 respuesta HTML', 'signal', '')]
+                tam.append((len(pasos) - ini_op) * SLOT)
+                etiq += [((iP, iP + 1), f'{j}.1 procesar(cmd, u)'), ((iP + 1, iP + 2), f'{j}.2 {met[:-2]}({arg_s})'),
+                         ((iP + 2, iP + 3), f'{j}.3 {dbm[:-2]}({arg_d})'), ((iP + 1, iP + 2), retorno(sv, met[:-2])),
+                         ((iP + 2, iP + 3), tipo_bd(sv, met, dbm)), ((iP, iP + 1), f'{j}.4 bitacora({arg_b})   ')]
+            xs = xs_de(cols, etiq)
+            # el comando va del actor a procesador: su etiqueta debe caber entre el primer actor y procesador
+            ancho_cmd = max(ancho_msg(f'{j}. {cmd_msg(cmd)}') for j, (a, cmd, *_) in enumerate(ops, 1))
+            extra = max(0, int(ancho_cmd - (xs[iP] - xs[0])))
+            xs = xs[:iP] + [x + extra for x in xs[iP:]]
+            if len(ops) > 1: xs = [x + 90 for x in xs]          # margen izquierdo para la etiqueta alt y las guardas
+            lineas(d, cols, xs, Y1 + len(pasos) * SLOT + 60)
+            for n, (o, dst, txt, tipo, args) in enumerate(pasos, 1):
+                ea.mensaje_seq(d, o, dst, txt, n, tipo, args)
             if len(ops) == 1:   # un solo comando: sin fragmento alt (un alt de un operando no tiene alternativas)
                 ea.exportar(d, f'sd-{k.lower()}' + (f'-{p_}' if len(partes) > 1 else '') + '.png')
                 continue
@@ -571,7 +687,7 @@ def construir(ea):
             pars = ''.join(f"@PAR;Name={cmd.split('[')[0]};Size={int(t) - 14};GUID={{{str(uuid.uuid4()).upper()}}};@ENDPAR;"
                            for (a, cmd, *_), t in reversed(list(zip(ops, tam))))
             ea.r.Execute(f"UPDATE t_xref SET Description='{pars}' WHERE Client='{fr.ElementGUID}' AND Name='Partitions'")
-            ea.poner(d, fr, 15, 120, X0 + (len(cols) - 1) * ANCHO + 150, int(sum(tam)) + 35, seq=60)
+            ea.poner(d, fr, 15, 120, xs[-1] + 90, int(sum(tam)) + 35, seq=60)
             ea.exportar(d, f'sd-{k.lower()}' + (f'-{p_}' if len(partes) > 1 else '') + '.png')
 
     # ---------------------------------------------------------------- Diseño: procedimental por CU (como el P1 aprobado)
@@ -677,7 +793,7 @@ def construir(ea):
     # usuario arriba e interes abajo; las tablas que referencian a ambos van en la fila del medio (sin cruces),
     # con un hueco central para la asociación directa interes.vendedor_id -> usuario.
     for nombre, (x, y) in {'usuario': (715, 30), 'log_comando': (1150, 30),
-                           'prospecto': (30, 330), 'oferta': (290, 330), 'matricula': (560, 330),
+                           'prospecto': (30, 330), 'oferta': (270, 330), 'matricula': (600, 330),
                            'movimiento': (900, 330), 'interaccion': (1150, 330), 'recordatorio': (1400, 330),
                            'interes': (715, 660), 'motivo_perdida': (1150, 660)}.items():
         ea.poner(d, tablas[nombre], x, y, 220, 175)
