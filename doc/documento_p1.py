@@ -20,7 +20,7 @@ PENDIENTES = []
 
 # Datos que el grupo aún debe entregar: None = pendiente (se imprime en rojo).
 GITHUB = 'https://github.com/vangiewz/inf513-proyecto1'
-FECHA = None              # "14 de octubre de 2026" al entregar
+FECHA = '14 de octubre de 2026'
 
 d = Informe()
 
@@ -502,7 +502,24 @@ if esc.exists():
             [(x['rol'], x['comando'], x['esperado'], x['obtenido']) for x in datos], anchos=[2.6, 8.6, 2.4, 2.4], tam=8)
 else:
     rojo('resultados del escenario funcional (p1/doc/pruebas/escenario.json)')
-rojo('capturas de las respuestas en Gmail (escritorio y celular) y del servicio activo en el VPS (systemctl status crm-mail)')
+d.h('Funcionamiento en producción', 2)
+d.p('El 14 de octubre de 2026 se enviaron tres comandos reales desde Gmail al buzón grupo05sa@tecnoweb.org.bo: HELP[] y '
+    'VERTABLERO[] desde la cuenta del administrador, y VERBITACORA["5"] desde la de un coordinador, comando reservado al '
+    'administrador. El servicio respondió los tres en menos de un minuto; las figuras siguientes muestran las respuestas y el '
+    'estado del servicio en el servidor.')
+CAP = DOC / 'capturas'
+FUENTE = 'Captura de pantalla de Gmail en el navegador de escritorio, 14 de octubre de 2026.'
+d.figura(CAP / 'gmail-bandeja.jpg', 'Respuestas del sistema en la bandeja de entrada del administrador', FUENTE, 16)
+d.figura(CAP / 'gmail-help.jpg', 'Respuesta a HELP[]: comandos permitidos al rol administrador', FUENTE, 16)
+d.figura(CAP / 'gmail-tablero.jpg', 'Respuesta a VERTABLERO[]: tablero Kanban por etapa', FUENTE, 16)
+d.figura(CAP / 'gmail-denegado.jpg', 'Respuesta a VERBITACORA["5"] enviado por un coordinador: comando denegado por rol', FUENTE, 16)
+d.figura(CAP / 'vps-servicio.png', 'Servicio crm-mail activo en el VPS y registro de los tres comandos procesados',
+         'Salida de systemctl y journalctl en el VPS Fedora Linux 44 (hora de Bolivia), 14 de octubre de 2026.', 16)
+d.p('También se envió un comando dialogando a mano con el servidor SMTP de la facultad por telnet (puerto 25), como en la '
+    'Lección 3.1: HELO, MAIL FROM, RCPT TO y DATA con el comando en el asunto. Sendmail aceptó el mensaje para el buzón '
+    'grupo05sa y, en la siguiente lectura por POP3, el servicio lo procesó y respondió al remitente.')
+d.figura(CAP / 'telnet-smtp.png', 'Comando LISTAROFERTA[] enviado por telnet al puerto 25 de mail.tecnoweb.org.bo y su registro en el servicio',
+         'Sesión de telnet desde el VPS Fedora Linux 44; en negrita blanca, lo que se teclea. 14 de octubre de 2026.', 14)
 
 # ---------------------------------------------------------------- IX
 d.h('IX. Conclusiones', 1)
