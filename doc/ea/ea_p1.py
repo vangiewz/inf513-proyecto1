@@ -775,33 +775,7 @@ def construir(ea):
             ea.poner(d, cls[nombre], x, y_, ancho(nombre), alto(nombre))
         ea.exportar(d, f'cls-{k.lower()}.png')
 
-    # ---------------------------------------------------------------- Diseño: modelo de datos
-    datos = ea.paquete(dis, 'Modelo de datos')
-    d = ea.diagrama(datos, 'Diagrama de clases del modelo de datos', 'Logical')
-    tablas = {}
-    fks = []
-    for nombre, cuerpo in re.findall(r'CREATE TABLE (\w+) \((.*?)\n\);', SQL, re.S):
-        e = ea.elemento(datos, nombre, 'Class', 'table')
-        for linea in cuerpo.splitlines():
-            mm = re.match(r'\s+(\w+)\s+(serial|int|varchar\(\d+\)|numeric\(\d+,\d+\)|timestamptz|boolean)\s*(.*)', linea)
-            if not mm: continue
-            col_, tipo, resto = mm.groups()
-            a = e.Attributes.AddNew(col_, tipo); a.Visibility = 'Public'; a.Update()
-            fk = re.search(r'REFERENCES (\w+)', resto)
-            if fk: fks.append((nombre, fk.group(1), 'NOT NULL' in resto, col_))
-        e.Update(); tablas[nombre] = e
-    # usuario arriba e interes abajo; las tablas que referencian a ambos van en la fila del medio (sin cruces),
-    # con un hueco central para la asociación directa interes.vendedor_id -> usuario.
-    for nombre, (x, y) in {'usuario': (715, 30), 'log_comando': (1150, 30),
-                           'prospecto': (30, 330), 'oferta': (270, 330), 'matricula': (600, 330),
-                           'movimiento': (900, 330), 'interaccion': (1150, 330), 'recordatorio': (1400, 330),
-                           'interes': (715, 660), 'motivo_perdida': (1150, 660)}.items():
-        ea.poner(d, tablas[nombre], x, y, 220, 175)
-    unicos = {('matricula', 'interes')}
-    for hijo, padre, obligatorio, col_ in fks:
-        mult_hijo = '0..1' if (hijo, padre) in unicos else '0..*'
-        ea.conector(tablas[hijo], tablas[padre], 'Association', col_, card=(mult_hijo, '1' if obligatorio else '0..1'))
-    ea.exportar(d, 'clases-datos.png')
+    modelo_datos(ea, dis)
 
     # ---------------------------------------------------------------- Implementación: componentes
     # Capas como componentes contenedores (como el P2 aprobado), interfaces provistas/requeridas con conectores de
@@ -861,6 +835,103 @@ def construir(ea):
         ea.conector(a_, b_, 'Dependency', t_, dirigido=True)
     ea.conector(jar_a, c_sis, 'Manifest', dirigido=True)
     ea.exportar(d, 'componentes.png')
+
+
+# Papel del usuario (u oferta) referenciado cuando la FK no es simplemente "la <tabla>"; va como nombre de la asociación,
+# a mitad de la línea, como vendedor/cliente en el P1 aprobado.
+ROL_FK = {'registrado_por': 'registrador', 'coordinador_id': 'coordinador', 'vendedor_id': 'vendedor',
+          'programa_id': 'programa', ('movimiento', 'usuario_id'): 'autor', ('interaccion', 'usuario_id'): 'autor',
+          ('matricula', 'usuario_id'): 'autor', ('recordatorio', 'usuario_id'): 'responsable',
+          ('log_comando', 'usuario_id'): 'emisor'}
+
+
+def modelo_datos(ea, dis):
+    """Clases persistentes del esquema crm (sale de crm_p1.sql). Como el P1 aprobado: atributos privados y las FK no se
+    repiten como atributo, son las asociaciones (con su papel y multiplicidad); las columnas FK aparecen en el mapeo."""
+    datos = ea.paquete(dis, 'Modelo de datos')
+    d = ea.diagrama(datos, 'Diagrama de clases del modelo de datos', 'Logical')
+    tablas, fks, textos = {}, [], {}
+    for nombre, cuerpo in re.findall(r'CREATE TABLE (\w+) \((.*?)\n\);', SQL, re.S):
+        e = ea.elemento(datos, nombre, 'Class')
+        textos[nombre] = [nombre]
+        for linea in cuerpo.splitlines():
+            mm = re.match(r'\s+(\w+)\s+(serial|int|varchar\(\d+\)|numeric\(\d+,\d+\)|timestamptz|boolean)\s*(.*)', linea)
+            if not mm: continue
+            col_, tipo, resto = mm.groups()
+            fk = re.search(r'REFERENCES (\w+)', resto)
+            if fk:
+                fks.append((nombre, fk.group(1), 'NOT NULL' in resto, 'UNIQUE' in resto, col_)); continue
+            a = e.Attributes.AddNew(col_, tipo); a.Visibility = 'Private'; a.Pos = len(textos[nombre]); a.Update()
+            textos[nombre].append(f'- {col_}: {tipo}')
+        e.Update(); tablas[nombre] = e
+    ancho = {n: int(50 + 6.3 * max(map(len, t))) for n, t in textos.items()}   # mismas medidas que las clases por CU
+    alto = {n: 44 + 14 * (len(t) - 1) for n, t in textos.items()}
+    # Disposición compacta con líneas ortogonales: usuario arriba e interes abajo, en el eje; a cada lado una columna con
+    # las tablas que referencian a ambos. Cada tabla sube a usuario por un carril exterior y baja a interes por el canal
+    # central; los carriles van anidados (la caja de arriba usa el carril interior), así ninguna línea cruza a otra.
+    izq, der = ('oferta', 'prospecto', 'matricula'), ('movimiento', 'interaccion', 'recordatorio')
+    C, L, M, V = 30, 25, 50, 40   # carriles del canal central y exteriores, aire usuario/interes-columnas, entre cajas
+    cx = 40 + 3 * L + max(ancho[n] for n in izq) + 4 * C   # eje: el canal central mide 8 carriles
+    # log_comando solo se une a usuario: va arriba a la derecha, por encima de los carriles que entran a usuario
+    yU = 30 + max(0, alto['log_comando'] - 28)
+    sitio = {'usuario': (cx - ancho['usuario'] // 2, yU),
+             'log_comando': (cx + ancho['usuario'] // 2 + 130, yU + 28 - alto['log_comando'])}
+    for col, lado in ((izq, -1), (der, 1)):
+        y = yU + alto['usuario'] + M
+        for n in col:
+            sitio[n] = (cx - 4 * C - ancho[n] if lado < 0 else cx + 4 * C, y); y += alto[n] + V
+    yI = max(sitio[n][1] + alto[n] for n in izq + der) + M
+    sitio['interes'] = (cx - ancho['interes'] // 2, yI)
+    x_der = max(sitio[n][0] + ancho[n] for n in der)
+    sitio['motivo_perdida'] = (sitio['interes'][0] + ancho['interes'] + 120,
+                               yI + (alto['interes'] - alto['motivo_perdida']) // 2)
+    for n, (x, y) in sitio.items():
+        ea.poner(d, tablas[n], x, y, ancho[n], alto[n])
+    con = {}
+    for hijo, padre, obligatorio, unico, col_ in fks:
+        rol = ROL_FK.get((hijo, col_)) or ROL_FK.get(col_, '')
+        con[hijo, padre] = ea.conector(tablas[hijo], tablas[padre], 'Association', rol,
+                                       card=('0..1' if unico else '0..*', '1' if obligatorio else '0..1'))
+    d.Update(); ea.r.ReloadDiagram(d.DiagramID); d.DiagramLinks.Refresh()
+    enlace = {l.ConnectorID: l for l in d.DiagramLinks}
+    centro = {n: (x + ancho[n] / 2, y + alto[n] / 2) for n, (x, y) in sitio.items()}
+
+    def ruta(hijo, padre, s, e, puntos=(), etiqueta=None):
+        """s/e: salida y llegada respecto del centro de cada caja (y hacia arriba, como EA); puntos: quiebres (x, y);
+        etiqueta: dónde va el nombre, en vez del medio del tramo central (que es donde EA lo pone). Se dibuja de hijo a
+        padre; si la FK va al revés (interes -> oferta), se invierte la ruta."""
+        if (hijo, padre) not in con:
+            hijo, padre, s, e, puntos = padre, hijo, e, s, puntos[::-1]
+        c = con[hijo, padre]
+        a = [(centro[hijo][0] + s[0], centro[hijo][1] - s[1]), *puntos, (centro[padre][0] + e[0], centro[padre][1] - e[1])]
+        g = f'SX={s[0]:.0f};SY={s[1]:.0f};EX={e[0]:.0f};EY={e[1]:.0f};EDGE=2;'
+        if etiqueta:
+            k = (len(a) - 1) // 2   # tramo central
+            mx, my = (a[k][0] + a[k + 1][0]) / 2, (a[k][1] + a[k + 1][1]) / 2
+            g += (f'$LLB=;LLT=;LMT=CX={6 * len(c.Name) + 10}:CY=14:OX={etiqueta[0] - mx:.0f}:OY={etiqueta[1] - my:.0f}:'
+                  'HDN=0:BLD=0:ITA=0:UND=0:CLR=-1:ALN=1:DIR=0:ROT=0;LMB=;LRT=;LRB=;IRHS=;ILHS=;')
+        l = enlace.get(c.ConnectorID) or d.DiagramLinks.AddNew('', '')
+        l.ConnectorID = c.ConnectorID
+        l.Path = ''.join(f'{x:.0f}:{-y:.0f};' for x, y in puntos)
+        l.Geometry = g; l.Style = 'Mode=3;EOID=;SOID=;Color=-1;LWidth=0;'; l.Update()
+
+    wU, hU, hI = ancho['usuario'], alto['usuario'], alto['interes']
+    for col, lado in ((izq, -1), (der, 1)):
+        borde = min(sitio[n][0] for n in col) if lado < 0 else x_der
+        for j, n in enumerate(col):
+            cy = centro[n][1]
+            carril = borde + lado * L * (j + 1)
+            nivel = yU + hU - 30 - 35 * j   # la caja de arriba entra más abajo en usuario
+            puerta = cx + lado * wU / 2
+            ruta(n, 'usuario', (lado * ancho[n] / 2, 0), (lado * wU / 2, centro['usuario'][1] - nivel),
+                 [(carril, cy), (carril, nivel)], etiqueta=(puerta + lado * 75, nivel - 9))   # cerca de usuario: lejos de log_comando
+            canal = cx + lado * C * (j + 1)   # la caja de arriba usa el carril más cercano al eje
+            ruta(n, 'interes', (-lado * ancho[n] / 2, 0), (canal - cx, hI / 2), [(canal, cy)])
+    ruta('interes', 'usuario', (0, hI / 2), (0, -hU / 2), etiqueta=(cx - 32, yU + hU + 24))   # EA pone 0..1 a la derecha
+    nivel = yU + 15
+    ruta('log_comando', 'usuario', (-ancho['log_comando'] / 2, centro['log_comando'][1] - nivel),
+         (wU / 2, centro['usuario'][1] - nivel))
+    ea.exportar(d, 'clases-datos.png')
 
 
 if __name__ == '__main__':

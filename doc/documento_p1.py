@@ -440,7 +440,10 @@ def tablas_sql():
     return out
 
 
-d.p('Las clases persistentes se transforman en tablas del esquema crm. Cada tabla tiene una clave primaria serial; las '
+d.p('En el diagrama, las claves foráneas no se repiten como atributo: cada una es una asociación con su multiplicidad, '
+    'rotulada con el papel del usuario cuando no es obvio (vendedor, coordinador, registrador, autor, responsable, emisor); '
+    'la asociación de oferta consigo misma (programa) une cada módulo con su programa. '
+    'Las clases persistentes se transforman en tablas del esquema crm. Cada tabla tiene una clave primaria serial; las '
     'asociaciones se implementan como claves foráneas y las reglas del negocio como restricciones CHECK y UNIQUE '
     '(script completo en el Anexo B).')
 for nombre, cols in tablas_sql():
