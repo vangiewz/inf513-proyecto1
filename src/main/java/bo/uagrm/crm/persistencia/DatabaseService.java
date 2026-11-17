@@ -15,7 +15,7 @@ import java.util.List;
 
 /**
  * Capa de persistencia: conexión JDBC a PostgreSQL (db.tecnoweb.org.bo:5432, db_grupo05sa, esquema
- * crm) y consultas parametrizadas. Todo valor del usuario viaja como parámetro (PreparedStatement),
+ * public) y consultas parametrizadas. Todo valor del usuario viaja como parámetro (PreparedStatement),
  * nunca concatenado.
  */
 public final class DatabaseService {
@@ -82,8 +82,8 @@ public final class DatabaseService {
               """);
       if (!Boolean.TRUE.equals(listo))
         throw new SQLException(
-            "La conexion no apunta al modelo web compartido. Revise currentSchema y las"
-                + " migraciones.",
+            "La conexion no apunta al modelo vigente del CRM. Revise currentSchema y la"
+                + " estructura de la base.",
             "08004");
     }
   }

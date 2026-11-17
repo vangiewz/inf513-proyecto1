@@ -3,6 +3,8 @@ Uso: python p1/doc/documento_p1.py  ->  p1/doc/P1-INF513-GRUPO05SA.docx
 Luego: powershell -File tools/word_export.ps1 p1/doc/P1-INF513-GRUPO05SA.docx
 Estructura: la del P1 aprobado (Grupo 17 SA) — 12 secciones del Anexo B y Desarrollo por flujos del PUDS.
 Lo que aún no existe (figuras de Enterprise Architect, datos de la empresa) sale en rojo y se lista al final."""
+raise SystemExit('Generador PUDS historico: actualizar texto, diagramas y referencias al modelo sql/esquema.sql antes de generar una nueva entrega.')
+
 import csv, json, pathlib, re, sys
 import xml.etree.ElementTree as ET
 

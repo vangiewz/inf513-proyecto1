@@ -9,3 +9,20 @@ doc/~$*
 doc/diagramas/.teselas/
 __pycache__/
 *.ldb
+
+# Secretos, respaldos y resultados temporales
+.secrets/
+.env
+.env.*
+!.env.example
+*.dump
+*.backup
+*.bak
+*.tmp
+*.log
+*.pem
+*.key
+*.local.md
+*.pyc
+.DS_Store
+Thumbs.db

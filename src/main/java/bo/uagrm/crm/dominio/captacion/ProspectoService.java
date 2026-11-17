@@ -242,7 +242,7 @@ public final class ProspectoService {
             codigo);
     if (ofertas.isEmpty())
       throw new CrmException(
-          "No existe la oferta. Vea LISTAROFERTA[]. La cache debe sincronizarse desde web.");
+          "No existe la oferta. Vea LISTAROFERTA[] o consulte a administracion para actualizar el catalogo.");
     if (ofertas.stream().anyMatch(o -> !o.abierta()))
       throw new CrmException("La oferta esta cerrada y no recibe inscripciones.");
     if (actor != null

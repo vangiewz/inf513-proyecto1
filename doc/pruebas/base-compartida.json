@@ -94,5 +94,6 @@
     "skipped": 0
   },
   "nota": "Suite completa y repeticion de los dos escenarios financieros remotos con limite ajustado a la latencia observada (600 s).",
-  "regresion_web": 264
+  "regresion_web": 264,
+  "alcance": "Registro de la verificacion del 17/11/2026; incluye pruebas HTTP con una version de desarrollo web posteriormente retirada. No certifica la web actual."
 }

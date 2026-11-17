@@ -1,36 +1,39 @@
-# Pruebas del flujo compartido
+# Pruebas de P1 correo
 
-Requiere Java 21+, Maven y, para integracion, un entorno QA aislado. `mvn test` sin variables ejecuta pruebas unitarias y omite las suites de integracion: no equivale a las 154 pruebas completas.
+Requiere Java 21+ y Maven. Desde este repositorio:
 
-**Correccion de alcance:** la verificacion completa documentada uso la revision web `098794f`, posteriormente revertida porque el trabajo solicitado corresponde solo a correo. Las instrucciones HTTP siguientes describen ese entorno anterior; no preparar QA directamente con la web restaurada esperando los mismos resultados. No modificar web para volver a ejecutar estas pruebas. El modelo instalado para correo esta conservado en `sql/modelo-referencia/`.
-
-## Integracion local
-
-Desde el repositorio web, con su Docker Compose iniciado:
-
-```powershell
-python scripts/qa_local.py start
-docker exec crm-qa-audit php artisan catalogo:sincronizar-correo
-# Primero la regresion web sobre QA nueva:
-python scripts/qa_local.py test
+```sh
+mvn test
 ```
 
-Desde el repositorio de correo:
+Sin variables de integracion se ejecutan las pruebas unitarias; Maven informa las suites de integracion omitidas. Esto no equivale a ejecutar las 154 pruebas del registro anterior.
 
-```powershell
-$env:P1_TEST_DB_URL='jdbc:postgresql://127.0.0.1:55432/crm_qa_audit'
-mvn clean package
-Remove-Item Env:P1_TEST_DB_URL
+Para verificar los SQL de instalacion, con Docker:
+
+```sh
+python scripts/verificar_sql.py
 ```
 
-Se usan exclusivamente `crm_qa_audit` y la API aislada en `127.0.0.1:18002`. Al finalizar, desde web: `python scripts/qa_local.py stop`.
+Crea PostgreSQL 18 sin red ni puertos publicados, comprueba la instalacion y las referencias, verifica el rechazo sobre un esquema ocupado y elimina su contenedor al terminar.
 
-## Integracion con el servidor del docente
+## Integracion de correo con PostgreSQL
 
-Las suites remotas requieren el esquema temporal `crm_qa_correo` con las mismas migraciones y catalogo. Nunca apuntarlas a `public`. Cargar `P1_REMOTE_DB_PASSWORD` en memoria desde la fuente privada; no escribir claves en scripts. Al habilitar ambas variables y ejecutar `mvn clean package` se incluyen todas las suites. Retirar la variable y el esquema QA al terminar.
+`ServidorCompartidoTest` y `CorreoServidorFinancieroTest` prueban correo directamente contra un esquema QA del servidor del docente, sin depender de web. Incluyen roles, alcance, ordenes, comprobantes, pagos, conversion, exportacion y concurrencia.
 
-En TecnoTarea, los auxiliares son `tools/base_compartida.py migrar-qa`, `tools/probar_base_compartida.py --servidor` y `tools/base_compartida.py eliminar-qa`. Pertenecen al workspace de operacion; no forman parte de este clon.
+Requieren preparar exclusivamente `crm_qa_correo`, con la estructura y referencias de `sql/`, adaptando el destino del esquema a QA. No ejecutar sobre `public`. Cargar `P1_REMOTE_DB_PASSWORD` en memoria desde la fuente privada y ejecutar:
 
-## Evidencia del 17/11/2026
+```sh
+mvn -Dtest=ServidorCompartidoTest,CorreoServidorFinancieroTest test
+```
 
-`doc/pruebas/base-compartida.json`: 154 pruebas Java, 0 fallas, 0 errores, 0 omitidas; incluye 12 pruebas remotas. Ademas pasaron 264 comprobaciones web y 12 comandos de consulta del JAR desplegado. La suite financiera remota se repitio con limite de 600 segundos por latencia observada. No se crearon ventas de prueba en produccion ni se enviaron correos externos.
+Al terminar, retirar la variable y eliminar el esquema temporal. Se crean datos ficticios; la clave nunca se escribe en scripts ni archivos publicados.
+
+## Pruebas complementarias entre clientes
+
+`BaseCompartidaTest` y `CasosAprobadosCorreoTest` incluyen pruebas JDBC y HTTP de interoperabilidad con una version de desarrollo web. Se conservan como pruebas complementarias para P2. Requieren un entorno compatible separado en `crm_qa_audit`, PostgreSQL local en el puerto 55432 y API HTTP en 18002. No modificar web para ejecutarlas como parte de una tarea de correo.
+
+## Evidencia conservada
+
+`doc/pruebas/base-compartida.json` registra la ejecucion del 17/11/2026: 154 pruebas Java sin fallas ni omisiones, incluidas 12 pruebas PostgreSQL del servidor. Las pruebas HTTP se realizaron con una version de desarrollo web que posteriormente se retiro; el registro no certifica la web actual. Tambien se verificaron 12 comandos de consulta del JAR desplegado, sin crear ventas de prueba en produccion ni enviar correos externos.
+
+Los escenarios y capturas academicos antiguos deben actualizarse antes de entregar el PUDS. El codigo de pruebas se conserva; los archivos temporales de Maven no se versionan.

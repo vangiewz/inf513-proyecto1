@@ -4,7 +4,7 @@ Destino: `grupo05sa@tecnoweb.org.bo`. El comando y sus parametros van en el **as
 Los parametros se escriben entre comillas y se separan con comas. `HELP[]` muestra
 solo los comandos del rol del remitente; `HELP["GENERARORDEN"]` explica uno.
 La base de despliegue es **`db_grupo05sa`, esquema `public`**. No usar ni recrear
-`crm` o `crm_compartido`. El detalle vigente esta en `../BASE_COMPARTIDA.md`.
+`crm` o `crm_compartido`. El detalle vigente esta en [BASE_DATOS.md](BASE_DATOS.md).
 
 ## Cobertura funcional
 

@@ -2,6 +2,8 @@
 Uso: python p1/doc/ea/ea_p1.py  ->  p1/doc/ea/crm-p1.eapx y p1/doc/diagramas/*.png
 Todo nombre de clase, método, comando, host y puerto sale del código de p1/ o de lo verificado en los servidores
 (lista y criterio en P1_CORREO.md § Diagramas)."""
+raise SystemExit('Generador EA historico: actualizar clases y tablas al modelo sql/esquema.sql antes de regenerar los diagramas.')
+
 import pathlib, re, shutil, sys, uuid
 import win32com.client
 

@@ -10,7 +10,7 @@ import java.sql.*;
 import java.util.*;
 
 /**
- * La aprobacion del pago en web crea las inscripciones y comisiones. Correo nunca fabrica un pago.
+ * Consulta las inscripciones confirmadas por la aprobacion del pago en el CRM, sin duplicarlas.
  */
 public final class ConversionService {
   public record Requisito(String nombre, String valor, boolean cumple) {

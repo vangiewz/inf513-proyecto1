@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 import java.sql.*;
 
 /**
- * Instantánea sincronizada de la oferta externa usada por web. No contiene prospectos ni ventas.
+ * Instantánea del catalogo externo del CRM. No contiene prospectos ni ventas.
  */
 public record Oferta(
     int id,

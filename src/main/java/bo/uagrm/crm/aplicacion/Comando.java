@@ -35,7 +35,7 @@ public enum Comando {
   LISTAROFERTA(
       "CU2",
       "",
-      "Lista el catalogo simulado compartido con web; API SIS pendiente",
+      "Lista el catalogo simulado del CRM; API SIS pendiente",
       "LISTAROFERTA[]"),
   REGISTRARINTERES(
       "CU2",
