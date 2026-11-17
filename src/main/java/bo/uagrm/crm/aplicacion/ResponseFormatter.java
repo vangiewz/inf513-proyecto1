@@ -124,7 +124,7 @@ public final class ResponseFormatter {
           .append(";\">")
           .append(esc(asuntoRecibido))
           .append("</span><br>");
-    b.append("Defensa P1P - CRM vía e-mail · Grupo 05 SA · INF513 Tecnología Web · UAGRM FICCT<br>")
+    b.append("CRM vía e-mail · Grupo 05 SA · INF513 Tecnología Web · UAGRM FICCT<br>")
         .append("Envíe HELP[] para ver sus comandos.</div></td></tr>")
         .append("</table></td></tr></table></body></html>");
     return b.toString();
@@ -178,7 +178,11 @@ public final class ResponseFormatter {
       String[] fila = t.filas().get(f);
       b.append("<tr style=\"background:").append(f % 2 == 1 ? CEBRA : "#FFFFFF").append(";\">");
       for (int i = 0; i < fila.length; i++) {
-        b.append("<td valign=\"top\" style=\"padding:8px 10px;border-bottom:1px solid ")
+        // Las firmas de comando (primera columna) no tienen espacios: sin cortarlas la tabla se desborda y Gmail
+        // recorta columnas. Las demás columnas no se cortan a mitad de palabra.
+        b.append("<td valign=\"top\" style=\"padding:8px 10px;")
+            .append(i == 0 ? "word-break:break-word;overflow-wrap:anywhere;" : "")
+            .append("border-bottom:1px solid ")
             .append(LINEA)
             .append(";\">");
         if (i == barra) barra(b, fila[i]);
@@ -276,7 +280,7 @@ public final class ResponseFormatter {
     }
     if (asuntoRecibido != null) b.append("Comando recibido: ").append(asuntoRecibido).append('\n');
     return b.append(
-            "Defensa P1P - CRM vía e-mail · Grupo 05 SA · INF513 Tecnología Web · UAGRM FICCT\n")
+            "CRM vía e-mail · Grupo 05 SA · INF513 Tecnología Web · UAGRM FICCT\n")
         .toString();
   }
 

@@ -32,7 +32,7 @@ final class Errores {
       return "Uno de los valores no está permitido o es demasiado largo.";
     if (estado.startsWith("08"))
       return "No hay conexión con la base de datos. Intente de nuevo en unos minutos.";
-    System.err.println("Error SQL no previsto: " + estado + " " + e.getMessage());
+    java.util.logging.Logger.getLogger("crm").warning("Error SQL no previsto: " + estado + " " + e.getMessage());
     return "No se pudo completar la operación (código " + estado + "). Intente de nuevo.";
   }
 }

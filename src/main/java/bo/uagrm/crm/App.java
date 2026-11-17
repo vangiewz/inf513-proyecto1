@@ -12,30 +12,43 @@ import bo.uagrm.crm.persistencia.DatabaseService;
 import bo.uagrm.crm.presentacion.Correo;
 import bo.uagrm.crm.presentacion.Pop3Client;
 import bo.uagrm.crm.presentacion.SmtpSender;
+import java.io.IOException;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.FileHandler;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 
 /**
  * CRM vía e-mail (Proyecto 1, INF513 Grupo 05 SA). Cada intervalo: lee el buzón
  * grupo05sa@tecnoweb.org.bo por POP3, procesa el comando del asunto, responde al remitente por SMTP
  * y avisa los recordatorios vencidos.
  *
- * <p>Uso: java -jar crm-mail.jar crm-mail.properties java -jar crm-mail.jar --probar
- * crm-mail.properties remitente@correo "COMANDO[...]" [archivo.csv] java -jar crm-mail.jar --anexo
+ * <p>Uso: java -jar crm-mail.jar crm-mail.properties · java -jar crm-mail.jar --diagnostico
+ * crm-mail.properties · java -jar crm-mail.jar --probar crm-mail.properties remitente@correo
+ * "COMANDO[...]" [archivo] · java -jar crm-mail.jar --anexo
+ *
+ * <p>Log: consola y logs/crm-mail.N.log (5 MB x 5, rotativo). Una línea por ciclo con la latencia de
+ * cada etapa; ante una falla, la etapa, el destino y la causa probable (ver {@link Diagnostico}).
  */
 public final class App {
 
   private static final int MAX_POR_CICLO = 20;
   private static final long MAX_BYTES =
       8L * 1024 * 1024; // correos más grandes se rechazan sin descargarlos
-  private static final DateTimeFormatter HORA = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+  private static final Logger LOG = Logger.getLogger("crm");
 
   private final Config cfg;
   private final CommandProcessor procesador;
@@ -43,6 +56,13 @@ public final class App {
   private final SmtpSender smtp;
   private final ResponseFormatter fmt;
   private final DatabaseService db;
+
+  // Estado entre ciclos, para informar cambios y no solo errores sueltos.
+  private long ciclo;
+  private String falla; // "etapa destino → causa" de la falla en curso; null si el último ciclo fue bien
+  private Instant fallaDesde;
+  private int fallaCiclos;
+  private final Map<String, String> ipVista = new HashMap<>(); // host vigilado -> IP(s) resueltas
 
   App(Config cfg) {
     this.cfg = cfg;
@@ -64,6 +84,11 @@ public final class App {
     if (args.length == 1 && args[0].equals("--anexo")) {
       anexo();
       return;
+    }
+    if (args.length == 2 && args[0].equals("--diagnostico")) {
+      configurarLog(false);
+      App app = new App(Config.cargar(Path.of(args[1])));
+      System.exit(Diagnostico.revisar(app.cfg, app.smtp, app.db) ? 0 : 1);
     }
     if (args.length >= 4 && args[0].equals("--probar")) {
       App app = new App(Config.cargar(Path.of(args[1])));
@@ -88,31 +113,139 @@ public final class App {
             Path.of("respuesta.html"), app.fmt.html(r, args[3]), StandardCharsets.UTF_8);
       return;
     }
+    configurarLog(true);
     Config cfg = Config.cargar(Path.of(args.length > 0 ? args[0] : "crm-mail.properties"));
     log("CRM vía e-mail iniciado. " + cfg);
-    new App(cfg).ejecutar();
+    App app = new App(cfg);
+    Diagnostico.revisar(cfg, app.smtp, app.db); // informa; el servicio arranca igual y reintenta
+    app.ejecutar();
+  }
+
+  /** Consola y, en modo servicio, archivo rotativo logs/crm-mail.N.log, ambos en UTF-8. */
+  private static void configurarLog(boolean archivo) throws IOException {
+    System.setProperty(
+        "java.util.logging.SimpleFormatter.format", "%1$tF %1$tT %4$-7s %5$s%6$s%n");
+    Logger raiz = Logger.getLogger("");
+    raiz.setLevel(Level.WARNING); // librerías: solo advertencias
+    for (Handler h : raiz.getHandlers()) raiz.removeHandler(h);
+    LOG.setLevel(Level.INFO);
+    LOG.setUseParentHandlers(false);
+    ConsoleHandler consola = new ConsoleHandler();
+    consola.setFormatter(new SimpleFormatter());
+    consola.setEncoding("UTF-8");
+    LOG.addHandler(consola);
+    if (archivo) {
+      Files.createDirectories(Path.of("logs"));
+      FileHandler f = new FileHandler("logs/crm-mail.%g.log", 5_000_000, 5, true);
+      f.setFormatter(new SimpleFormatter());
+      f.setEncoding("UTF-8");
+      LOG.addHandler(f);
+    }
   }
 
   private void ejecutar() throws InterruptedException {
+    java.security.Security.setProperty("networkaddress.cache.ttl", "10"); // ver cambios de DNS pronto
     while (true) {
+      ciclo++;
+      vigilarDns(cfg.pop3Host()); // smtp.gmail.com rota sus IP: no se vigila
+      vigilarDns(cfg.dbHost());
       try {
-        ciclo();
-      } catch (Exception e) {
-        log("Ciclo fallido: " + e.getMessage());
+        String resumen = ciclo();
+        if (falla != null)
+          log(
+              "RECUPERADO tras "
+                  + fallaCiclos
+                  + " ciclo(s) con falla ("
+                  + duracion(fallaDesde)
+                  + "): "
+                  + falla);
+        falla = null;
+        log("ciclo " + ciclo + " OK · " + resumen);
+      } catch (EtapaFallida e) {
+        registrarFalla(e.etapa + " " + e.destino + " → " + e.causa);
+      } catch (RuntimeException e) {
+        registrarFalla("inesperada → " + e);
       }
       Thread.sleep(cfg.intervaloSegundos() * 1000L);
+    }
+  }
+
+  /** La primera vez se informa completa; mientras siga igual, una línea corta por ciclo. */
+  private void registrarFalla(String detalle) {
+    if (!detalle.equals(falla)) {
+      if (falla == null) fallaDesde = Instant.now();
+      falla = detalle;
+      fallaCiclos = 1;
+      LOG.severe("ciclo " + ciclo + " FALLA " + detalle);
+    } else {
+      fallaCiclos++;
+      LOG.warning(
+          "ciclo "
+              + ciclo
+              + " sigue la falla ("
+              + fallaCiclos
+              + " ciclos, "
+              + duracion(fallaDesde)
+              + "): "
+              + falla.substring(0, Math.max(0, falla.indexOf(" → "))));
+    }
+  }
+
+  /** Si el DNS de un host de la facultad cambia o deja de resolver, queda en el log. */
+  private void vigilarDns(String host) {
+    String ahora;
+    try {
+      ahora = Diagnostico.ips(host);
+    } catch (UnknownHostException e) {
+      ahora = "sin resolución";
+    }
+    String antes = ipVista.put(host, ahora);
+    if (antes != null && !antes.equals(ahora))
+      LOG.warning("DNS " + host + " cambió: " + antes + " → " + ahora);
+  }
+
+  private static String duracion(Instant desde) {
+    long s = Duration.between(desde, Instant.now()).toSeconds();
+    return String.format("%d:%02d", s / 60, s % 60);
+  }
+
+  private static long ms(long t0) {
+    return (System.nanoTime() - t0) / 1_000_000;
+  }
+
+  /** Falla de una etapa del ciclo, con su destino y la causa ya diagnosticada. */
+  private static final class EtapaFallida extends Exception {
+    final String etapa;
+    final String destino;
+    final String causa;
+
+    EtapaFallida(String etapa, String host, int puerto, Exception e) {
+      super(e);
+      this.etapa = etapa;
+      this.destino = host + ":" + puerto;
+      this.causa = Diagnostico.explicar(host, puerto, e);
     }
   }
 
   /** Un mensaje bajado del buzón; si superó el límite solo trae sus cabeceras. */
   private record Recibido(byte[] contenido, long bytes, boolean excedido) {}
 
-  private void ciclo() throws Exception {
-    db.verificarModelo(); // No retirar mensajes si la BD o el modelo no estan disponibles.
+  /** Un ciclo por etapas: BD → POP3 → atender (SMTP) → recordatorios. Devuelve el resumen. */
+  private String ciclo() throws EtapaFallida {
+    long t0 = System.nanoTime();
+    try {
+      db.verificarModelo(); // No retirar mensajes si la BD o el modelo no están disponibles.
+    } catch (Exception e) {
+      throw new EtapaFallida("BD", cfg.dbHost(), cfg.dbPuerto(), e);
+    }
+    long tBd = ms(t0);
+    t0 = System.nanoTime();
     List<Recibido> mensajes = new ArrayList<>();
+    int enBuzon;
     try (Pop3Client pop =
         new Pop3Client(cfg.pop3Host(), cfg.pop3Puerto(), cfg.pop3Usuario(), cfg.pop3Password())) {
-      int n = Math.min(pop.stat(), MAX_POR_CICLO);
+      enBuzon = pop.stat();
+      int n = Math.min(enBuzon, MAX_POR_CICLO);
       for (int i = 1; i <= n; i++) {
         long bytes = pop.tamano(i);
         boolean excedido = bytes > MAX_BYTES;
@@ -120,9 +253,20 @@ public final class App {
         pop.dele(i);
       }
       pop.quit(); // confirma los DELE: recién aquí los mensajes salen del buzón
+    } catch (Exception e) {
+      throw new EtapaFallida("POP3", cfg.pop3Host(), cfg.pop3Puerto(), e);
     }
+    String resumen = "BD " + tBd + " ms · POP3 " + mensajes.size() + " msg " + ms(t0) + " ms";
+    if (enBuzon > mensajes.size())
+      resumen += " (quedan " + (enBuzon - mensajes.size()) + " en el buzón para el próximo ciclo)";
     for (Recibido m : mensajes) atender(m);
-    avisarRecordatorios();
+    try {
+      int avisos = avisarRecordatorios();
+      if (avisos > 0) resumen += " · " + avisos + " recordatorio(s) avisado(s)";
+    } catch (Exception e) {
+      throw new EtapaFallida("Recordatorios (BD)", cfg.dbHost(), cfg.dbPuerto(), e);
+    }
+    return resumen;
   }
 
   /**
@@ -186,7 +330,11 @@ public final class App {
           c.asunto(),
           "Error",
           "Fallo al atender el correo: " + e.getMessage());
-      log("No se pudo atender un correo de " + c.remitente() + ": " + e);
+      LOG.severe(
+          "No se pudo atender un correo de "
+              + c.remitente()
+              + ": "
+              + Diagnostico.explicar(cfg.dbHost(), cfg.dbPuerto(), e));
     }
   }
 
@@ -208,12 +356,22 @@ public final class App {
           asuntoRecibido == null ? r.asunto() : asuntoRecibido,
           "Error",
           "No se pudo enviar el correo de respuesta: " + e.getMessage());
-      log("Envío fallido a " + para + ": " + e.getMessage());
+      LOG.severe(
+          "SMTP "
+              + cfg.smtpHost()
+              + ":"
+              + cfg.smtpPuerto()
+              + " → "
+              + Diagnostico.explicar(cfg.smtpHost(), cfg.smtpPuerto(), e)
+              + " (respuesta a "
+              + para
+              + " no enviada)");
     }
   }
 
-  /** RF4.3: cuando vence un recordatorio, su dueño recibe un correo. */
-  private void avisarRecordatorios() throws Exception {
+  /** RF4.3: cuando vence un recordatorio, su dueño recibe un correo. Devuelve cuántos se avisaron. */
+  private int avisarRecordatorios() throws Exception {
+    int enviados = 0;
     for (Recordatorio r : seguimiento.vencidos()) {
       try {
         Respuesta aviso =
@@ -234,15 +392,17 @@ public final class App {
         smtp.enviar(
             r.correoUsuario(), aviso.asunto(), fmt.html(aviso, null), fmt.texto(aviso, null));
         seguimiento.marcarNotificado(r.id());
+        enviados++;
         log("Recordatorio " + r.id() + " enviado a " + r.correoUsuario());
       } catch (Exception e) {
-        log(
+        LOG.warning(
             "Recordatorio "
                 + r.id()
                 + " no enviado (se reintenta en el próximo ciclo): "
-                + e.getMessage());
+                + Diagnostico.explicar(cfg.smtpHost(), cfg.smtpPuerto(), e));
       }
     }
+    return enviados;
   }
 
   /** Matriz de acceso (Anexo: comandos por rol), generada del mismo código que la aplica. */
@@ -259,6 +419,6 @@ public final class App {
   }
 
   private static void log(String s) {
-    System.out.println(LocalDateTime.now().format(HORA) + " " + s);
+    LOG.info(s);
   }
 }

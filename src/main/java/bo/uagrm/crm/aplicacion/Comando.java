@@ -89,11 +89,6 @@ public enum Comando {
       "",
       "Distribuye por menor carga y mantiene juntos los intereses de cada prospecto",
       "ASIGNARAUTOMATICO[]"),
-  TOMARPROSPECTO(
-      "CU3",
-      "id_tarjeta",
-      "Toma un prospecto de la bolsa común para su cartera",
-      "TOMARPROSPECTO[\"7\"]"),
 
   VERTABLERO("CU4", "", "Muestra el tablero Kanban del embudo de ventas", "VERTABLERO[]"),
   MOVERTARJETA(
@@ -221,8 +216,7 @@ public enum Comando {
   REPORTEPERDIDAS(
       "CU8", "",
       "Pérdidas por motivo y por categoría", "REPORTEPERDIDAS[]"),
-  REPORTEOFERTA("CU8", "", "Interés y conversiones por oferta", "REPORTEOFERTA[]"),
-  NUEVOPRUEBA("CU9", "texto", "Nueva prueba", "NUEVOPRUEBA[texto]");
+  REPORTEOFERTA("CU8", "", "Interés y conversiones por oferta", "REPORTEOFERTA[]");
 
   public final String cu;
   public final String[] parametros;

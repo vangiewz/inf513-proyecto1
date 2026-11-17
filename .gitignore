@@ -1,6 +1,7 @@
 target/
 crm-mail.properties
 respuesta.html
+logs/
 sql/usuarios.sql
 doc/*.doc
 doc/*.docx

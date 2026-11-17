@@ -119,7 +119,6 @@ ALTER SEQUENCE public.api_tokens_id_seq OWNED BY public.api_tokens.id;
 --
 
 CREATE TABLE public.catalogo_cache (
-    id bigint NOT NULL,
     codigo character varying(255) NOT NULL,
     external_anuncio_id character varying(255),
     programa_codigo character varying(255) NOT NULL,
@@ -130,25 +129,6 @@ CREATE TABLE public.catalogo_cache (
     estado character varying(255) NOT NULL,
     sincronizado_en timestamp(0) without time zone NOT NULL
 );
-
-
---
--- Name: catalogo_cache_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.catalogo_cache_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: catalogo_cache_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.catalogo_cache_id_seq OWNED BY public.catalogo_cache.id;
 
 
 --
@@ -585,7 +565,6 @@ ALTER SEQUENCE public.notificaciones_id_seq OWNED BY public.notificaciones.id;
 --
 
 CREATE TABLE public.orden_pago_descuentos (
-    id bigint NOT NULL,
     orden_pago_id bigint NOT NULL,
     descuento_id bigint NOT NULL,
     porcentaje numeric(5,2) NOT NULL,
@@ -593,25 +572,6 @@ CREATE TABLE public.orden_pago_descuentos (
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone
 );
-
-
---
--- Name: orden_pago_descuentos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.orden_pago_descuentos_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: orden_pago_descuentos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.orden_pago_descuentos_id_seq OWNED BY public.orden_pago_descuentos.id;
 
 
 --
@@ -880,13 +840,6 @@ ALTER TABLE ONLY public.api_tokens ALTER COLUMN id SET DEFAULT nextval('public.a
 
 
 --
--- Name: catalogo_cache id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.catalogo_cache ALTER COLUMN id SET DEFAULT nextval('public.catalogo_cache_id_seq'::regclass);
-
-
---
 -- Name: comisiones id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -964,13 +917,6 @@ ALTER TABLE ONLY public.notificaciones ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
--- Name: orden_pago_descuentos id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.orden_pago_descuentos ALTER COLUMN id SET DEFAULT nextval('public.orden_pago_descuentos_id_seq'::regclass);
-
-
---
 -- Name: ordenes_pago id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1029,19 +975,11 @@ ALTER TABLE ONLY public.api_tokens
 
 
 --
--- Name: catalogo_cache catalogo_cache_codigo_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.catalogo_cache
-    ADD CONSTRAINT catalogo_cache_codigo_unique UNIQUE (codigo);
-
-
---
 -- Name: catalogo_cache catalogo_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.catalogo_cache
-    ADD CONSTRAINT catalogo_cache_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT catalogo_cache_pkey PRIMARY KEY (codigo);
 
 
 --
@@ -1185,7 +1123,7 @@ ALTER TABLE ONLY public.notificaciones
 --
 
 ALTER TABLE ONLY public.orden_pago_descuentos
-    ADD CONSTRAINT orden_pago_descuentos_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT orden_pago_descuentos_pkey PRIMARY KEY (orden_pago_id, descuento_id);
 
 
 --
@@ -1465,6 +1403,14 @@ ALTER TABLE ONLY public.interacciones
 
 
 --
+-- Name: intereses intereses_external_modulo_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intereses
+    ADD CONSTRAINT intereses_external_modulo_id_foreign FOREIGN KEY (external_modulo_id) REFERENCES public.catalogo_cache(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
 -- Name: intereses intereses_motivo_perdida_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1582,6 +1528,14 @@ ALTER TABLE ONLY public.recordatorios
 
 ALTER TABLE ONLY public.recordatorios
     ADD CONSTRAINT recordatorios_usuario_id_foreign FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: solicitudes_compra solicitudes_compra_external_modulo_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.solicitudes_compra
+    ADD CONSTRAINT solicitudes_compra_external_modulo_id_foreign FOREIGN KEY (external_modulo_id) REFERENCES public.catalogo_cache(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --

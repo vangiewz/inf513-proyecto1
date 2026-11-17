@@ -44,6 +44,16 @@ public record Config(
         Integer.parseInt(p.getProperty("intervalo.segundos", "10")));
   }
 
+  /** Host de la BD tomado de db.url (jdbc:postgresql://host:puerto/base?...), para el diagnóstico. */
+  public String dbHost() {
+    return dbUrl.replaceFirst("^jdbc:postgresql://([^:/?]+).*$", "$1");
+  }
+
+  public int dbPuerto() {
+    String p = dbUrl.replaceFirst("^jdbc:postgresql://[^:/?]+:(\\d+).*$", "$1");
+    return p.equals(dbUrl) ? 5432 : Integer.parseInt(p);
+  }
+
   private static String req(Properties p, String clave) {
     String v = p.getProperty(clave);
     if (v == null || v.isBlank())

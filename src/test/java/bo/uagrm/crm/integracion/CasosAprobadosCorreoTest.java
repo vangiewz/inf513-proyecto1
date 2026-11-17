@@ -193,7 +193,7 @@ class CasosAprobadosCorreoTest {
     // CU3: coordinador asigna cada interes; vendedor no se autoasigna.
     for (int id : tarjetas) ok(c1, "ASIGNARPROSPECTO", "" + id, "" + v1.id());
     int id = tarjetas.get(0);
-    assertEquals("Denegado", ejecutar(v1, "TOMARPROSPECTO", "" + id).resultado());
+    assertEquals("Denegado", ejecutar(v1, "ASIGNARPROSPECTO", "" + id, "" + v1.id()).resultado());
     // CU4, CU7: etapas aprobadas, contacto, recordatorio y cumplimiento.
     var tablero = ok(v1, "VERTABLERO");
     assertEquals(6, tablero.bloques().size());

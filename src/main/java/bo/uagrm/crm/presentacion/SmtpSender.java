@@ -105,6 +105,13 @@ public final class SmtpSender {
     return m;
   }
 
+  /** Abre la conexión con STARTTLS y se autentica, sin enviar nada (para el diagnóstico). */
+  public void verificar() throws MessagingException {
+    try (jakarta.mail.Transport t = session.getTransport("smtp")) {
+      t.connect();
+    }
+  }
+
   public String getRemitente() {
     return remitente;
   }

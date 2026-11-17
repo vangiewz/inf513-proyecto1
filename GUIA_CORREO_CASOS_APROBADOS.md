@@ -11,7 +11,7 @@ La base de despliegue es **`db_grupo05sa`, esquema `public`**. No usar ni recrea
 | Caso aprobado | Operaciones disponibles por correo | Permisos |
 |---|---|---|
 | CU1 Usuarios | LISTARUSUARIOS, INSERTARUSUARIO, MODIFICARUSUARIO, ELIMINARUSUARIO | Administrador; coordinador lista vendedores |
-| CU2 Captacion y oferta | LISTAROFERTA, REGISTRARINTERES, REGISTRARPROSPECTO, IMPORTARPROSPECTOS, MODIFICARPROSPECTO, ASIGNARCOORDINADOR | Visitante consulta y se registra; personal segun su alcance; administrador asigna responsables |
+| CU2 Captacion y oferta | LISTAROFERTA, REGISTRARINTERES, REGISTRARPROSPECTO, IMPORTARPROSPECTOS, LISTARPROSPECTOS, MODIFICARPROSPECTO, ELIMINARPROSPECTO, ASIGNARCOORDINADOR | Visitante consulta y se registra; personal segun su alcance; administrador asigna responsables |
 | CU3 Asignacion | LISTARBOLSA, ASIGNARPROSPECTO, ASIGNARAUTOMATICO | Administrador y coordinador responsable; vendedor no se autoasigna |
 | CU4 Tablero | VERTABLERO, MOVERTARJETA | Personal dentro de su alcance |
 | CU5 Perdidas | LISTARMOTIVOS, INSERTARMOTIVO, MODIFICARMOTIVO, ELIMINARMOTIVO, MARCARPERDIDO | Administracion/coordinacion gestionan motivos; vendedor registra perdidas de su cartera |

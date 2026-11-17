@@ -130,8 +130,7 @@ public final class EmbudoService {
               ? "La tarjeta #"
                   + id
                   + " no está en su cartera."
-                  + (t.vendedorId() == null ? " Tómela con TOMARPROSPECTO[\"" + id + "\"]." : "")
-              : "La tarjeta #" + id + " es de una catalogo_cache que no está a su cargo.");
+              : "La tarjeta #" + id + " es de un programa que no está a su cargo.");
     return t;
   }
 

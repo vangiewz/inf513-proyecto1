@@ -106,7 +106,7 @@ class ServidorCompartidoTest {
     var service = new AsignacionService(db);
     assertEquals(v1.id(), service.asignar(coord, t.id(), v1.id()).tarjeta().vendedorId());
     assertEquals(v2.id(), service.asignar(admin, t.id(), v2.id()).tarjeta().vendedorId());
-    assertThrows(CrmException.class, () -> service.tomar(v1, t.id()));
+    assertThrows(CrmException.class, () -> service.asignar(v1, t.id(), v1.id()));
   }
 
   @Test

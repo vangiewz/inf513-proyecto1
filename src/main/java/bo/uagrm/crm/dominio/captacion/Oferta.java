@@ -8,7 +8,6 @@ import java.sql.*;
  * Instantánea del catalogo externo del CRM. No contiene prospectos ni ventas.
  */
 public record Oferta(
-    int id,
     String codigo,
     String nombre,
     String tipo,
@@ -39,7 +38,6 @@ public record Oferta(
 
   public static Oferta de(ResultSet r) throws SQLException {
     return new Oferta(
-        r.getInt("id"),
         r.getString("codigo"),
         r.getString("nombre"),
         "modulo",

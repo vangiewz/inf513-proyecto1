@@ -58,8 +58,6 @@ class MatrizAccesoTest {
     var admin = new AdministradorCommandProcessor(sinBd, fmt).comandos();
     var vend = new VendedorCommandProcessor(sinBd, fmt).comandos();
     assertFalse(admin.contains(Comando.REGISTRARINTERES));
-    assertFalse(admin.contains(Comando.TOMARPROSPECTO));
-    assertFalse(vend.contains(Comando.TOMARPROSPECTO));
     assertFalse(vend.contains(Comando.LISTARBOLSA));
     for (Comando k :
         EnumSet.of(
@@ -73,7 +71,6 @@ class MatrizAccesoTest {
       assertFalse(vend.contains(k), k + " no debe estar al alcance del vendedor");
     // Todo comando del catálogo pertenece al menos a un rol.
     for (Comando k : Comando.values()) {
-      if (k == Comando.TOMARPROSPECTO) continue;
       assertTrue(admin.contains(k) || vend.contains(k) || k == Comando.REGISTRARINTERES, k.name());
     }
   }

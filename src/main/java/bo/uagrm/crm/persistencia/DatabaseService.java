@@ -64,27 +64,63 @@ public final class DatabaseService {
     }
   }
 
+  /** Las tablas del modelo compartido con la web (sql/esquema.sql). */
+  public static final List<String> TABLAS =
+      List.of(
+          "api_tokens", "catalogo_cache", "comisiones", "comprobantes_pago", "configuraciones",
+          "descuentos", "exportaciones", "inscripciones_comerciales", "interacciones", "intereses",
+          "log_comandos", "motivos_perdida", "movimientos_interes", "notificaciones",
+          "orden_pago_descuentos", "ordenes_pago", "pagos", "programas_responsables", "prospectos",
+          "recordatorios", "roles", "solicitudes_compra", "usuarios");
+
+  private static final String VALORES_TABLAS =
+      "(VALUES " + String.join(",", TABLAS.stream().map(t -> "('" + t + "')").toList()) + ") v(t)";
+
   /**
-   * Se comprueba antes de leer el buzon: un esquema P1 antiguo no puede atender comandos nuevos.
+   * Se comprueba antes de leer el buzón: si falta una tabla (borrada, otro esquema) no se retiran
+   * mensajes, y el error nombra las tablas que faltan.
    */
   public void verificarModelo() throws SQLException {
     try (Connection c = getConnection()) {
-      Boolean listo =
+      List<String> faltan =
+          lista(c, rs -> rs.getString(1), "SELECT t FROM " + VALORES_TABLAS + " WHERE to_regclass(t) IS NULL");
+      if (!faltan.isEmpty()) {
+        String esquema = uno(c, rs -> rs.getString(1), "SELECT current_schema()");
+        throw new SQLException(
+            faltan.size() == TABLAS.size()
+                ? "el esquema "
+                    + (esquema == null ? "de currentSchema no existe" : "'" + esquema + "' no tiene ninguna tabla del CRM")
+                    + ": revise currentSchema en db.url (debe ser public)"
+                : "faltan tablas en el esquema '" + esquema + "' (¿las borraron?): " + String.join(", ", faltan),
+            "42P01");
+      }
+    }
+  }
+
+  /** Para --diagnostico: versión, IP con la que nos ve el servidor, tablas y permisos. */
+  public List<String> diagnostico() throws SQLException {
+    verificarModelo();
+    try (Connection c = getConnection()) {
+      List<String> out = new ArrayList<>();
+      out.add(uno(c, rs -> "PostgreSQL " + rs.getString(1), "SHOW server_version"));
+      out.add(
           uno(
               c,
-              rs -> rs.getBoolean(1),
-              """
-              SELECT to_regclass('intereses') IS NOT NULL
-                 AND to_regclass('usuarios') IS NOT NULL
-                 AND to_regclass('log_comandos') IS NOT NULL
-                 AND to_regclass('catalogo_cache') IS NOT NULL
-                       AND to_regclass('programas_responsables') IS NOT NULL
-              """);
-      if (!Boolean.TRUE.equals(listo))
-        throw new SQLException(
-            "La conexion no apunta al modelo vigente del CRM. Revise currentSchema y la"
-                + " estructura de la base.",
-            "08004");
+              rs -> "base " + rs.getString(1) + ", esquema " + rs.getString(2) + ", nos ve como " + rs.getString(3),
+              "SELECT current_database(), current_schema(), host(inet_client_addr())"));
+      List<String> sinPermiso =
+          lista(
+              c,
+              rs -> rs.getString(1),
+              "SELECT t FROM "
+                  + VALORES_TABLAS
+                  + " WHERE NOT has_table_privilege(t, 'SELECT,INSERT,UPDATE,DELETE')");
+      out.add(
+          sinPermiso.isEmpty()
+              ? TABLAS.size() + " tablas con permisos completos"
+              : "SIN PERMISOS en: " + String.join(", ", sinPermiso));
+      if (!sinPermiso.isEmpty()) throw new SQLException(String.join(", ", out), "42501");
+      return out;
     }
   }
 

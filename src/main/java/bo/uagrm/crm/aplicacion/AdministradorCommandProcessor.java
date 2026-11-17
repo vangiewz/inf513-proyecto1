@@ -6,10 +6,7 @@ import bo.uagrm.crm.persistencia.DatabaseService;
 import java.util.EnumSet;
 import java.util.Set;
 
-/**
- * Rol administrador: gestión completa. No usa REGISTRARINTERES (del público) ni TOMARPROSPECTO (del
- * vendedor).
- */
+/** Rol administrador: gestión completa. No usa REGISTRARINTERES (del público). */
 public final class AdministradorCommandProcessor extends RolCommandProcessor {
 
   private static final Set<Comando> COMANDOS =
@@ -61,8 +58,7 @@ public final class AdministradorCommandProcessor extends RolCommandProcessor {
           REPORTEEMBUDO,
           REPORTEVENDEDORES,
           REPORTEPERDIDAS,
-          REPORTEOFERTA,
-          NUEVOPRUEBA);
+          REPORTEOFERTA);
 
   public AdministradorCommandProcessor(DatabaseService db, ResponseFormatter fmt) {
     super(db, fmt);

@@ -29,7 +29,8 @@ La matriz de acceso se genera del código con `java -jar target/crm-mail.jar --a
 | Lectura | POP3 `mail.tecnoweb.org.bo:110` (Dovecot), cuenta `grupo05sa` |
 | Respuesta | SMTP `smtp.gmail.com:587` STARTTLS (la facultad no reenvía a dominios externos) |
 | Base de datos | PostgreSQL 18.6 `db.tecnoweb.org.bo:5432`, BD `db_grupo05sa`, esquema compartido `public` |
-| Ejecución | VPS Fedora 44, OpenJDK 25, servicio `systemd` `crm-mail` (`deploy/crm-mail.service`) |
+| Ejecución | PC del grupo (Windows 11, JDK 21) con `ejecutar.ps1`; el servicio del VPS (`deploy/crm-mail.service`) quedó deshabilitado como respaldo |
+| Log | consola y `logs/crm-mail.N.log` (5 MB x 5): una línea por ciclo y la causa de cada falla |
 
 ## Compilar y ejecutar
 
@@ -40,6 +41,18 @@ mvn package                                   # Java 21+, Maven 3.9; genera targ
 cp crm-mail.properties.example crm-mail.properties   # completar las contraseñas (no se versiona)
 java -jar target/crm-mail.jar crm-mail.properties
 ```
+
+En la PC del grupo (PowerShell), con la configuración privada en `..\.secrets\crm-mail.properties`:
+
+```powershell
+.\ejecutar.ps1                # servicio: revisa el buzón cada 10 s (Ctrl+C para detener)
+.\ejecutar.ps1 -Diagnostico   # solo revisa DNS, puertos, POP3, SMTP y la BD (IP vista por PostgreSQL, tablas, permisos)
+```
+
+Cada ciclo deja una línea (`ciclo 812 OK · BD 42 ms · POP3 0 msg 310 ms`). Ante una falla, el log nombra la etapa, el
+destino y la causa probable (DNS, puerto cerrado, IP fuera de `pg_hba.conf`, clave cambiada, tabla borrada, permiso
+revocado, buzón bloqueado por otro lector, clave de aplicación de Gmail revocada); mientras sigue, una línea corta por
+ciclo, y al volver, `RECUPERADO` con su duración. La traducción está en `Diagnostico.java` (prueba: `DiagnosticoTest`).
 
 Prueba sin correo: `java -jar target/crm-mail.jar --probar crm-mail.properties remitente@gmail.com "VERTABLERO[]"`.
 
@@ -64,4 +77,5 @@ Estructura e instalacion en una base nueva: [BASE_DATOS.md](BASE_DATOS.md).
 
 Pruebas y preparacion del entorno aislado: [PRUEBAS.md](PRUEBAS.md).
 Resumen verificado: `doc/pruebas/base-compartida.json`.
-El documento y los diagramas academicos anteriores corresponden al modelo historico.
+Documento PUDS y diagramas EA regenerados el 17/11/2026 sobre el modelo vigente: `doc/documento_p1.py` y `doc/ea/ea_p1.py`
+(las firmas de las clases y el despacho de comandos se leen del código con `doc/ea/firmas.py`).

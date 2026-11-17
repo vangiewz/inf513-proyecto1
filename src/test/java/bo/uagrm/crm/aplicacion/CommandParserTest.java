@@ -52,9 +52,9 @@ class CommandParserTest {
   void errores() {
     assertFalse(parse("hola, quiero información").isValido());
     assertFalse(parse("NOEXISTE[]").isValido());
-    assertFalse(parse("TOMARPROSPECTO[\"1\",\"2\"]").isValido()); // de más
+    assertFalse(parse("VERORDEN[\"1\",\"2\"]").isValido()); // de más
     assertFalse(parse("INSERTARUSUARIO[\"Ana\"]").isValido()); // de menos
-    assertFalse(parse("TOMARPROSPECTO[\"1]").isValido()); // comilla sin cerrar
+    assertFalse(parse("VERORDEN[\"1]").isValido()); // comilla sin cerrar
     assertFalse(CommandParser.pareceComando("Re: consulta"));
     Command cortado = parse("MOVERTARJETA[\"1"); // sin ] final
     assertEquals("MOVERTARJETA", cortado.getNombre());

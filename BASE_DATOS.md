@@ -13,6 +13,17 @@ P1 correo es la entrega actual. P2 web sigue en desarrollo: ambos proyectos usar
 
 Correo consulta directamente las tablas del CRM. No requiere ejecutar Laravel ni abrir la web. No crear otra base de produccion para correo.
 
+## Claves y relaciones (17/11/2026)
+
+Migracion aplicada en produccion: `sql/migraciones/2026-11-17_claves_catalogo.sql` (respaldo previo en `.secrets/respaldos/`).
+Siguiendo la clase 46 del docente (ninguna tabla sin relacion; sin un `id` extra cuando la tabla ya tiene su clave):
+
+- `catalogo_cache` usa `codigo` como clave primaria (sin `id`); `intereses.external_modulo_id` y
+  `solicitudes_compra.external_modulo_id` la referencian (ON UPDATE CASCADE, ON DELETE RESTRICT).
+- `orden_pago_descuentos` tiene clave `(orden_pago_id, descuento_id)` (sin `id`) y conserva `porcentaje` y `monto`.
+- Resultado: 23 tablas de negocio y 30 claves foraneas; ninguna tabla aislada (`migrations` es de Laravel).
+- P2 web debe replicar el cambio con una migracion de Laravel antes de usar estas tablas.
+
 ## Estructura y referencias
 
 `sql/esquema.sql` describe la estructura instalada, sin usuarios ni datos comerciales. `sql/referencias.sql` contiene roles, motivos, descuentos, porcentaje de comision y las 25 ofertas del catalogo simulado. Son archivos para preparar una base nueva de desarrollo o pruebas; no son una migracion para aplicar sobre produccion.

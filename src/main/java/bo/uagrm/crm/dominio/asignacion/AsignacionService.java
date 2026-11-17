@@ -143,13 +143,6 @@ public final class AsignacionService {
         });
   }
 
-  /** El vendedor toma una tarjeta de la bolsa común para su cartera. */
-  public Interes tomar(Usuario u, int tarjetaId) throws CrmException {
-    throw new CrmException(
-        "La asignacion corresponde a administracion o coordinacion; el vendedor no puede"
-            + " autoasignarse.");
-  }
-
   private static Asignacion asignarA(
       Connection c, Usuario actor, Interes t, Usuario v, String detalle)
       throws SQLException, CrmException {

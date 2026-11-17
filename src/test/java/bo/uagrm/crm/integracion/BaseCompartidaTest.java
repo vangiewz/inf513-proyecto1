@@ -268,7 +268,6 @@ class BaseCompartidaTest {
   void vendedorNoVeBolsaNiCarteraAjenaNiSeAutoasigna() throws Exception {
     var t = alta("desarrollo-web-m1");
     assertTrue(ps().listar(v1, t.prospecto().ci()).isEmpty());
-    assertThrows(CrmException.class, () -> as().tomar(v1, t.id()));
     assertThrows(CrmException.class, () -> as().asignar(v1, t.id(), v1.id()));
     as().asignar(admin, t.id(), v2.id());
     assertThrows(CrmException.class, () -> es().mover(v1, t.id(), "Contactado"));
@@ -401,7 +400,7 @@ class BaseCompartidaTest {
   void comandosRechazadosEInvalidosQuedanEnBitacora() throws Exception {
     var cp = new CommandProcessor(db);
     assertEquals(
-        "Denegado", cp.procesarEmail(v1.correo(), "TOMARPROSPECTO[\"1\"]", null).resultado());
+        "Denegado", cp.procesarEmail(v1.correo(), "ASIGNARPROSPECTO[\"1\",\"1\"]", null).resultado());
     assertEquals("Error", cp.procesarEmail(v1.correo(), "NOEXISTE[]", null).resultado());
     assertTrue(count("SELECT count(*) FROM log_comandos WHERE usuario_id=?", v1.id()) >= 2);
   }

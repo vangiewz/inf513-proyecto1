@@ -71,11 +71,11 @@ public final class CommandProcessor {
                 "Su usuario está inactivo. Pida a un administrador que lo reactive.");
       else r = porRol.get(u.rol()).procesar(cmd, u);
     } catch (SQLException e) {
-      System.err.println(
-          "Sin acceso a la BD al identificar a " + remitente + ": " + e.getMessage());
+      java.util.logging.Logger.getLogger("crm")
+          .severe("Sin acceso a la BD al identificar a " + remitente + ": " + e.getMessage());
       r = fmt.error(cmd.getNombre(), Errores.traducir(e));
     } catch (RuntimeException e) {
-      e.printStackTrace();
+      java.util.logging.Logger.getLogger("crm").log(java.util.logging.Level.SEVERE, "Fallo interno con " + asunto, e);
       r =
           fmt.error(
               cmd.getNombre(),
@@ -105,7 +105,7 @@ public final class CommandProcessor {
           resultado,
           detalle);
     } catch (SQLException | RuntimeException e) {
-      System.err.println("No se pudo escribir la bitácora: " + e.getMessage());
+      java.util.logging.Logger.getLogger("crm").severe("No se pudo escribir la bitácora (" + resultado + " · " + asunto + "): " + e.getMessage());
     }
   }
 

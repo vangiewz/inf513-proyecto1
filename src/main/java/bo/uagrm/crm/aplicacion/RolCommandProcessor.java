@@ -101,8 +101,8 @@ public abstract class RolCommandProcessor {
     } catch (RuntimeException e) {
       // Un fallo imprevisto no detiene el servicio: se responde un error limpio y el
       // detalle queda en el log.
-      System.err.println("Fallo interno en " + cmd.getNombre() + ": " + e);
-      e.printStackTrace();
+      java.util.logging.Logger.getLogger("crm")
+          .log(java.util.logging.Level.SEVERE, "Fallo interno en " + cmd.getNombre(), e);
       return fmt.error(
           cmd.getNombre(),
           "Ocurrió un error interno al procesar el comando. Quedó registrado; intente de nuevo.");
@@ -315,11 +315,8 @@ public abstract class RolCommandProcessor {
         yield fmt.successTable(
             "Bolsa común",
             l.size()
-                + " prospectos(s) sin vendedor. "
-                + (u.rol() == Rol.VENDEDOR
-                    ? "Tome uno con TOMARPROSPECTO[\"id_tarjeta\"]."
-                    : "Repártalos con ASIGNARAUTOMATICO[] o"
-                        + " ASIGNARPROSPECTO[\"id_tarjeta\",\"id_vendedor\"]."),
+                + " prospecto(s) sin vendedor. Repártalos con ASIGNARAUTOMATICO[] o"
+                + " ASIGNARPROSPECTO[\"id_tarjeta\",\"id_vendedor\"].",
             Interes.COLUMNAS,
             filas(l, Interes::fila));
       }
@@ -357,14 +354,6 @@ public abstract class RolCommandProcessor {
                 new String[] {"Tarjeta", "Prospecto", "Oferta", "Vendedor"},
                 f)
             .conAvisos(avisos(l));
-      }
-      case TOMARPROSPECTO -> {
-        Interes t = asignacion.tomar(u, id(c, 0));
-        yield fmt.successTable(
-            "Éxito: prospecto tomado",
-            "La tarjeta #" + t.id() + " ya está en su cartera.",
-            Interes.COLUMNAS,
-            List.<String[]>of(t.fila()));
       }
 
       // CU4. Gestión de Embudo de Ventas en Tablero Kanban
@@ -672,9 +661,6 @@ public abstract class RolCommandProcessor {
               ReporteService.COLUMNAS_OFERTA,
               reportes.oferta(u));
 
-      case NUEVOPRUEBA -> {
-        yield fmt.successTable("Nueva Prueba" + u.getNombreCompleto(), "Seccion para pruebas");
-      }
     };
   }
 
