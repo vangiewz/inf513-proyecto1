@@ -36,7 +36,7 @@ La matriz de acceso se genera del código con `java -jar target/crm-mail.jar --a
 ```sh
 mvn package                                   # Java 21+, Maven 3.9; genera target/crm-mail.jar
 
-# Instalar las migraciones del CRM web y sincronizar el catalogo (ver BASE_COMPARTIDA.md).
+# Consultar el modelo copiado y su estado instalado (ver BASE_COMPARTIDA.md).
 # No ejecutar sql/crm_p1.sql: es el instalador historico del modelo anterior.
 cp crm-mail.properties.example crm-mail.properties   # completar las contraseñas (no se versiona)
 java -jar target/crm-mail.jar crm-mail.properties
@@ -49,7 +49,9 @@ Prueba sin correo: `java -jar target/crm-mail.jar --probar crm-mail.properties r
 La version actual consulta directamente las tablas Laravel: `usuarios`, `prospectos`,
 `intereses`, `interacciones`, `recordatorios` y las ventas normalizadas. Ambos clientes
 usan el mismo esquema de despliegue `public` en `db_grupo05sa`.
-La configuracion y la instalacion verificadas estan en [BASE_COMPARTIDA.md](BASE_COMPARTIDA.md).
+La configuracion y la referencia del modelo usado estan en [BASE_COMPARTIDA.md](BASE_COMPARTIDA.md).
+Correo y web son proyectos separados: este trabajo adapta correo al modelo de datos web.
+Los cambios no solicitados en el codigo web fueron revertidos; la copia de la estructura para correo esta en `sql/modelo-referencia/`.
 
 - El vendedor no se autoasigna ni ve la bolsa; administracion/coordinacion distribuyen por menor carga.
 - Se aceptan los alias En Contacto y Seguimiento; el tablero muestra las seis etapas aprobadas y los pagos pueden gestionarse por correo.

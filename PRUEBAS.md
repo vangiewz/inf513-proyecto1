@@ -1,6 +1,8 @@
 # Pruebas del flujo compartido
 
-Requiere Java 21+, Maven y, para integracion, Docker con [Tecno](https://github.com/b-shadow/Tecno) actualizado. `mvn test` sin variables ejecuta pruebas unitarias y omite las suites de integracion: no equivale a las 154 pruebas completas.
+Requiere Java 21+, Maven y, para integracion, un entorno QA aislado. `mvn test` sin variables ejecuta pruebas unitarias y omite las suites de integracion: no equivale a las 154 pruebas completas.
+
+**Correccion de alcance:** la verificacion completa documentada uso la revision web `098794f`, posteriormente revertida porque el trabajo solicitado corresponde solo a correo. Las instrucciones HTTP siguientes describen ese entorno anterior; no preparar QA directamente con la web restaurada esperando los mismos resultados. No modificar web para volver a ejecutar estas pruebas. El modelo instalado para correo esta conservado en `sql/modelo-referencia/`.
 
 ## Integracion local
 
