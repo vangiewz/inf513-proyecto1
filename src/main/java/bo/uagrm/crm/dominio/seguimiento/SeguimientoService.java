@@ -1,13 +1,16 @@
 package bo.uagrm.crm.dominio.seguimiento;
 
+import static bo.uagrm.crm.persistencia.DatabaseService.actualizar;
+import static bo.uagrm.crm.persistencia.DatabaseService.filas;
+import static bo.uagrm.crm.persistencia.DatabaseService.lista;
+import static bo.uagrm.crm.persistencia.DatabaseService.uno;
+
 import bo.uagrm.crm.dominio.CrmException;
 import bo.uagrm.crm.dominio.Valida;
 import bo.uagrm.crm.dominio.embudo.EmbudoService;
 import bo.uagrm.crm.dominio.embudo.Interes;
-import bo.uagrm.crm.dominio.usuarios.Rol;
 import bo.uagrm.crm.dominio.usuarios.Usuario;
 import bo.uagrm.crm.persistencia.DatabaseService;
-
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
@@ -15,137 +18,239 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 
-import static bo.uagrm.crm.persistencia.DatabaseService.actualizar;
-import static bo.uagrm.crm.persistencia.DatabaseService.filas;
-import static bo.uagrm.crm.persistencia.DatabaseService.lista;
-import static bo.uagrm.crm.persistencia.DatabaseService.uno;
-
 /** CU7. Gestión de Bitácora, Interacciones y Recordatorios (RF4.1, RF4.2, RF4.3). */
 public final class SeguimientoService {
 
-    public static final List<String> TIPOS = List.of("Llamada", "WhatsApp", "Correo", "Reunión", "Nota");
-    public static final String[] COLUMNAS_HISTORIAL = {"Fecha", "Tipo", "Detalle", "Usuario"};
-    public static final String[] COLUMNAS_BITACORA = {"Fecha", "Remitente", "Rol", "Comando", "Resultado", "Detalle"};
-    private static final List<DateTimeFormatter> FORMATOS =
-            List.of(DateTimeFormatter.ofPattern("uuuu-MM-dd H:mm"), DateTimeFormatter.ofPattern("d/M/uuuu H:mm"));
+  public static final List<String> TIPOS =
+      List.of("Llamada", "WhatsApp", "Correo electronico", "Reunion", "Nota comercial");
+  public static final String[] COLUMNAS_HISTORIAL = {"Fecha", "Tipo", "Detalle", "Usuario"};
+  public static final String[] COLUMNAS_BITACORA = {
+    "Fecha", "Remitente", "Rol", "Comando", "Resultado", "Detalle"
+  };
+  private static final List<DateTimeFormatter> FORMATOS =
+      List.of(
+          DateTimeFormatter.ofPattern("uuuu-MM-dd H:mm")
+              .withResolverStyle(java.time.format.ResolverStyle.STRICT),
+          DateTimeFormatter.ofPattern("d/M/uuuu H:mm")
+              .withResolverStyle(java.time.format.ResolverStyle.STRICT));
 
-    /** Bitácora de una tarjeta: la tarjeta y sus eventos en orden cronológico. */
-    public record Historial(Interes tarjeta, List<String[]> eventos) {
-    }
+  /** Bitácora de una tarjeta: la tarjeta y sus eventos en orden cronológico. */
+  public record Historial(Interes tarjeta, List<String[]> eventos) {}
 
-    private final DatabaseService db;
+  private final DatabaseService db;
 
-    public SeguimientoService(DatabaseService db) {
-        this.db = db;
-    }
+  public SeguimientoService(DatabaseService db) {
+    this.db = db;
+  }
 
-    public Interaccion registrarInteraccion(Usuario u, int tarjetaId, String tipo, String descripcion) throws SQLException, CrmException {
-        String t = Valida.elegir(tipo, TIPOS, "tipo"), d = Valida.texto(descripcion, "descripción", 500);
-        return db.enTransaccion(c -> {
-            EmbudoService.tarjeta(c, u, tarjetaId, true);
-            int id = DatabaseService.insertar(c, "INSERT INTO interaccion (interes_id, usuario_id, tipo, descripcion) VALUES (?, ?, ?, ?)",
-                    tarjetaId, u.id(), t, d);
-            return uno(c, Interaccion::de, Interaccion.SQL + " WHERE id = ?", id);
+  public Interaccion registrarInteraccion(Usuario u, int tarjetaId, String tipo, String descripcion)
+      throws SQLException, CrmException {
+    String entrada =
+        switch (Valida.normal(tipo == null ? "" : tipo)) {
+          case "correo" -> "Correo electronico";
+          case "reunion" -> "Reunion";
+          case "nota" -> "Nota comercial";
+          default -> tipo;
+        };
+    String t = Valida.elegir(entrada, TIPOS, "tipo"),
+        d = Valida.texto(descripcion, "descripción", 500);
+    return db.enTransaccion(
+        c -> {
+          EmbudoService.tarjeta(c, u, tarjetaId, true);
+          int id =
+              DatabaseService.insertar(
+                  c,
+                  "INSERT INTO interacciones (interes_id, usuario_id, tipo, descripcion,"
+                      + " created_at, updated_at) VALUES (?, ?, ?, ?, now(), now())",
+                  tarjetaId,
+                  u.id(),
+                  t,
+                  d);
+          actualizar(
+              c,
+              "UPDATE intereses SET estado=CASE WHEN estado='Nuevo' THEN 'Contactado' ELSE estado"
+                  + " END, ultima_actividad_en=now(),updated_at=now() WHERE id=?",
+              tarjetaId);
+          return uno(c, Interaccion::de, Interaccion.SQL + " WHERE id = ?", id);
         });
-    }
+  }
 
-    public Recordatorio programarRecordatorio(Usuario u, int tarjetaId, String fechaHora, String descripcion) throws SQLException, CrmException {
-        LocalDateTime cuando = fecha(fechaHora);
-        if (!cuando.isAfter(LocalDateTime.now())) throw new CrmException("La fecha " + fechaHora + " ya pasó: indique una fecha futura.");
-        String d = Valida.texto(descripcion, "descripción", 300);
-        return db.enTransaccion(c -> {
-            EmbudoService.tarjeta(c, u, tarjetaId, true);
-            int id = DatabaseService.insertar(c, "INSERT INTO recordatorio (interes_id, usuario_id, fecha_hora, descripcion) VALUES (?, ?, ?, ?)",
-                    tarjetaId, u.id(), cuando, d);
-            return uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id = ?", id);
+  public Recordatorio programarRecordatorio(
+      Usuario u, int tarjetaId, String fechaHora, String descripcion)
+      throws SQLException, CrmException {
+    LocalDateTime cuando = fecha(fechaHora);
+    if (!cuando.isAfter(LocalDateTime.now(java.time.ZoneId.of("America/La_Paz"))))
+      throw new CrmException("La fecha " + fechaHora + " ya pasó: indique una fecha futura.");
+    String d = Valida.texto(descripcion, "descripción", 300);
+    return db.enTransaccion(
+        c -> {
+          Interes tarjeta = EmbudoService.tarjeta(c, u, tarjetaId, true);
+          int id =
+              DatabaseService.insertar(
+                  c,
+                  "INSERT INTO recordatorios (interes_id, usuario_id, fecha_programada,"
+                      + " descripcion, created_at, updated_at) VALUES (?, ?, ?, ?, now(), now())",
+                  tarjetaId,
+                  tarjeta.vendedorId() == null ? u.id() : tarjeta.vendedorId(),
+                  cuando
+                      .atZone(java.time.ZoneId.of("America/La_Paz"))
+                      .withZoneSameInstant(java.time.ZoneOffset.UTC)
+                      .toLocalDateTime(),
+                  d);
+          actualizar(
+              c,
+              "UPDATE intereses SET proximo_contacto=(SELECT fecha_programada FROM recordatorios"
+                  + " WHERE id=?),updated_at=now() WHERE id=?",
+              id,
+              tarjetaId);
+          return uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id = ?", id);
         });
-    }
+  }
 
-    /** Pendientes del usuario; el administrador ve los de todos. */
-    public List<Recordatorio> listarRecordatorios(Usuario u) throws SQLException {
-        try (Connection c = db.getConnection()) {
-            return lista(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.estado = 'Pendiente' AND (? OR r.usuario_id = ?) ORDER BY r.fecha_hora",
-                    u.rol() == Rol.ADMINISTRADOR, u.id());
-        }
+  /** Pendientes del usuario; el administrador ve los de todos. */
+  public List<Recordatorio> listarRecordatorios(Usuario u) throws SQLException {
+    try (Connection c = db.getConnection()) {
+      return lista(
+          c,
+          Recordatorio::de,
+          Recordatorio.SQL
+              + " WHERE r.estado IN ('Pendiente','Atrasada') AND "
+              + bo.uagrm.crm.dominio.Alcance.propio(u)
+              + " ORDER BY r.fecha_programada",
+          bo.uagrm.crm.dominio.Alcance.params(u));
     }
+  }
 
-    public Recordatorio completarRecordatorio(Usuario u, int id) throws SQLException, CrmException {
-        return db.enTransaccion(c -> {
-            Recordatorio r = uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id = ?", id);
-            if (r == null || (r.usuarioId() != u.id() && u.rol() != Rol.ADMINISTRADOR))
-                throw new CrmException("No tiene un recordatorio con ID " + id + ". Vea LISTARRECORDATORIOS[].");
-            if (!r.estado().equals("Pendiente")) throw new CrmException("El recordatorio " + id + " ya está " + r.estado() + ".");
-            actualizar(c, "UPDATE recordatorio SET estado = 'Realizado' WHERE id = ?", id);
-            return uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id = ?", id);
+  public Recordatorio completarRecordatorio(Usuario u, int id, String resultado)
+      throws SQLException, CrmException {
+    String nota = Valida.texto(resultado, "resultado", 2000);
+    return db.enTransaccion(
+        c -> {
+          Recordatorio r = uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id=?", id);
+          if (r == null) throw new CrmException("No existe el recordatorio.");
+          EmbudoService.tarjeta(c, u, r.tarjetaId(), true);
+          r = uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id=? FOR UPDATE OF r", id);
+          if (!List.of("Pendiente", "Atrasada").contains(r.estado()))
+            throw new CrmException("La actividad ya fue realizada o cancelada.");
+          actualizar(
+              c,
+              "UPDATE recordatorios SET estado='Realizada',fecha_realizada=now(),updated_at=now()"
+                  + " WHERE id=?",
+              id);
+          actualizar(
+              c,
+              """
+INSERT INTO interacciones(interes_id,usuario_id,tipo,descripcion,resultado,fecha,created_at,updated_at)
+VALUES(?,?,'Nota comercial',?,?,now(),now(),now())
+""",
+              r.tarjetaId(),
+              u.id(),
+              "Actividad agendada: " + r.descripcion(),
+              nota);
+          actualizar(
+              c,
+              "UPDATE intereses SET ultima_actividad_en=now(),updated_at=now() WHERE id=?",
+              r.tarjetaId());
+          return uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id=?", id);
         });
-    }
+  }
 
-    public Historial historial(Usuario u, int tarjetaId) throws SQLException, CrmException {
-        try (Connection c = db.getConnection()) {
-            Interes t = EmbudoService.tarjeta(c, u, tarjetaId, false);
-            List<String[]> eventos = filas(c, """
-                    SELECT h.fecha, h.tipo, h.detalle, COALESCE(u.nombre || ' ' || u.apellido, 'El interesado (correo)')
-                    FROM (
-                        SELECT m.fecha, CASE WHEN m.estado_anterior IS DISTINCT FROM m.estado_nuevo THEN 'Movimiento' ELSE 'Asignación' END AS tipo,
-                               CASE WHEN m.estado_anterior IS DISTINCT FROM m.estado_nuevo
-                                    THEN COALESCE(m.estado_anterior || ' → ', '') || m.estado_nuevo || COALESCE('. ' || m.detalle, '')
-                                    ELSE m.detalle END AS detalle,
-                               m.usuario_id
-                        FROM movimiento m WHERE m.interes_id = ?
-                        UNION ALL
-                        SELECT x.fecha, x.tipo, x.descripcion, x.usuario_id FROM interaccion x WHERE x.interes_id = ?
-                        UNION ALL
-                        SELECT r.fecha_hora, 'Recordatorio (' || r.estado || ')', r.descripcion, r.usuario_id FROM recordatorio r WHERE r.interes_id = ?
-                    ) h LEFT JOIN usuario u ON u.id = h.usuario_id
-                    ORDER BY h.fecha""", tarjetaId, tarjetaId, tarjetaId);
-            return new Historial(t, eventos);
-        }
+  public Historial historial(Usuario u, int tarjetaId) throws SQLException, CrmException {
+    try (Connection c = db.getConnection()) {
+      Interes t = EmbudoService.tarjeta(c, u, tarjetaId, false);
+      List<String[]> eventos =
+          filas(
+              c,
+              """
+SELECT h.fecha, h.tipo, h.detalle, COALESCE(u.nombre || ' ' || u.apellido, 'Sistema / interesado')
+FROM (
+    SELECT m.fecha, CASE WHEN m.estado_anterior IS DISTINCT FROM m.estado_nuevo THEN 'Movimiento' ELSE 'Asignación' END AS tipo,
+           CASE WHEN m.estado_anterior IS DISTINCT FROM m.estado_nuevo
+                THEN COALESCE(m.estado_anterior || ' → ', '') || m.estado_nuevo || COALESCE('. ' || m.detalle, '')
+                ELSE m.detalle END AS detalle,
+           m.usuario_id
+    FROM movimientos_interes m WHERE m.interes_id = ?
+    UNION ALL
+    SELECT x.fecha, x.tipo, x.descripcion || COALESCE('. Resultado: ' || x.resultado,''), x.usuario_id FROM interacciones x WHERE x.interes_id = ?
+    UNION ALL
+    SELECT r.fecha_programada, 'Recordatorio (' || r.estado || ')', r.descripcion, r.usuario_id FROM recordatorios r WHERE r.interes_id = ?
+) h LEFT JOIN usuarios u ON u.id = h.usuario_id
+ORDER BY h.fecha""",
+              tarjetaId,
+              tarjetaId,
+              tarjetaId);
+      return new Historial(t, eventos);
     }
+  }
 
-    /** Bitácora del sistema: cada correo procesado, con su resultado (Éxito, Error o Denegado). */
-    public void registrarComando(String remitente, Integer usuarioId, String asunto, String resultado, String detalle) throws SQLException {
-        try (Connection c = db.getConnection()) {
-            actualizar(c, "INSERT INTO log_comando (remitente, usuario_id, asunto, resultado, detalle) VALUES (?, ?, ?, ?, ?)",
-                    corto(remitente, 120), usuarioId, corto(asunto == null ? "(sin asunto)" : asunto, 300), resultado, corto(detalle, 300));
-        }
+  /** Bitácora del sistema: cada correo procesado, con su resultado (Éxito, Error o Denegado). */
+  public void registrarComando(
+      String remitente, Integer usuarioId, String asunto, String resultado, String detalle)
+      throws SQLException {
+    try (Connection c = db.getConnection()) {
+      actualizar(
+          c,
+          "INSERT INTO log_comandos(remitente,usuario_id,asunto,resultado,detalle,rol_registrado)"
+              + " VALUES(?,?,?,?,?,(SELECT rol FROM usuarios WHERE id=?))",
+          corto(remitente, 160),
+          usuarioId,
+          corto(asunto == null ? "(sin asunto)" : asunto, 300),
+          resultado,
+          corto(detalle, 300),
+          usuarioId);
     }
+  }
 
-    public List<String[]> bitacora(int cantidad) throws SQLException {
-        try (Connection c = db.getConnection()) {
-            return filas(c, """
-                    SELECT l.fecha, l.remitente, COALESCE(u.rol, 'público'), l.asunto, l.resultado, COALESCE(l.detalle, '')
-                    FROM log_comando l LEFT JOIN usuario u ON u.id = l.usuario_id
-                    ORDER BY l.id DESC LIMIT ?""", Math.min(cantidad, 200));
-        }
+  public List<String[]> bitacora(int cantidad) throws SQLException {
+    try (Connection c = db.getConnection()) {
+      return filas(
+          c,
+          """
+SELECT l.fecha, l.remitente, COALESCE(l.rol_registrado,u.rol, 'público'), l.asunto, l.resultado, COALESCE(l.detalle, '')
+FROM log_comandos l LEFT JOIN usuarios u ON u.id = l.usuario_id
+ORDER BY l.id DESC LIMIT ?""",
+          Math.min(cantidad, 200));
     }
+  }
 
-    /** Recordatorios que ya vencieron y aún no se avisaron por correo. */
-    public List<Recordatorio> vencidos() throws SQLException {
-        try (Connection c = db.getConnection()) {
-            return lista(c, Recordatorio::de, Recordatorio.SQL
-                    + " WHERE r.estado = 'Pendiente' AND NOT r.notificado AND r.fecha_hora <= now() ORDER BY r.fecha_hora");
-        }
+  /** Recordatorios que ya vencieron y aún no se avisaron por correo. */
+  public List<Recordatorio> vencidos() throws SQLException {
+    try (Connection c = db.getConnection()) {
+      return lista(
+          c,
+          Recordatorio::de,
+          Recordatorio.SQL
+              + " WHERE r.estado IN ('Pendiente','Atrasada') AND u.estado='activo' AND (u.rol <>"
+              + " 'vendedor' OR i.vendedor_id=u.id) AND NOT r.notificado AND r.fecha_programada <="
+              + " now() AND (u.rol <> 'coordinador' OR EXISTS (SELECT 1 FROM catalogo_cache ac JOIN"
+              + " programas_responsables pr ON pr.external_programa_id=ac.programa_codigo WHERE"
+              + " ac.codigo=i.external_modulo_id AND pr.coordinador_id=u.id)) ORDER BY"
+              + " r.fecha_programada");
     }
+  }
 
-    public void marcarNotificado(int id) throws SQLException {
-        try (Connection c = db.getConnection()) {
-            actualizar(c, "UPDATE recordatorio SET notificado = true WHERE id = ?", id);
-        }
+  public void marcarNotificado(int id) throws SQLException {
+    try (Connection c = db.getConnection()) {
+      actualizar(c, "UPDATE recordatorios SET notificado = true WHERE id = ?", id);
     }
+  }
 
-    private static String corto(String s, int max) {
-        return s == null || s.length() <= max ? s : s.substring(0, max);
-    }
+  private static String corto(String s, int max) {
+    return s == null || s.length() <= max ? s : s.substring(0, max);
+  }
 
-    private static LocalDateTime fecha(String texto) throws CrmException {
-        String t = texto == null ? "" : texto.trim();
-        for (DateTimeFormatter f : FORMATOS) {
-            try {
-                return LocalDateTime.parse(t, f);
-            } catch (DateTimeParseException ignored) {
-                // se prueba el siguiente formato
-            }
-        }
-        throw new CrmException("La fecha \"" + texto + "\" no es válida. Use AAAA-MM-DD HH:MM, por ejemplo 2026-10-15 10:00.");
+  private static LocalDateTime fecha(String texto) throws CrmException {
+    String t = texto == null ? "" : texto.trim();
+    for (DateTimeFormatter f : FORMATOS) {
+      try {
+        return LocalDateTime.parse(t, f);
+      } catch (DateTimeParseException ignored) {
+        // se prueba el siguiente formato
+      }
     }
+    throw new CrmException(
+        "La fecha \""
+            + texto
+            + "\" no es válida. Use AAAA-MM-DD HH:MM, por ejemplo 2026-10-15 10:00.");
+  }
 }

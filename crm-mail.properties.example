@@ -17,8 +17,8 @@ smtp.password=__CONTRASENA_DE_APLICACION__
 # Reply-To de las respuestas: las réplicas del usuario vuelven al buzón del sistema
 buzon.sistema=grupo05sa@tecnoweb.org.bo
 
-# PostgreSQL de la facultad, esquema crm
-db.url=jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?currentSchema=crm&ApplicationName=crm-mail
+# PostgreSQL de la facultad: mismas tablas que Laravel (migraciones web, no crm_p1.sql).
+db.url=jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?currentSchema=public&ApplicationName=crm-mail
 db.usuario=grupo05sa
 db.password=__PASSWORD_GRUPO__
 

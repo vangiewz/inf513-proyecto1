@@ -1,32 +1,67 @@
 package bo.uagrm.crm.dominio.conversion;
 
-import java.math.BigDecimal;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-
 import bo.uagrm.crm.persistencia.DatabaseService;
+import java.math.BigDecimal;
+import java.sql.*;
 
-/** Entidad matrícula: conversión validada que espera ser matriculada por el SIS (Grupo 06 SA). */
-public record Matricula(int id, int tarjetaId, String ci, String prospecto, String oferta, BigDecimal monto,
-                        String estado, String registradoPor, String fecha) {
+/** Inscripcion comercial compartida con web. El estado de exportacion al SIS es independiente. */
+public record Matricula(
+    int id,
+    int tarjetaId,
+    String ci,
+    String prospecto,
+    String oferta,
+    BigDecimal monto,
+    String estado,
+    String registradoPor,
+    String fecha) {
+  public static final String SQL =
+      """
+SELECT m.id,i.id AS interes_id,p.documento,p.nombre || ' ' || p.apellido AS prospecto,
+sc.external_modulo_id AS codigo,sc.precio_acordado AS monto,m.estado,
+u.nombre || ' ' || u.apellido AS registrado_por,m.fecha_confirmacion AS fecha
+FROM inscripciones_comerciales m JOIN solicitudes_compra sc ON sc.id=m.solicitud_compra_id
+JOIN ordenes_pago op ON op.id=sc.orden_pago_id JOIN intereses origen ON origen.id=op.interes_id
+LEFT JOIN intereses modulo ON modulo.prospecto_id=origen.prospecto_id AND modulo.external_modulo_id=sc.external_modulo_id
+JOIN intereses i ON i.id=COALESCE(modulo.id,origen.id)
+JOIN prospectos p ON p.id=i.prospecto_id LEFT JOIN usuarios u ON u.id=op.vendedor_id
+""";
+  public static final String[] COLUMNAS = {
+    "ID",
+    "Fecha",
+    "Tarjeta",
+    "CI",
+    "Prospecto",
+    "Oferta",
+    "Monto (Bs)",
+    "Estado",
+    "Vendedor de la venta"
+  };
 
-    public static final String SQL = """
-            SELECT m.id, m.interes_id, p.ci, p.nombre || ' ' || p.apellido AS prospecto, o.codigo, m.monto, m.estado,
-                   u.nombre || ' ' || u.apellido AS registrado_por, m.fecha
-            FROM matricula m
-            JOIN interes i ON i.id = m.interes_id
-            JOIN prospecto p ON p.id = i.prospecto_id
-            JOIN oferta o ON o.id = i.oferta_id
-            JOIN usuario u ON u.id = m.usuario_id""";
-    public static final String[] COLUMNAS = {"ID", "Fecha", "Tarjeta", "CI", "Prospecto", "Oferta", "Monto (Bs)", "Estado", "Registró"};
+  public static Matricula de(ResultSet r) throws SQLException {
+    return new Matricula(
+        r.getInt("id"),
+        r.getInt("interes_id"),
+        r.getString("documento"),
+        r.getString("prospecto"),
+        r.getString("codigo"),
+        r.getBigDecimal("monto"),
+        r.getString("estado"),
+        r.getString("registrado_por"),
+        DatabaseService.texto(r.getTimestamp("fecha")));
+  }
 
-    public static Matricula de(ResultSet rs) throws SQLException {
-        return new Matricula(rs.getInt("id"), rs.getInt("interes_id"), rs.getString("ci"), rs.getString("prospecto"),
-                rs.getString("codigo"), rs.getBigDecimal("monto"), rs.getString("estado"), rs.getString("registrado_por"),
-                DatabaseService.texto(rs.getTimestamp("fecha")));
-    }
-
-    public String[] fila() {
-        return new String[]{String.valueOf(id), fecha, "#" + tarjetaId, ci, prospecto, oferta, DatabaseService.texto(monto), estado, registradoPor};
-    }
+  public String[] fila() {
+    return new String[] {
+      "" + id,
+      fecha,
+      "#" + tarjetaId,
+      ci,
+      prospecto,
+      oferta,
+      DatabaseService.texto(monto),
+      estado,
+      registradoPor
+    };
+  }
 }
