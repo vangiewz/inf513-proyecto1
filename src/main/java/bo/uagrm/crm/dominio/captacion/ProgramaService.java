@@ -15,25 +15,27 @@ public final class ProgramaService {
     this.db = db;
   }
 
-  public int asignar(Usuario actor, String codigo, int coordinador)
+  public int asignar(Usuario actor, String codigo, String coordinador)
       throws SQLException, CrmException {
     if (actor.rol() != Rol.ADMINISTRADOR)
       throw new CrmException("Solo administracion puede asignar responsables de programa.");
     String programa = Valida.texto(codigo, "codigo de programa", 255);
+    String responsable = Valida.correo(coordinador);
     return db.enTransaccion(
         c -> {
           uno(c, r -> 1, "SELECT pg_advisory_xact_lock(51305)");
           if (uno(
                   c,
                   r -> 1,
-                  "SELECT 1 FROM usuarios WHERE id=? AND rol='administrador' AND estado='activo'",
-                  actor.id())
+                  "SELECT 1 FROM usuarios WHERE correo=? AND rol='administrador' AND estado='activo'",
+                  actor.correo())
               == null) throw new CrmException("Se requiere un administrador activo.");
           if (uno(
                   c,
                   r -> 1,
-                  "SELECT 1 FROM usuarios WHERE id=? AND rol='coordinador' AND estado='activo'",
-                  coordinador)
+                  "SELECT 1 FROM usuarios WHERE correo=? AND rol='coordinador' AND estado='activo'"
+                      + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin",
+                  responsable)
               == null) throw new CrmException("El responsable debe ser un coordinador activo.");
           Integer cuantos =
               uno(
@@ -46,11 +48,11 @@ public final class ProgramaService {
           actualizar(
               c,
               """
-INSERT INTO programas_responsables(external_programa_id,coordinador_id,created_at,updated_at) VALUES(?,?,now(),now())
-ON CONFLICT(external_programa_id) DO UPDATE SET coordinador_id=excluded.coordinador_id,updated_at=now()
+INSERT INTO programas_responsables(programa_codigo,coordinador_correo,created_at,updated_at) VALUES(?,?,now(),now())
+ON CONFLICT(programa_codigo) DO UPDATE SET coordinador_correo=excluded.coordinador_correo,updated_at=now()
 """,
               programa,
-              coordinador);
+              responsable);
           return cuantos;
         });
   }

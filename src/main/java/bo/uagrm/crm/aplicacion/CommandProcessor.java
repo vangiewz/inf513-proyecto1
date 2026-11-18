@@ -69,6 +69,17 @@ public final class CommandProcessor {
             fmt.denegado(
                 cmd.getNombre(),
                 "Su usuario está inactivo. Pida a un administrador que lo reactive.");
+      else if (!u.vigente(java.time.LocalDate.now()))
+        r =
+            fmt.denegado(
+                cmd.getNombre(),
+                java.time.LocalDate.now().isBefore(u.fechaInicio())
+                    ? "Su credencial estará vigente desde el "
+                        + u.fechaInicio().format(Usuario.DIA)
+                        + "."
+                    : "Su credencial venció el "
+                        + u.fechaFin().format(Usuario.DIA)
+                        + ". Pida a un administrador que amplíe su vigencia.");
       else r = porRol.get(u.rol()).procesar(cmd, u);
     } catch (SQLException e) {
       java.util.logging.Logger.getLogger("crm")
@@ -84,7 +95,7 @@ public final class CommandProcessor {
     }
     bitacora(
         remitente,
-        u == null ? null : u.id(),
+        u == null ? null : u.correo(),
         asunto,
         r.resultado(),
         r.resultado().equals("Éxito") ? r.titulo() : r.mensaje());
@@ -96,11 +107,11 @@ public final class CommandProcessor {
    * demasiado grande…).
    */
   public void bitacora(
-      String remitente, Integer usuarioId, String asunto, String resultado, String detalle) {
+      String remitente, String usuarioCorreo, String asunto, String resultado, String detalle) {
     try {
       seguimiento.registrarComando(
           remitente == null || remitente.isBlank() ? "(ilegible)" : remitente,
-          usuarioId,
+          usuarioCorreo,
           asunto,
           resultado,
           detalle);

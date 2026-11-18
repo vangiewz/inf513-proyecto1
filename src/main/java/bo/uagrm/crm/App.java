@@ -413,19 +413,19 @@ public final class App {
                     + r.prospecto()
                     + (r.telefono() == null ? "" : ", teléfono " + r.telefono())
                     + " (tarjeta #"
-                    + r.tarjetaId()
+                    + r.nroTarjeta()
                     + "). Al terminar envíe COMPLETARRECORDATORIO[\""
-                    + r.id()
+                    + r.nro()
                     + "\"].");
         smtp.enviar(
             r.correoUsuario(), aviso.asunto(), fmt.html(aviso, null), fmt.texto(aviso, null));
-        seguimiento.marcarNotificado(r.id());
+        seguimiento.marcarNotificado(r.nro());
         enviados++;
-        log("Recordatorio " + r.id() + " enviado a " + r.correoUsuario());
+        log("Recordatorio " + r.nro() + " enviado a " + r.correoUsuario());
       } catch (Exception e) {
         LOG.warning(
             "Recordatorio "
-                + r.id()
+                + r.nro()
                 + " no enviado (se reintenta en el próximo ciclo): "
                 + Diagnostico.explicar(cfg.smtpHost(), cfg.smtpPuerto(), e));
       }

@@ -92,6 +92,20 @@ public final class Valida {
             + "\").");
   }
 
+  /** Fecha AAAA-MM-DD o DD/MM/AAAA. */
+  public static java.time.LocalDate fecha(String valor, String campo) throws CrmException {
+    String v = texto(valor, campo, 10);
+    try {
+      return v.contains("/")
+          ? java.time.LocalDate.parse(v, java.time.format.DateTimeFormatter.ofPattern("dd/MM/uuuu")
+              .withResolverStyle(java.time.format.ResolverStyle.STRICT))
+          : java.time.LocalDate.parse(v);
+    } catch (java.time.format.DateTimeParseException e) {
+      throw new CrmException(
+          "El campo " + campo + " debe ser una fecha AAAA-MM-DD o DD/MM/AAAA (se recibió \"" + valor + "\").");
+    }
+  }
+
   public static boolean esCorreo(String v) {
     return v != null && CORREO.matcher(v).matches();
   }

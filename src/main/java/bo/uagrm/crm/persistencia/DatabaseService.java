@@ -182,9 +182,10 @@ public final class DatabaseService {
     }
   }
 
-  /** INSERT ... RETURNING id. */
-  public static int insertar(Connection c, String sql, Object... params) throws SQLException {
-    return uno(c, rs -> rs.getInt(1), sql + " RETURNING id", params);
+  /** INSERT que devuelve el correlativo generado (nro_tarjeta, nro_orden...) de la columna clave. */
+  public static int insertar(Connection c, String clave, String sql, Object... params)
+      throws SQLException {
+    return uno(c, rs -> rs.getInt(1), sql + " RETURNING " + clave, params);
   }
 
   public static String texto(Object v) {

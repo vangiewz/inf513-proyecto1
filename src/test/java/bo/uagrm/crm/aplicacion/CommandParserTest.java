@@ -67,6 +67,6 @@ class CommandParserTest {
     assertFalse(CommandParser.pareceComando("Re: consulta"));
     Command cortado = parse("MOVERTARJETA[\"1"); // sin ] final
     assertEquals("MOVERTARJETA", cortado.getNombre());
-    assertTrue(cortado.getMensajeError().contains("MOVERTARJETA[\"id_tarjeta\",\"estado\"]"));
+    assertTrue(cortado.getMensajeError().contains("MOVERTARJETA[\"nro_tarjeta\",\"estado\"]"));
   }
 }

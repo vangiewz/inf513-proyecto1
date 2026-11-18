@@ -9,12 +9,16 @@ final class Errores {
 
   private static final Map<String, String> DUPLICADOS =
       Map.of(
-          "usuario_correo_key", "Ya existe un usuario con ese correo.",
-          "prospecto_ci_key", "Ya existe un prospecto con ese CI.",
-          "motivo_perdida_nombre_key", "Ya existe un motivo con ese nombre.",
-          "interes_prospecto_id_oferta_id_key",
+          "usuarios_pkey", "Ya existe un usuario con ese correo.",
+          "usuarios_correo_lower_unique", "Ya existe un usuario con ese correo.",
+          "prospectos_pkey", "Ya existe un prospecto con ese CI.",
+          "prospectos_correo_lower_unique", "Ya existe un prospecto con ese correo.",
+          "prospectos_correo_unique", "Ya existe un prospecto con ese correo.",
+          "motivos_perdida_pkey", "Ya existe un motivo con ese nombre.",
+          "descuentos_pkey", "Ya existe un descuento con ese código.",
+          "intereses_documento_modulo_codigo_unique",
               "El prospecto ya tiene registrado su interés en esa oferta.",
-          "matricula_interes_id_key", "La tarjeta ya tiene una matrícula.");
+          "inscripciones_comerciales_pkey", "La solicitud ya tiene una inscripción confirmada.");
 
   private Errores() {}
 

@@ -794,10 +794,10 @@ def pks_sql():
             for t, cs in re.findall(r'ALTER TABLE ONLY public\.(\w+)\s+ADD CONSTRAINT \w+ PRIMARY KEY \(([^)]+)\);', SQL)}
 
 
-ROL_FK = {'vendedor_id': 'vendedor', 'coordinador_id': 'coordinador', 'actualizado_por': 'actualizado por',
-          'external_modulo_id': 'módulo', ('log_comandos', 'usuario_id'): 'emisor', ('interacciones', 'usuario_id'): 'autor',
-          ('movimientos_interes', 'usuario_id'): 'autor', ('recordatorios', 'usuario_id'): 'responsable',
-          ('exportaciones', 'usuario_id'): 'responsable', ('notificaciones', 'usuario_id'): 'destinatario'}
+ROL_FK = {'vendedor_correo': 'vendedor', 'coordinador_correo': 'coordinador', 'actualizado_por': 'actualizado por',
+          'modulo_codigo': 'módulo', ('log_comandos', 'usuario_correo'): 'emisor', ('interacciones', 'usuario_correo'): 'autor',
+          ('movimientos_interes', 'usuario_correo'): 'autor', ('recordatorios', 'usuario_correo'): 'responsable',
+          ('exportaciones', 'usuario_correo'): 'responsable', ('notificaciones', 'usuario_correo'): 'destinatario'}
 
 
 def modelo_datos(ea, dis):

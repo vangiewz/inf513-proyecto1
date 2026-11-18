@@ -280,16 +280,16 @@ d.tabla('Priorización de casos de uso', ['ID', 'Actores involucrados', 'Comando
         [(cu, ', '.join(actores(cu)), str(len(comandos(cu))), PRIO[cu]) for cu in PRIO], anchos=[1.6, 9.0, 2.4, 3.0])
 
 CU = {
-    'CU1': ('Gestión de Usuarios', 'Registrar, listar, modificar y dar de baja a los usuarios del CRM con su rol.',
-            'Administrador', 'El remitente es un administrador activo.',
+    'CU1': ('Gestión de Usuarios', 'Registrar, listar, modificar y dar de baja a los usuarios del CRM con su rol y la vigencia de su credencial (fecha de inicio y de fin).',
+            'Administrador', 'El remitente es un administrador activo y con la credencial vigente.',
             ['El administrador envía INSERTARUSUARIO, MODIFICARUSUARIO, ELIMINARUSUARIO o LISTARUSUARIOS con sus parámetros en el asunto.',
              'El sistema descarga el correo por POP3 y CommandParser separa el comando y sus parámetros.',
              'CommandProcessor identifica al remitente por su correo y AdministradorCommandProcessor comprueba el permiso.',
-             'UsuarioService valida nombre, correo, teléfono y rol y ejecuta la operación en una transacción.',
+             'UsuarioService valida nombre, correo, teléfono, rol y vigencia (fecha_fin no anterior a fecha_inicio; por omisión, un año) y ejecuta la operación en una transacción. El usuario se identifica por su correo.',
              'Al dar de baja a un vendedor, sus tarjetas abiertas vuelven a la bolsa común.',
              'El sistema responde con un correo HTML con el resultado.'],
-            'El usuario queda registrado o actualizado y puede enviar comandos desde su correo.',
-            'Correo duplicado, rol inexistente, datos inválidos, intento de cambiar el propio rol o un rol sin permiso: el sistema responde con un correo de error o de acceso denegado.'),
+            'El usuario queda registrado o actualizado y puede enviar comandos desde su correo mientras su credencial esté vigente.',
+            'Correo duplicado, rol inexistente, datos o fechas inválidos, intento de cambiar el propio rol, cuenta inactiva, credencial vencida o todavía no vigente, o un rol sin permiso: el sistema responde con un correo de error o de acceso denegado que indica la causa.'),
     'CU2': ('Gestión de Captar, Consumir Oferta', 'Consultar la oferta publicada por el SIS académico (Grupo 06 SA) y registrar prospectos con su interés: uno a uno, por CSV o por el propio visitante.',
             'Administrador, Coordinador, Vendedor o Visitante', 'La oferta elegida está abierta para inscripción.',
             ['El actor envía LISTAROFERTA[], REGISTRARPROSPECTO, IMPORTARPROSPECTOS (con un .csv adjunto), LISTARPROSPECTOS, MODIFICARPROSPECTO o ELIMINARPROSPECTO; el visitante, REGISTRARINTERES; el administrador pone cada programa a cargo de un coordinador con ASIGNARCOORDINADOR.',
@@ -301,7 +301,7 @@ CU = {
             'Oferta cerrada o inexistente, CI o teléfono inválidos, interés duplicado o fila de CSV incompleta: se informa el error de esa fila o del comando.'),
     'CU3': ('Gestión de Asignar Prospectos', 'Repartir los prospectos de la bolsa común entre los vendedores: uno a uno o automáticamente por menor carga. El vendedor no se autoasigna.',
             'Administrador o Coordinador', 'Existen tarjetas abiertas sin vendedor y vendedores activos.',
-            ['El actor envía LISTARBOLSA[], ASIGNARPROSPECTO["id_tarjeta","id_vendedor"] o ASIGNARAUTOMATICO[].',
+            ['El actor envía LISTARBOLSA[], ASIGNARPROSPECTO["nro_tarjeta","correo_vendedor"] o ASIGNARAUTOMATICO[].',
              'El sistema verifica el rol y el alcance (el coordinador solo reparte los programas a su cargo).',
              'AsignacionService bloquea las tarjetas (SELECT ... FOR UPDATE) y las reparte al vendedor activo con menos carga, manteniendo juntos los intereses de un mismo prospecto.',
              'Registra la asignación en el historial de cada tarjeta.',
@@ -310,7 +310,7 @@ CU = {
             'Bolsa vacía, sin vendedores activos, tarjeta ya asignada o un vendedor que intenta asignarse: se responde con el motivo o como acceso denegado.'),
     'CU4': ('Gestión de Embudo de Ventas en Tablero Kanban', 'Ver el tablero de seis etapas y mover las tarjetas entre Nuevo, En Contacto, Seguimiento y Promesa de Pago.',
             'Administrador, Coordinador o Vendedor', 'La tarjeta está en la cartera del vendedor o en el alcance del coordinador.',
-            ['El actor envía VERTABLERO[] o MOVERTARJETA["id","etapa"].',
+            ['El actor envía VERTABLERO[] o MOVERTARJETA["nro_tarjeta","etapa"].',
              'El sistema verifica el rol y que la tarjeta esté a su cargo.',
              'EmbudoService bloquea la tarjeta, cambia la etapa y registra el movimiento.',
              'Responde con el tablero en carriles (uno por etapa) o con la tarjeta movida.'],
@@ -318,7 +318,7 @@ CU = {
             'Mover a Perdido o Convertido por esta vía, tarjeta ajena o ya convertida: se indica el comando correcto o el motivo.'),
     'CU5': ('Gestión de Pérdida de Prospectos y Clasificación de Motivos', 'Marcar una tarjeta como perdida con un motivo obligatorio y administrar los motivos clasificados por categoría.',
             'Administrador, Coordinador o Vendedor', 'Existe el motivo y la tarjeta no está convertida.',
-            ['El actor envía MARCARPERDIDO["id","id_motivo","detalle"] o gestiona los motivos con LISTARMOTIVOS, INSERTARMOTIVO, MODIFICARMOTIVO o ELIMINARMOTIVO.',
+            ['El actor envía MARCARPERDIDO["nro_tarjeta","motivo","detalle"] o gestiona los motivos con LISTARMOTIVOS, INSERTARMOTIVO, MODIFICARMOTIVO o ELIMINARMOTIVO.',
              'El sistema verifica el rol y el alcance sobre la tarjeta.',
              'PerdidaService registra el motivo, cambia la etapa a Perdido y anota el movimiento con la categoría.',
              'Responde con la tarjeta y cómo reactivarla.'],
@@ -326,9 +326,9 @@ CU = {
             'Tarjeta ya cerrada, motivo inexistente o motivo en uso que se intenta eliminar: se responde con el error.'),
     'CU6': ('Gestión de Validar Datos y Procesar Conversión a Matrícula', 'Validar la ficha del prospecto, generar la orden de pago, revisar el comprobante, confirmar la inscripción comercial y preparar su exportación al SIS académico.',
             'Administrador, Coordinador o Vendedor', 'La tarjeta tiene vendedor asignado y su módulo está abierto en el catálogo.',
-            ['El vendedor envía VALIDARCONVERSION["id_tarjeta"] y, con la ficha completa, GENERARORDEN["id_tarjeta"] (con otros módulos del programa y un descuento opcionales); consulta LISTARORDENES, VERORDEN y LISTARDESCUENTOS.',
-             'PagoService calcula subtotal, descuentos y total en una transacción y devuelve el ID de pago con una referencia demostrativa (no se cobra en un banco).',
-             'El vendedor adjunta el comprobante real (PNG, JPEG, GIF, WebP o PDF de hasta 5 MB) con REGISTRARCOMPROBANTE["id_pago","observación"]; el tipo se comprueba por su contenido.',
+            ['El vendedor envía VALIDARCONVERSION["nro_tarjeta"] y, con la ficha completa, GENERARORDEN["nro_tarjeta"] (con otros módulos del programa y un descuento opcionales); consulta LISTARORDENES, VERORDEN y LISTARDESCUENTOS.',
+             'PagoService calcula subtotal, descuentos y total en una transacción y devuelve el número de orden, que identifica también a su pago, con una referencia demostrativa (no se cobra en un banco).',
+             'El vendedor adjunta el comprobante real (PNG, JPEG, GIF, WebP o PDF de hasta 5 MB) con REGISTRARCOMPROBANTE["nro_orden","observación"]; el tipo se comprueba por su contenido.',
              'El coordinador del programa o el administrador revisa con LISTARPAGOS y VERCOMPROBANTE, y responde APROBARPAGO o RECHAZARPAGO con su observación; un rechazo deja el historial y permite otro comprobante.',
              'Al aprobar, en una transacción se confirma la inscripción comercial de cada módulo y la comisión del vendedor; CONVERTIRPROSPECTO comprueba el resultado sin duplicarlo y LISTARMATRICULAS lo lista.',
              'EXPORTARMATRICULAS prepara el CSV para el SIS del Grupo 06 SA (estado preparada); LISTAREXPORTACIONES, VEREXPORTACION y REGISTRARRESULTADOSIS registran la constancia que se obtenga.'],
@@ -460,10 +460,17 @@ d.p(f'El modelo tiene {len(TABLAS)} tablas en el esquema public de db_grupo05sa,
     'migraciones del Proyecto 2 y no forma parte del modelo del negocio. En el diagrama, las claves foráneas no se repiten como '
     'atributo: cada una es una asociación con su multiplicidad, rotulada con el papel cuando no es obvio (vendedor, coordinador, '
     'emisor, autor, responsable, destinatario, módulo, actualizado por).')
-d.p('Cada tabla usa su clave de diseño, sin una segunda clave artificial: catalogo_cache se identifica por el código del módulo '
-    '(codigo), roles por su nombre, configuraciones por su clave y programas_responsables por el código del programa; la tabla '
-    'intermedia orden_pago_descuentos tiene como clave las dos claves foráneas (orden y descuento) y guarda el porcentaje y el '
-    'monto aplicados; las demás usan un identificador bigint. Las reglas del negocio son restricciones CHECK y UNIQUE (script '
+d.p('Cada tabla tiene una sola clave, la de su diseño y con su nombre; ninguna lleva un campo id. Las entidades que tienen una '
+    'clave natural se identifican por ella: usuarios por el correo (que es también la identidad con la que se envían los comandos), '
+    'prospectos por el documento (CI), descuentos por su código, motivos_perdida por su nombre, roles por su nombre, catalogo_cache '
+    'por el código del módulo, configuraciones por su clave y api_tokens por el hash del token. Las que dependen 1 a 1 de otra '
+    'toman la clave de su dueño: pagos la de su orden (nro_orden), y comisiones e inscripciones_comerciales la de su solicitud de '
+    'compra (nro_solicitud). Las que no tienen clave natural usan un correlativo con el nombre del diseño: nro_tarjeta, nro_orden, '
+    'nro_solicitud, nro_interaccion, nro_movimiento, nro_recordatorio, nro_notificacion, nro_registro, nro_exportacion y '
+    'nro_comprobante. Cada clave foránea lleva el nombre de la clave a la que apunta o el del papel que cumple (vendedor_correo, '
+    'coordinador_correo). La intermedia orden_pago_descuentos tiene como clave las dos claves foráneas (nro_orden y '
+    'descuento_codigo) y guarda el porcentaje y el monto aplicados. La credencial de cada usuario tiene vigencia: fecha_inicio y '
+    'fecha_fin, con la restricción fecha_fin >= fecha_inicio. Las reglas del negocio son restricciones CHECK y UNIQUE (script '
     'completo en el Anexo B).')
 for nombre, cols in tablas_sql():
     d.tabla(f'Mapeo de la tabla {nombre}', ['Columna', 'Tipo', 'Clave', 'Nulo'], cols, anchos=[4.4, 4.0, 5.2, 2.4], tam=9)

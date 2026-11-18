@@ -47,13 +47,17 @@ class RobustezCorreoTest {
   static void init() throws Exception {
     String url = System.getenv("P1_ROBUSTEZ_DB_URL");
     assertTrue(url.startsWith("jdbc:postgresql://127.0.0.1:"), "solo contra una base local desechable");
-    db = new DatabaseService(url, "crm_user", "crm_password");
+    db =
+        new DatabaseService(
+            url,
+            System.getenv().getOrDefault("P1_TEST_DB_USER", "crm_user"),
+            System.getenv().getOrDefault("P1_TEST_DB_PASSWORD", "crm_password"));
     db.verificarModelo();
     var us = new UsuarioService(db);
     var admin = us.insertar("Admin", "QA", "admin@qa.test", "70000001", "administrador");
     var coord = us.insertar("Coord", "QA", "coord@qa.test", "70000002", "coordinador");
     us.insertar("Vend", "QA", "vend@qa.test", "70000003", "vendedor");
-    new ProgramaService(db).asignar(admin, "desarrollo-web", coord.id());
+    new ProgramaService(db).asignar(admin, "desarrollo-web", coord.correo());
     remitentes.put("administrador", "admin@qa.test");
     remitentes.put("coordinador", "coord@qa.test");
     remitentes.put("vendedor", "vend@qa.test");

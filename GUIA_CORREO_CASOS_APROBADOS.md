@@ -24,13 +24,14 @@ EXPORTARMATRICULAS, LISTAREXPORTACIONES, VEREXPORTACION y REGISTRARRESULTADOSIS.
 
 ## Preparacion del administrador
 
-1. Registrar al personal con su correo real y su rol. La identidad de P1 es el
+1. Registrar al personal con su correo real, su rol y la vigencia de su credencial
+   (`INSERTARUSUARIO[...,"fecha_inicio","fecha_fin"]`; por omision, un anio desde hoy). La identidad de P1 es el
    correo registrado; el sistema no crea una contrasena web comun.
 2. Consultar `LISTAROFERTA[]`: muestra los codigos reales de modulo y programa.
 3. Asignar cada programa a su coordinador:
 
 ```text
-ASIGNARCOORDINADOR["desarrollo-web","id_coordinador"]
+ASIGNARCOORDINADOR["desarrollo-web","correo_coordinador"]
 ```
 
 Un coordinador sin programas asignados no tiene acceso global. Si cambia el responsable,
@@ -61,7 +62,7 @@ Coordinador o administrador:
 
 ```text
 LISTARBOLSA[]
-ASIGNARPROSPECTO["id_tarjeta","id_vendedor"]
+ASIGNARPROSPECTO["nro_tarjeta","correo_vendedor"]
 ```
 
 La alternativa `ASIGNARAUTOMATICO[]` distribuye por menor carga y conserva juntos
@@ -71,10 +72,10 @@ Vendedor:
 
 ```text
 VERTABLERO[]
-MOVERTARJETA["id_tarjeta","En Contacto"]
-REGISTRARINTERACCION["id_tarjeta","WhatsApp","Se explico el contenido y el precio"]
-MOVERTARJETA["id_tarjeta","Seguimiento"]
-VALIDARCONVERSION["id_tarjeta"]
+MOVERTARJETA["nro_tarjeta","En Contacto"]
+REGISTRARINTERACCION["nro_tarjeta","WhatsApp","Se explico el contenido y el precio"]
+MOVERTARJETA["nro_tarjeta","Seguimiento"]
+VALIDARCONVERSION["nro_tarjeta"]
 ```
 
 Si faltan profesion o ubicacion, el vendedor puede completar la ficha por correo:
@@ -86,7 +87,7 @@ MODIFICARPROSPECTO["4715292","Juan","Perez","70000001","juan@example.com","Corre
 Generar la orden del modulo de la tarjeta:
 
 ```text
-GENERARORDEN["id_tarjeta"]
+GENERARORDEN["nro_tarjeta"]
 ```
 
 Para vender varios modulos del mismo programa se separan sus codigos con punto y coma.
@@ -94,17 +95,17 @@ La orden debe incluir el modulo de la tarjeta elegida. Los descuentos son opcion
 
 ```text
 LISTARDESCUENTOS[]
-GENERARORDEN["id_tarjeta","desarrollo-web-m1;desarrollo-web-m2","codigo_descuento"]
-VERORDEN["id_orden"]
+GENERARORDEN["nro_tarjeta","desarrollo-web-m1;desarrollo-web-m2","codigo_descuento"]
+VERORDEN["nro_orden"]
 ```
 
-La respuesta contiene el ID de pago, el total y una **referencia demostrativa**.
+La respuesta contiene el numero de orden (que identifica tambien al pago), el total y una **referencia demostrativa**.
 No se ejecuta un cobro bancario ni se fabrica un comprobante.
 
 Vendedor: adjuntar un unico archivo PNG, JPEG, GIF, WebP o PDF, de hasta 5 MB:
 
 ```text
-REGISTRARCOMPROBANTE["id_pago","Comprobante recibido del interesado"]
+REGISTRARCOMPROBANTE["nro_orden","Comprobante recibido del interesado"]
 ```
 
 El archivo viaja como adjunto real, nunca como una ruta local o una cadena base64 en el asunto.
@@ -115,22 +116,22 @@ Coordinador responsable:
 
 ```text
 LISTARPAGOS["En revision"]
-VERCOMPROBANTE["id_pago"]
+VERCOMPROBANTE["nro_orden"]
 ```
 
 `VERCOMPROBANTE` devuelve el archivo adjunto y el historial de comprobantes. Para
-revisar uno anterior se puede indicar su ID como segundo parametro. Luego:
+revisar uno anterior se puede indicar su numero (nro_comprobante) como segundo parametro. Luego:
 
 ```text
-RECHAZARPAGO["id_pago","El comprobante no es legible"]
+RECHAZARPAGO["nro_orden","El comprobante no es legible"]
 ```
 
 El vendedor puede enviar otro comprobante; el anterior y el motivo de rechazo
 permanecen en el historial. Cuando el comprobante sea correcto:
 
 ```text
-APROBARPAGO["id_pago","Datos y comprobante revisados"]
-CONVERTIRPROSPECTO["id_tarjeta"]
+APROBARPAGO["nro_orden","Datos y comprobante revisados"]
+CONVERTIRPROSPECTO["nro_tarjeta"]
 LISTARMATRICULAS[]
 ```
 
@@ -144,11 +145,11 @@ matriculas ni comisiones. `CONVERTIRPROSPECTO` comprueba el resultado de forma i
 
 ```text
 LISTARMOTIVOS[]
-MARCARPERDIDO["id_tarjeta","id_motivo","Detalle de la perdida"]
-PROGRAMARRECORDATORIO["id_tarjeta","2090-01-10 10:00","Confirmar decision"]
+MARCARPERDIDO["nro_tarjeta","motivo","Detalle de la perdida"]
+PROGRAMARRECORDATORIO["nro_tarjeta","2090-01-10 10:00","Confirmar decision"]
 LISTARRECORDATORIOS[]
-COMPLETARRECORDATORIO["id_recordatorio","Se contacto al interesado"]
-VERHISTORIAL["id_tarjeta"]
+COMPLETARRECORDATORIO["nro_recordatorio","Se contacto al interesado"]
+VERHISTORIAL["nro_tarjeta"]
 REPORTEEMBUDO[]
 ```
 
@@ -164,9 +165,9 @@ El grupo aun no proporciono su API (confirmado por el usuario). El catalogo se
 identifica como simulado. La preparacion puede hacerse por correo:
 
 ```text
-EXPORTARMATRICULAS["id_inscripcion"]
+EXPORTARMATRICULAS["nro_solicitud"]
 LISTAREXPORTACIONES[]
-VEREXPORTACION["id_exportacion"]
+VEREXPORTACION["nro_exportacion"]
 ```
 
 Se devuelve un CSV y se registra estado `preparada`. Recuperar el archivo no crea
@@ -174,7 +175,7 @@ otra exportacion. Una recepcion real no se presume. Si el responsable obtiene un
 constancia por un medio externo, puede registrarla explicitamente:
 
 ```text
-REGISTRARRESULTADOSIS["id_exportacion","recibida","Constancia real facilitada por el SIS"]
+REGISTRARRESULTADOSIS["nro_exportacion","recibida","Constancia real facilitada por el SIS"]
 ```
 
 Estados admitidos: preparada, exportada, recibida y error. La constancia es manual;
@@ -184,7 +185,7 @@ la conexion automatica al SIS requiere su URL, contrato y autenticacion reales.
 
 Pruebas reproducibles y preparacion del entorno: [PRUEBAS.md](PRUEBAS.md).
 Solo se crean datos ficticios en bases/esquemas QA.
-El resumen esta en `doc/pruebas/base-compartida.json` y la matriz de permisos se genera
+El resumen esta en `doc/pruebas/integracion-servidor.json` y `PRUEBAS.md` y la matriz de permisos se genera
 con `java -jar target/crm-mail.jar --anexo`.
 
 Esta guia operativa no reemplaza el PUDS ni sus diagramas EA, que deben reflejar las

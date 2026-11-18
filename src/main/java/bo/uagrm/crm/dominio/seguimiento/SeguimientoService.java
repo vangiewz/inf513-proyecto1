@@ -43,7 +43,7 @@ public final class SeguimientoService {
     this.db = db;
   }
 
-  public Interaccion registrarInteraccion(Usuario u, int tarjetaId, String tipo, String descripcion)
+  public Interaccion registrarInteraccion(Usuario u, int nroTarjeta, String tipo, String descripcion)
       throws SQLException, CrmException {
     String entrada =
         switch (Valida.normal(tipo == null ? "" : tipo)) {
@@ -56,27 +56,28 @@ public final class SeguimientoService {
         d = Valida.texto(descripcion, "descripción", 500);
     return db.enTransaccion(
         c -> {
-          EmbudoService.tarjeta(c, u, tarjetaId, true);
-          int id =
+          EmbudoService.tarjeta(c, u, nroTarjeta, true);
+          int nro =
               DatabaseService.insertar(
                   c,
-                  "INSERT INTO interacciones (interes_id, usuario_id, tipo, descripcion,"
+                  "nro_interaccion",
+                  "INSERT INTO interacciones (nro_tarjeta, usuario_correo, tipo, descripcion,"
                       + " created_at, updated_at) VALUES (?, ?, ?, ?, now(), now())",
-                  tarjetaId,
-                  u.id(),
+                  nroTarjeta,
+                  u.correo(),
                   t,
                   d);
           actualizar(
               c,
               "UPDATE intereses SET estado=CASE WHEN estado='Nuevo' THEN 'Contactado' ELSE estado"
-                  + " END, ultima_actividad_en=now(),updated_at=now() WHERE id=?",
-              tarjetaId);
-          return uno(c, Interaccion::de, Interaccion.SQL + " WHERE id = ?", id);
+                  + " END, ultima_actividad_en=now(),updated_at=now() WHERE nro_tarjeta=?",
+              nroTarjeta);
+          return uno(c, Interaccion::de, Interaccion.SQL + " WHERE nro_interaccion = ?", nro);
         });
   }
 
   public Recordatorio programarRecordatorio(
-      Usuario u, int tarjetaId, String fechaHora, String descripcion)
+      Usuario u, int nroTarjeta, String fechaHora, String descripcion)
       throws SQLException, CrmException {
     LocalDateTime cuando = fecha(fechaHora);
     if (!cuando.isAfter(LocalDateTime.now(java.time.ZoneId.of("America/La_Paz"))))
@@ -84,14 +85,15 @@ public final class SeguimientoService {
     String d = Valida.texto(descripcion, "descripción", 300);
     return db.enTransaccion(
         c -> {
-          Interes tarjeta = EmbudoService.tarjeta(c, u, tarjetaId, true);
-          int id =
+          Interes tarjeta = EmbudoService.tarjeta(c, u, nroTarjeta, true);
+          int nro =
               DatabaseService.insertar(
                   c,
-                  "INSERT INTO recordatorios (interes_id, usuario_id, fecha_programada,"
+                  "nro_recordatorio",
+                  "INSERT INTO recordatorios (nro_tarjeta, usuario_correo, fecha_programada,"
                       + " descripcion, created_at, updated_at) VALUES (?, ?, ?, ?, now(), now())",
-                  tarjetaId,
-                  tarjeta.vendedorId() == null ? u.id() : tarjeta.vendedorId(),
+                  nroTarjeta,
+                  tarjeta.vendedorCorreo() == null ? u.correo() : tarjeta.vendedorCorreo(),
                   cuando
                       .atZone(java.time.ZoneId.of("America/La_Paz"))
                       .withZoneSameInstant(java.time.ZoneOffset.UTC)
@@ -100,10 +102,10 @@ public final class SeguimientoService {
           actualizar(
               c,
               "UPDATE intereses SET proximo_contacto=(SELECT fecha_programada FROM recordatorios"
-                  + " WHERE id=?),updated_at=now() WHERE id=?",
-              id,
-              tarjetaId);
-          return uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id = ?", id);
+                  + " WHERE nro_recordatorio=?),updated_at=now() WHERE nro_tarjeta=?",
+              nro,
+              nroTarjeta);
+          return uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.nro_recordatorio = ?", nro);
         });
   }
 
@@ -121,43 +123,43 @@ public final class SeguimientoService {
     }
   }
 
-  public Recordatorio completarRecordatorio(Usuario u, int id, String resultado)
+  public Recordatorio completarRecordatorio(Usuario u, int nro, String resultado)
       throws SQLException, CrmException {
     String nota = Valida.texto(resultado, "resultado", 2000);
     return db.enTransaccion(
         c -> {
-          Recordatorio r = uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id=?", id);
+          Recordatorio r = uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.nro_recordatorio=?", nro);
           if (r == null) throw new CrmException("No existe el recordatorio.");
-          EmbudoService.tarjeta(c, u, r.tarjetaId(), true);
-          r = uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id=? FOR UPDATE OF r", id);
+          EmbudoService.tarjeta(c, u, r.nroTarjeta(), true);
+          r = uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.nro_recordatorio=? FOR UPDATE OF r", nro);
           if (!List.of("Pendiente", "Atrasada").contains(r.estado()))
             throw new CrmException("La actividad ya fue realizada o cancelada.");
           actualizar(
               c,
               "UPDATE recordatorios SET estado='Realizada',fecha_realizada=now(),updated_at=now()"
-                  + " WHERE id=?",
-              id);
+                  + " WHERE nro_recordatorio=?",
+              nro);
           actualizar(
               c,
               """
-INSERT INTO interacciones(interes_id,usuario_id,tipo,descripcion,resultado,fecha,created_at,updated_at)
+INSERT INTO interacciones(nro_tarjeta,usuario_correo,tipo,descripcion,resultado,fecha,created_at,updated_at)
 VALUES(?,?,'Nota comercial',?,?,now(),now(),now())
 """,
-              r.tarjetaId(),
-              u.id(),
+              r.nroTarjeta(),
+              u.correo(),
               "Actividad agendada: " + r.descripcion(),
               nota);
           actualizar(
               c,
-              "UPDATE intereses SET ultima_actividad_en=now(),updated_at=now() WHERE id=?",
-              r.tarjetaId());
-          return uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.id=?", id);
+              "UPDATE intereses SET ultima_actividad_en=now(),updated_at=now() WHERE nro_tarjeta=?",
+              r.nroTarjeta());
+          return uno(c, Recordatorio::de, Recordatorio.SQL + " WHERE r.nro_recordatorio=?", nro);
         });
   }
 
-  public Historial historial(Usuario u, int tarjetaId) throws SQLException, CrmException {
+  public Historial historial(Usuario u, int nroTarjeta) throws SQLException, CrmException {
     try (Connection c = db.getConnection()) {
-      Interes t = EmbudoService.tarjeta(c, u, tarjetaId, false);
+      Interes t = EmbudoService.tarjeta(c, u, nroTarjeta, false);
       List<String[]> eventos =
           filas(
               c,
@@ -168,36 +170,36 @@ FROM (
            CASE WHEN m.estado_anterior IS DISTINCT FROM m.estado_nuevo
                 THEN COALESCE(m.estado_anterior || ' → ', '') || m.estado_nuevo || COALESCE('. ' || m.detalle, '')
                 ELSE m.detalle END AS detalle,
-           m.usuario_id
-    FROM movimientos_interes m WHERE m.interes_id = ?
+           m.usuario_correo
+    FROM movimientos_interes m WHERE m.nro_tarjeta = ?
     UNION ALL
-    SELECT x.fecha, x.tipo, x.descripcion || COALESCE('. Resultado: ' || x.resultado,''), x.usuario_id FROM interacciones x WHERE x.interes_id = ?
+    SELECT x.fecha, x.tipo, x.descripcion || COALESCE('. Resultado: ' || x.resultado,''), x.usuario_correo FROM interacciones x WHERE x.nro_tarjeta = ?
     UNION ALL
-    SELECT r.fecha_programada, 'Recordatorio (' || r.estado || ')', r.descripcion, r.usuario_id FROM recordatorios r WHERE r.interes_id = ?
-) h LEFT JOIN usuarios u ON u.id = h.usuario_id
+    SELECT r.fecha_programada, 'Recordatorio (' || r.estado || ')', r.descripcion, r.usuario_correo FROM recordatorios r WHERE r.nro_tarjeta = ?
+) h LEFT JOIN usuarios u ON u.correo = h.usuario_correo
 ORDER BY h.fecha""",
-              tarjetaId,
-              tarjetaId,
-              tarjetaId);
+              nroTarjeta,
+              nroTarjeta,
+              nroTarjeta);
       return new Historial(t, eventos);
     }
   }
 
   /** Bitácora del sistema: cada correo procesado, con su resultado (Éxito, Error o Denegado). */
   public void registrarComando(
-      String remitente, Integer usuarioId, String asunto, String resultado, String detalle)
+      String remitente, String usuarioCorreo, String asunto, String resultado, String detalle)
       throws SQLException {
     try (Connection c = db.getConnection()) {
       actualizar(
           c,
-          "INSERT INTO log_comandos(remitente,usuario_id,asunto,resultado,detalle,rol_registrado)"
-              + " VALUES(?,?,?,?,?,(SELECT rol FROM usuarios WHERE id=?))",
+          "INSERT INTO log_comandos(remitente,usuario_correo,asunto,resultado,detalle,rol_registrado)"
+              + " VALUES(?,?,?,?,?,(SELECT rol FROM usuarios WHERE correo=?))",
           corto(remitente, 160),
-          usuarioId,
+          usuarioCorreo,
           corto(asunto == null ? "(sin asunto)" : asunto, 300),
           resultado,
           corto(detalle, 300),
-          usuarioId);
+          usuarioCorreo);
     }
   }
 
@@ -207,8 +209,8 @@ ORDER BY h.fecha""",
           c,
           """
 SELECT l.fecha, l.remitente, COALESCE(l.rol_registrado,u.rol, 'público'), l.asunto, l.resultado, COALESCE(l.detalle, '')
-FROM log_comandos l LEFT JOIN usuarios u ON u.id = l.usuario_id
-ORDER BY l.id DESC LIMIT ?""",
+FROM log_comandos l LEFT JOIN usuarios u ON u.correo = l.usuario_correo
+ORDER BY l.nro_registro DESC LIMIT ?""",
           Math.min(cantidad, 200));
     }
   }
@@ -221,17 +223,17 @@ ORDER BY l.id DESC LIMIT ?""",
           Recordatorio::de,
           Recordatorio.SQL
               + " WHERE r.estado IN ('Pendiente','Atrasada') AND u.estado='activo' AND (u.rol <>"
-              + " 'vendedor' OR i.vendedor_id=u.id) AND NOT r.notificado AND r.fecha_programada <="
+              + " 'vendedor' OR i.vendedor_correo=u.correo) AND NOT r.notificado AND r.fecha_programada <="
               + " now() AND (u.rol <> 'coordinador' OR EXISTS (SELECT 1 FROM catalogo_cache ac JOIN"
-              + " programas_responsables pr ON pr.external_programa_id=ac.programa_codigo WHERE"
-              + " ac.codigo=i.external_modulo_id AND pr.coordinador_id=u.id)) ORDER BY"
+              + " programas_responsables pr ON pr.programa_codigo=ac.programa_codigo WHERE"
+              + " ac.codigo=i.modulo_codigo AND pr.coordinador_correo=u.correo)) ORDER BY"
               + " r.fecha_programada");
     }
   }
 
-  public void marcarNotificado(int id) throws SQLException {
+  public void marcarNotificado(int nro) throws SQLException {
     try (Connection c = db.getConnection()) {
-      actualizar(c, "UPDATE recordatorios SET notificado = true WHERE id = ?", id);
+      actualizar(c, "UPDATE recordatorios SET notificado = true WHERE nro_recordatorio = ?", nro);
     }
   }
 

@@ -6,8 +6,8 @@ import java.sql.*;
 
 /** Inscripcion comercial compartida con web. El estado de exportacion al SIS es independiente. */
 public record Matricula(
-    int id,
-    int tarjetaId,
+    int nro,
+    int nroTarjeta,
     String ci,
     String prospecto,
     String oferta,
@@ -17,17 +17,17 @@ public record Matricula(
     String fecha) {
   public static final String SQL =
       """
-SELECT m.id,i.id AS interes_id,p.documento,p.nombre || ' ' || p.apellido AS prospecto,
-sc.external_modulo_id AS codigo,sc.precio_acordado AS monto,m.estado,
+SELECT m.nro_solicitud,i.nro_tarjeta,p.documento,p.nombre || ' ' || p.apellido AS prospecto,
+sc.modulo_codigo AS codigo,sc.precio_acordado AS monto,m.estado,
 u.nombre || ' ' || u.apellido AS registrado_por,m.fecha_confirmacion AS fecha
-FROM inscripciones_comerciales m JOIN solicitudes_compra sc ON sc.id=m.solicitud_compra_id
-JOIN ordenes_pago op ON op.id=sc.orden_pago_id JOIN intereses origen ON origen.id=op.interes_id
-LEFT JOIN intereses modulo ON modulo.prospecto_id=origen.prospecto_id AND modulo.external_modulo_id=sc.external_modulo_id
-JOIN intereses i ON i.id=COALESCE(modulo.id,origen.id)
-JOIN prospectos p ON p.id=i.prospecto_id LEFT JOIN usuarios u ON u.id=op.vendedor_id
+FROM inscripciones_comerciales m JOIN solicitudes_compra sc ON sc.nro_solicitud=m.nro_solicitud
+JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN intereses origen ON origen.nro_tarjeta=op.nro_tarjeta
+LEFT JOIN intereses modulo ON modulo.documento=origen.documento AND modulo.modulo_codigo=sc.modulo_codigo
+JOIN intereses i ON i.nro_tarjeta=COALESCE(modulo.nro_tarjeta,origen.nro_tarjeta)
+JOIN prospectos p ON p.documento=i.documento LEFT JOIN usuarios u ON u.correo=op.vendedor_correo
 """;
   public static final String[] COLUMNAS = {
-    "ID",
+    "Nro.",
     "Fecha",
     "Tarjeta",
     "CI",
@@ -40,8 +40,8 @@ JOIN prospectos p ON p.id=i.prospecto_id LEFT JOIN usuarios u ON u.id=op.vendedo
 
   public static Matricula de(ResultSet r) throws SQLException {
     return new Matricula(
-        r.getInt("id"),
-        r.getInt("interes_id"),
+        r.getInt("nro_solicitud"),
+        r.getInt("nro_tarjeta"),
         r.getString("documento"),
         r.getString("prospecto"),
         r.getString("codigo"),
@@ -53,9 +53,9 @@ JOIN prospectos p ON p.id=i.prospecto_id LEFT JOIN usuarios u ON u.id=op.vendedo
 
   public String[] fila() {
     return new String[] {
-      "" + id,
+      "" + nro,
       fecha,
-      "#" + tarjetaId,
+      "#" + nroTarjeta,
       ci,
       prospecto,
       oferta,

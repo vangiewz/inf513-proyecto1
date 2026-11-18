@@ -12,7 +12,7 @@ END $$;
 -- PostgreSQL database dump
 --
 
-\restrict 8q65OelT68gd3jlNk9G3lNJmnGEz99oGodYauGkACfddBWpiEm9fuDJKgKt0S8f
+\restrict GrhxxdSQSvnnGcny1osHKsFGviVWUYZKEWsPkkbW0UmpaPX4XfgjPbzst3YNAbk
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -37,6 +37,13 @@ CREATE SCHEMA IF NOT EXISTS public;
 
 
 --
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON SCHEMA public IS 'Proyecto CRM Grupo 05 SA: modelo compartido web y correo, gestion 2-2026';
+
+
+--
 -- Name: clasificar_perdida(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -44,9 +51,8 @@ CREATE FUNCTION public.clasificar_perdida() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    IF NEW.estado <> 'Perdido' THEN NEW.motivo_perdida_id := NULL;
-    ELSIF NEW.motivo_perdida_id IS NULL THEN
-        SELECT id INTO NEW.motivo_perdida_id FROM motivos_perdida WHERE nombre='Sin clasificar (web)';
+    IF NEW.estado <> 'Perdido' THEN NEW.motivo_perdida := NULL;
+    ELSIF NEW.motivo_perdida IS NULL THEN NEW.motivo_perdida := 'Sin clasificar (web)';
     END IF;
     RETURN NEW;
 END $$;
@@ -59,17 +65,17 @@ END $$;
 CREATE FUNCTION public.registrar_movimiento_web() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-DECLARE anterior text; vendedor_anterior bigint;
+DECLARE anterior text; vendedor_anterior text;
 BEGIN
     IF current_setting('crm.canal',true) IS DISTINCT FROM 'correo' THEN
         IF TG_OP='UPDATE' THEN
             anterior := OLD.estado;
-            vendedor_anterior := OLD.vendedor_id;
+            vendedor_anterior := OLD.vendedor_correo;
         END IF;
-        IF TG_OP='INSERT' OR NEW.estado IS DISTINCT FROM anterior OR NEW.vendedor_id IS DISTINCT FROM vendedor_anterior THEN
-            INSERT INTO movimientos_interes(interes_id,usuario_id,estado_anterior,estado_nuevo,detalle)
-            VALUES(NEW.id, NULLIF(current_setting('crm.usuario_id',true),'')::bigint,anterior,NEW.estado,
-                'Cambio desde web. Vendedor: ' || COALESCE(vendedor_anterior::text,'sin asignar') || ' -> ' || COALESCE(NEW.vendedor_id::text,'sin asignar'));
+        IF TG_OP='INSERT' OR NEW.estado IS DISTINCT FROM anterior OR NEW.vendedor_correo IS DISTINCT FROM vendedor_anterior THEN
+            INSERT INTO movimientos_interes(nro_tarjeta,usuario_correo,estado_anterior,estado_nuevo,detalle)
+            VALUES(NEW.nro_tarjeta, NULLIF(current_setting('crm.usuario_correo',true),''),anterior,NEW.estado,
+                'Cambio desde web. Vendedor: ' || COALESCE(vendedor_anterior,'sin asignar') || ' -> ' || COALESCE(NEW.vendedor_correo,'sin asignar'));
         END IF;
     END IF;
     RETURN NEW;
@@ -85,33 +91,13 @@ SET default_table_access_method = heap;
 --
 
 CREATE TABLE public.api_tokens (
-    id bigint NOT NULL,
-    usuario_id bigint NOT NULL,
     token_hash character varying(64) NOT NULL,
     ultimo_uso_en timestamp(0) without time zone,
     expira_en timestamp(0) without time zone,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    usuario_correo character varying(255) NOT NULL
 );
-
-
---
--- Name: api_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.api_tokens_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: api_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.api_tokens_id_seq OWNED BY public.api_tokens.id;
 
 
 --
@@ -120,7 +106,7 @@ ALTER SEQUENCE public.api_tokens_id_seq OWNED BY public.api_tokens.id;
 
 CREATE TABLE public.catalogo_cache (
     codigo character varying(255) NOT NULL,
-    external_anuncio_id character varying(255),
+    anuncio_codigo character varying(255),
     programa_codigo character varying(255) NOT NULL,
     programa_nombre character varying(255) NOT NULL,
     nombre character varying(255) NOT NULL,
@@ -136,36 +122,16 @@ CREATE TABLE public.catalogo_cache (
 --
 
 CREATE TABLE public.comisiones (
-    id bigint NOT NULL,
-    vendedor_id bigint NOT NULL,
-    solicitud_compra_id bigint CONSTRAINT comisiones_venta_id_not_null NOT NULL,
+    nro_solicitud bigint NOT NULL,
     porcentaje numeric(5,2) DEFAULT '2'::numeric NOT NULL,
     monto numeric(12,2) NOT NULL,
     estado character varying(255) DEFAULT 'Pendiente'::character varying NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
     fecha_pago timestamp(0) without time zone,
+    vendedor_correo character varying(255) NOT NULL,
     CONSTRAINT comisiones_estado_check CHECK (((estado)::text = ANY (ARRAY[('Pendiente'::character varying)::text, ('Pagada'::character varying)::text])))
 );
-
-
---
--- Name: comisiones_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.comisiones_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: comisiones_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.comisiones_id_seq OWNED BY public.comisiones.id;
 
 
 --
@@ -173,8 +139,7 @@ ALTER SEQUENCE public.comisiones_id_seq OWNED BY public.comisiones.id;
 --
 
 CREATE TABLE public.comprobantes_pago (
-    id bigint NOT NULL,
-    pago_id bigint NOT NULL,
+    nro_comprobante bigint NOT NULL,
     archivo text NOT NULL,
     nombre_archivo character varying(255),
     mime character varying(255),
@@ -185,15 +150,16 @@ CREATE TABLE public.comprobantes_pago (
     updated_at timestamp(0) without time zone,
     remitente character varying(255),
     hora_pago timestamp(0) without time zone,
+    nro_orden bigint NOT NULL,
     CONSTRAINT comprobantes_pago_estado_revision_check CHECK (((estado_revision)::text = ANY (ARRAY[('En revision'::character varying)::text, ('Pago aprobado'::character varying)::text, ('Pago rechazado'::character varying)::text])))
 );
 
 
 --
--- Name: comprobantes_pago_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: comprobantes_pago_nro_comprobante_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.comprobantes_pago_id_seq
+CREATE SEQUENCE public.comprobantes_pago_nro_comprobante_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -202,10 +168,10 @@ CREATE SEQUENCE public.comprobantes_pago_id_seq
 
 
 --
--- Name: comprobantes_pago_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: comprobantes_pago_nro_comprobante_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.comprobantes_pago_id_seq OWNED BY public.comprobantes_pago.id;
+ALTER SEQUENCE public.comprobantes_pago_nro_comprobante_seq OWNED BY public.comprobantes_pago.nro_comprobante;
 
 
 --
@@ -217,7 +183,7 @@ CREATE TABLE public.configuraciones (
     valor character varying(255) NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    actualizado_por bigint
+    actualizado_por character varying(255)
 );
 
 
@@ -226,7 +192,6 @@ CREATE TABLE public.configuraciones (
 --
 
 CREATE TABLE public.descuentos (
-    id bigint NOT NULL,
     nombre character varying(255) NOT NULL,
     codigo character varying(255) NOT NULL,
     porcentaje numeric(5,2) NOT NULL,
@@ -238,47 +203,28 @@ CREATE TABLE public.descuentos (
 
 
 --
--- Name: descuentos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.descuentos_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: descuentos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.descuentos_id_seq OWNED BY public.descuentos.id;
-
-
---
 -- Name: exportaciones; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.exportaciones (
-    id bigint NOT NULL,
-    usuario_id bigint,
-    prospecto_id bigint,
+    nro_exportacion bigint NOT NULL,
     fecha_exportacion timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     estado character varying(255) DEFAULT 'preparada'::character varying NOT NULL,
     respuesta text,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    inscripcion_comercial_id bigint,
+    usuario_correo character varying(255),
+    documento character varying(255),
+    nro_solicitud bigint NOT NULL,
     CONSTRAINT exportaciones_estado_check CHECK (((estado)::text = ANY (ARRAY[('preparada'::character varying)::text, ('exportada'::character varying)::text, ('recibida'::character varying)::text, ('error'::character varying)::text])))
 );
 
 
 --
--- Name: exportaciones_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: exportaciones_nro_exportacion_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.exportaciones_id_seq
+CREATE SEQUENCE public.exportaciones_nro_exportacion_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -287,10 +233,10 @@ CREATE SEQUENCE public.exportaciones_id_seq
 
 
 --
--- Name: exportaciones_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: exportaciones_nro_exportacion_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.exportaciones_id_seq OWNED BY public.exportaciones.id;
+ALTER SEQUENCE public.exportaciones_nro_exportacion_seq OWNED BY public.exportaciones.nro_exportacion;
 
 
 --
@@ -298,8 +244,7 @@ ALTER SEQUENCE public.exportaciones_id_seq OWNED BY public.exportaciones.id;
 --
 
 CREATE TABLE public.inscripciones_comerciales (
-    id bigint NOT NULL,
-    solicitud_compra_id bigint NOT NULL,
+    nro_solicitud bigint NOT NULL,
     fecha_confirmacion timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     estado character varying(255) DEFAULT 'Confirmada'::character varying NOT NULL,
     created_at timestamp(0) without time zone,
@@ -309,47 +254,28 @@ CREATE TABLE public.inscripciones_comerciales (
 
 
 --
--- Name: inscripciones_comerciales_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.inscripciones_comerciales_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: inscripciones_comerciales_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.inscripciones_comerciales_id_seq OWNED BY public.inscripciones_comerciales.id;
-
-
---
 -- Name: interacciones; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.interacciones (
-    id bigint NOT NULL,
-    usuario_id bigint NOT NULL,
+    nro_interaccion bigint NOT NULL,
     tipo character varying(255) NOT NULL,
     descripcion text NOT NULL,
     resultado text,
     fecha timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    interes_id bigint NOT NULL,
+    nro_tarjeta bigint NOT NULL,
+    usuario_correo character varying(255) NOT NULL,
     CONSTRAINT interacciones_tipo_check CHECK (((tipo)::text = ANY (ARRAY[('WhatsApp'::character varying)::text, ('Llamada'::character varying)::text, ('Correo electronico'::character varying)::text, ('Reunion'::character varying)::text, ('Nota comercial'::character varying)::text, ('Orden de pago enviada'::character varying)::text, ('Pago informado'::character varying)::text, ('Compra validada'::character varying)::text, ('Orden finalizada'::character varying)::text])))
 );
 
 
 --
--- Name: interacciones_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: interacciones_nro_interaccion_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.interacciones_id_seq
+CREATE SEQUENCE public.interacciones_nro_interaccion_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -358,10 +284,10 @@ CREATE SEQUENCE public.interacciones_id_seq
 
 
 --
--- Name: interacciones_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: interacciones_nro_interaccion_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.interacciones_id_seq OWNED BY public.interacciones.id;
+ALTER SEQUENCE public.interacciones_nro_interaccion_seq OWNED BY public.interacciones.nro_interaccion;
 
 
 --
@@ -369,33 +295,33 @@ ALTER SEQUENCE public.interacciones_id_seq OWNED BY public.interacciones.id;
 --
 
 CREATE TABLE public.intereses (
-    id bigint NOT NULL,
-    prospecto_id bigint NOT NULL,
+    nro_tarjeta bigint NOT NULL,
     fecha timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    external_modulo_id character varying(255) NOT NULL,
+    modulo_codigo character varying(255) NOT NULL,
     programa_nombre character varying(255) NOT NULL,
     modulo_nombre character varying(255) NOT NULL,
     precio numeric(12,2),
-    external_anuncio_id character varying(255),
+    anuncio_codigo character varying(255),
     modulo_descripcion text,
-    vendedor_id bigint,
     estado character varying(255) DEFAULT 'Nuevo'::character varying NOT NULL,
     fecha_asignacion timestamp(0) without time zone,
     ultima_actividad_en timestamp(0) without time zone,
     proximo_contacto timestamp(0) without time zone,
     observacion text,
-    motivo_perdida_id bigint,
+    vendedor_correo character varying(255),
+    documento character varying(255) NOT NULL,
+    motivo_perdida character varying(80),
     CONSTRAINT intereses_estado_check CHECK (((estado)::text = ANY (ARRAY[('Nuevo'::character varying)::text, ('Contactado'::character varying)::text, ('Interesado'::character varying)::text, ('Pago enviado'::character varying)::text, ('En revision'::character varying)::text, ('Convertido'::character varying)::text, ('Perdido'::character varying)::text])))
 );
 
 
 --
--- Name: intereses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: intereses_nro_tarjeta_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.intereses_id_seq
+CREATE SEQUENCE public.intereses_nro_tarjeta_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -404,10 +330,10 @@ CREATE SEQUENCE public.intereses_id_seq
 
 
 --
--- Name: intereses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: intereses_nro_tarjeta_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.intereses_id_seq OWNED BY public.intereses.id;
+ALTER SEQUENCE public.intereses_nro_tarjeta_seq OWNED BY public.intereses.nro_tarjeta;
 
 
 --
@@ -415,22 +341,22 @@ ALTER SEQUENCE public.intereses_id_seq OWNED BY public.intereses.id;
 --
 
 CREATE TABLE public.log_comandos (
-    id bigint NOT NULL,
-    usuario_id bigint,
+    nro_registro bigint NOT NULL,
     remitente character varying(160) NOT NULL,
     asunto character varying(300) NOT NULL,
     resultado character varying(20) NOT NULL,
     detalle text,
     fecha timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    rol_registrado character varying(40)
+    rol_registrado character varying(40),
+    usuario_correo character varying(255)
 );
 
 
 --
--- Name: log_comandos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: log_comandos_nro_registro_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.log_comandos_id_seq
+CREATE SEQUENCE public.log_comandos_nro_registro_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -439,23 +365,10 @@ CREATE SEQUENCE public.log_comandos_id_seq
 
 
 --
--- Name: log_comandos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: log_comandos_nro_registro_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.log_comandos_id_seq OWNED BY public.log_comandos.id;
-
-
---
--- Name: migrations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.migrations_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
+ALTER SEQUENCE public.log_comandos_nro_registro_seq OWNED BY public.log_comandos.nro_registro;
 
 
 --
@@ -463,7 +376,6 @@ CREATE SEQUENCE public.migrations_id_seq
 --
 
 CREATE TABLE public.motivos_perdida (
-    id bigint NOT NULL,
     nombre character varying(80) NOT NULL,
     categoria character varying(20) NOT NULL,
     CONSTRAINT motivos_categoria_check CHECK (((categoria)::text = ANY (ARRAY[('Económico'::character varying)::text, ('Horario'::character varying)::text, ('Incompatibilidad'::character varying)::text, ('Contacto'::character varying)::text, ('Otro'::character varying)::text])))
@@ -471,44 +383,25 @@ CREATE TABLE public.motivos_perdida (
 
 
 --
--- Name: motivos_perdida_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.motivos_perdida_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: motivos_perdida_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.motivos_perdida_id_seq OWNED BY public.motivos_perdida.id;
-
-
---
 -- Name: movimientos_interes; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.movimientos_interes (
-    id bigint NOT NULL,
-    interes_id bigint NOT NULL,
-    usuario_id bigint,
+    nro_movimiento bigint NOT NULL,
+    nro_tarjeta bigint NOT NULL,
     estado_anterior character varying(255),
     estado_nuevo character varying(255) NOT NULL,
     detalle text,
-    fecha timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    fecha timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    usuario_correo character varying(255)
 );
 
 
 --
--- Name: movimientos_interes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: movimientos_interes_nro_movimiento_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.movimientos_interes_id_seq
+CREATE SEQUENCE public.movimientos_interes_nro_movimiento_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -517,10 +410,10 @@ CREATE SEQUENCE public.movimientos_interes_id_seq
 
 
 --
--- Name: movimientos_interes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: movimientos_interes_nro_movimiento_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.movimientos_interes_id_seq OWNED BY public.movimientos_interes.id;
+ALTER SEQUENCE public.movimientos_interes_nro_movimiento_seq OWNED BY public.movimientos_interes.nro_movimiento;
 
 
 --
@@ -528,8 +421,7 @@ ALTER SEQUENCE public.movimientos_interes_id_seq OWNED BY public.movimientos_int
 --
 
 CREATE TABLE public.notificaciones (
-    id bigint NOT NULL,
-    usuario_id bigint,
+    nro_notificacion bigint NOT NULL,
     destinatario character varying(255),
     tipo character varying(255) NOT NULL,
     mensaje text NOT NULL,
@@ -537,15 +429,16 @@ CREATE TABLE public.notificaciones (
     fecha_envio timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
+    usuario_correo character varying(255),
     CONSTRAINT notificaciones_estado_check CHECK (((estado)::text = ANY (ARRAY[('enviada'::character varying)::text, ('fallida'::character varying)::text, ('leida'::character varying)::text])))
 );
 
 
 --
--- Name: notificaciones_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: notificaciones_nro_notificacion_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.notificaciones_id_seq
+CREATE SEQUENCE public.notificaciones_nro_notificacion_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -554,10 +447,10 @@ CREATE SEQUENCE public.notificaciones_id_seq
 
 
 --
--- Name: notificaciones_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: notificaciones_nro_notificacion_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.notificaciones_id_seq OWNED BY public.notificaciones.id;
+ALTER SEQUENCE public.notificaciones_nro_notificacion_seq OWNED BY public.notificaciones.nro_notificacion;
 
 
 --
@@ -565,12 +458,12 @@ ALTER SEQUENCE public.notificaciones_id_seq OWNED BY public.notificaciones.id;
 --
 
 CREATE TABLE public.orden_pago_descuentos (
-    orden_pago_id bigint NOT NULL,
-    descuento_id bigint NOT NULL,
+    nro_orden bigint NOT NULL,
     porcentaje numeric(5,2) NOT NULL,
     monto numeric(12,2) NOT NULL,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    descuento_codigo character varying(255) NOT NULL
 );
 
 
@@ -579,9 +472,8 @@ CREATE TABLE public.orden_pago_descuentos (
 --
 
 CREATE TABLE public.ordenes_pago (
-    id bigint NOT NULL,
-    interes_id bigint NOT NULL,
-    vendedor_id bigint NOT NULL,
+    nro_orden bigint NOT NULL,
+    nro_tarjeta bigint NOT NULL,
     subtotal numeric(12,2) NOT NULL,
     descuento_total numeric(12,2) DEFAULT '0'::numeric NOT NULL,
     total numeric(12,2) NOT NULL,
@@ -589,15 +481,16 @@ CREATE TABLE public.ordenes_pago (
     fecha_generacion timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
+    vendedor_correo character varying(255) NOT NULL,
     CONSTRAINT ordenes_pago_estado_check CHECK (((estado)::text = ANY (ARRAY[('Pendiente de pago'::character varying)::text, ('En revision'::character varying)::text, ('Pago aprobado'::character varying)::text, ('Pago rechazado'::character varying)::text])))
 );
 
 
 --
--- Name: ordenes_pago_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: ordenes_pago_nro_orden_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.ordenes_pago_id_seq
+CREATE SEQUENCE public.ordenes_pago_nro_orden_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -606,10 +499,10 @@ CREATE SEQUENCE public.ordenes_pago_id_seq
 
 
 --
--- Name: ordenes_pago_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: ordenes_pago_nro_orden_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.ordenes_pago_id_seq OWNED BY public.ordenes_pago.id;
+ALTER SEQUENCE public.ordenes_pago_nro_orden_seq OWNED BY public.ordenes_pago.nro_orden;
 
 
 --
@@ -617,7 +510,6 @@ ALTER SEQUENCE public.ordenes_pago_id_seq OWNED BY public.ordenes_pago.id;
 --
 
 CREATE TABLE public.pagos (
-    id bigint NOT NULL,
     monto numeric(12,2) NOT NULL,
     codigo_qr character varying(255) NOT NULL,
     estado character varying(255) DEFAULT 'Pendiente de pago'::character varying NOT NULL,
@@ -626,28 +518,9 @@ CREATE TABLE public.pagos (
     observacion_validacion text,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    orden_pago_id bigint NOT NULL,
+    nro_orden bigint NOT NULL,
     CONSTRAINT pagos_estado_check CHECK (((estado)::text = ANY (ARRAY[('Pendiente de pago'::character varying)::text, ('En revision'::character varying)::text, ('Pago aprobado'::character varying)::text, ('Pago rechazado'::character varying)::text])))
 );
-
-
---
--- Name: pagos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.pagos_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: pagos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.pagos_id_seq OWNED BY public.pagos.id;
 
 
 --
@@ -655,10 +528,10 @@ ALTER SEQUENCE public.pagos_id_seq OWNED BY public.pagos.id;
 --
 
 CREATE TABLE public.programas_responsables (
-    external_programa_id character varying(255) NOT NULL,
-    coordinador_id bigint NOT NULL,
+    programa_codigo character varying(255) NOT NULL,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    coordinador_correo character varying(255) NOT NULL
 );
 
 
@@ -667,7 +540,6 @@ CREATE TABLE public.programas_responsables (
 --
 
 CREATE TABLE public.prospectos (
-    id bigint NOT NULL,
     nombre character varying(255) NOT NULL,
     apellido character varying(255) NOT NULL,
     documento character varying(255) NOT NULL,
@@ -685,48 +557,29 @@ CREATE TABLE public.prospectos (
 
 
 --
--- Name: prospectos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.prospectos_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: prospectos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.prospectos_id_seq OWNED BY public.prospectos.id;
-
-
---
 -- Name: recordatorios; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.recordatorios (
-    id bigint NOT NULL,
-    usuario_id bigint NOT NULL,
+    nro_recordatorio bigint NOT NULL,
     fecha_programada timestamp(0) without time zone NOT NULL,
     descripcion text NOT NULL,
     estado character varying(255) DEFAULT 'Pendiente'::character varying NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    interes_id bigint NOT NULL,
+    nro_tarjeta bigint NOT NULL,
     fecha_realizada timestamp(0) without time zone,
     notificado boolean DEFAULT false NOT NULL,
+    usuario_correo character varying(255) NOT NULL,
     CONSTRAINT recordatorios_estado_check CHECK (((estado)::text = ANY (ARRAY[('Pendiente'::character varying)::text, ('Realizada'::character varying)::text, ('Atrasada'::character varying)::text, ('Cancelado'::character varying)::text])))
 );
 
 
 --
--- Name: recordatorios_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: recordatorios_nro_recordatorio_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.recordatorios_id_seq
+CREATE SEQUENCE public.recordatorios_nro_recordatorio_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -735,10 +588,10 @@ CREATE SEQUENCE public.recordatorios_id_seq
 
 
 --
--- Name: recordatorios_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: recordatorios_nro_recordatorio_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.recordatorios_id_seq OWNED BY public.recordatorios.id;
+ALTER SEQUENCE public.recordatorios_nro_recordatorio_seq OWNED BY public.recordatorios.nro_recordatorio;
 
 
 --
@@ -758,28 +611,28 @@ CREATE TABLE public.roles (
 --
 
 CREATE TABLE public.solicitudes_compra (
-    id bigint NOT NULL,
+    nro_solicitud bigint NOT NULL,
     precio_acordado numeric(12,2),
     estado character varying(255) DEFAULT 'pendiente'::character varying NOT NULL,
     fecha timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    external_anuncio_id character varying(255),
-    external_modulo_id character varying(255) NOT NULL,
+    anuncio_codigo character varying(255),
+    modulo_codigo character varying(255) NOT NULL,
     programa_nombre character varying(255) NOT NULL,
     modulo_nombre character varying(255) NOT NULL,
     modulo_descripcion text,
     anuncio_titulo character varying(255),
-    orden_pago_id bigint NOT NULL,
+    nro_orden bigint NOT NULL,
     CONSTRAINT solicitudes_compra_estado_check CHECK (((estado)::text = ANY (ARRAY[('pendiente'::character varying)::text, ('confirmada'::character varying)::text])))
 );
 
 
 --
--- Name: solicitudes_compra_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: solicitudes_compra_nro_solicitud_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.solicitudes_compra_id_seq
+CREATE SEQUENCE public.solicitudes_compra_nro_solicitud_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -788,10 +641,10 @@ CREATE SEQUENCE public.solicitudes_compra_id_seq
 
 
 --
--- Name: solicitudes_compra_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: solicitudes_compra_nro_solicitud_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.solicitudes_compra_id_seq OWNED BY public.solicitudes_compra.id;
+ALTER SEQUENCE public.solicitudes_compra_nro_solicitud_seq OWNED BY public.solicitudes_compra.nro_solicitud;
 
 
 --
@@ -799,7 +652,6 @@ ALTER SEQUENCE public.solicitudes_compra_id_seq OWNED BY public.solicitudes_comp
 --
 
 CREATE TABLE public.usuarios (
-    id bigint NOT NULL,
     nombre character varying(255) NOT NULL,
     apellido character varying(255) NOT NULL,
     correo character varying(255) NOT NULL,
@@ -809,153 +661,81 @@ CREATE TABLE public.usuarios (
     estado character varying(255) DEFAULT 'activo'::character varying NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    CONSTRAINT usuarios_estado_check CHECK (((estado)::text = ANY (ARRAY[('activo'::character varying)::text, ('inactivo'::character varying)::text])))
+    fecha_inicio date DEFAULT CURRENT_DATE NOT NULL,
+    fecha_fin date NOT NULL,
+    CONSTRAINT usuarios_estado_check CHECK (((estado)::text = ANY (ARRAY[('activo'::character varying)::text, ('inactivo'::character varying)::text]))),
+    CONSTRAINT usuarios_vigencia_check CHECK ((fecha_fin >= fecha_inicio))
 );
 
 
 --
--- Name: usuarios_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: comprobantes_pago nro_comprobante; Type: DEFAULT; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.usuarios_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
+ALTER TABLE ONLY public.comprobantes_pago ALTER COLUMN nro_comprobante SET DEFAULT nextval('public.comprobantes_pago_nro_comprobante_seq'::regclass);
 
 
 --
--- Name: usuarios_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: exportaciones nro_exportacion; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.usuarios_id_seq OWNED BY public.usuarios.id;
-
-
---
--- Name: api_tokens id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.api_tokens ALTER COLUMN id SET DEFAULT nextval('public.api_tokens_id_seq'::regclass);
+ALTER TABLE ONLY public.exportaciones ALTER COLUMN nro_exportacion SET DEFAULT nextval('public.exportaciones_nro_exportacion_seq'::regclass);
 
 
 --
--- Name: comisiones id; Type: DEFAULT; Schema: public; Owner: -
+-- Name: interacciones nro_interaccion; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.comisiones ALTER COLUMN id SET DEFAULT nextval('public.comisiones_id_seq'::regclass);
-
-
---
--- Name: comprobantes_pago id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.comprobantes_pago ALTER COLUMN id SET DEFAULT nextval('public.comprobantes_pago_id_seq'::regclass);
+ALTER TABLE ONLY public.interacciones ALTER COLUMN nro_interaccion SET DEFAULT nextval('public.interacciones_nro_interaccion_seq'::regclass);
 
 
 --
--- Name: descuentos id; Type: DEFAULT; Schema: public; Owner: -
+-- Name: intereses nro_tarjeta; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.descuentos ALTER COLUMN id SET DEFAULT nextval('public.descuentos_id_seq'::regclass);
-
-
---
--- Name: exportaciones id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exportaciones ALTER COLUMN id SET DEFAULT nextval('public.exportaciones_id_seq'::regclass);
+ALTER TABLE ONLY public.intereses ALTER COLUMN nro_tarjeta SET DEFAULT nextval('public.intereses_nro_tarjeta_seq'::regclass);
 
 
 --
--- Name: inscripciones_comerciales id; Type: DEFAULT; Schema: public; Owner: -
+-- Name: log_comandos nro_registro; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.inscripciones_comerciales ALTER COLUMN id SET DEFAULT nextval('public.inscripciones_comerciales_id_seq'::regclass);
-
-
---
--- Name: interacciones id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.interacciones ALTER COLUMN id SET DEFAULT nextval('public.interacciones_id_seq'::regclass);
+ALTER TABLE ONLY public.log_comandos ALTER COLUMN nro_registro SET DEFAULT nextval('public.log_comandos_nro_registro_seq'::regclass);
 
 
 --
--- Name: intereses id; Type: DEFAULT; Schema: public; Owner: -
+-- Name: movimientos_interes nro_movimiento; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.intereses ALTER COLUMN id SET DEFAULT nextval('public.intereses_id_seq'::regclass);
-
-
---
--- Name: log_comandos id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.log_comandos ALTER COLUMN id SET DEFAULT nextval('public.log_comandos_id_seq'::regclass);
+ALTER TABLE ONLY public.movimientos_interes ALTER COLUMN nro_movimiento SET DEFAULT nextval('public.movimientos_interes_nro_movimiento_seq'::regclass);
 
 
 --
--- Name: motivos_perdida id; Type: DEFAULT; Schema: public; Owner: -
+-- Name: notificaciones nro_notificacion; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.motivos_perdida ALTER COLUMN id SET DEFAULT nextval('public.motivos_perdida_id_seq'::regclass);
-
-
---
--- Name: movimientos_interes id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.movimientos_interes ALTER COLUMN id SET DEFAULT nextval('public.movimientos_interes_id_seq'::regclass);
+ALTER TABLE ONLY public.notificaciones ALTER COLUMN nro_notificacion SET DEFAULT nextval('public.notificaciones_nro_notificacion_seq'::regclass);
 
 
 --
--- Name: notificaciones id; Type: DEFAULT; Schema: public; Owner: -
+-- Name: ordenes_pago nro_orden; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.notificaciones ALTER COLUMN id SET DEFAULT nextval('public.notificaciones_id_seq'::regclass);
-
-
---
--- Name: ordenes_pago id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.ordenes_pago ALTER COLUMN id SET DEFAULT nextval('public.ordenes_pago_id_seq'::regclass);
+ALTER TABLE ONLY public.ordenes_pago ALTER COLUMN nro_orden SET DEFAULT nextval('public.ordenes_pago_nro_orden_seq'::regclass);
 
 
 --
--- Name: pagos id; Type: DEFAULT; Schema: public; Owner: -
+-- Name: recordatorios nro_recordatorio; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.pagos ALTER COLUMN id SET DEFAULT nextval('public.pagos_id_seq'::regclass);
-
-
---
--- Name: prospectos id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.prospectos ALTER COLUMN id SET DEFAULT nextval('public.prospectos_id_seq'::regclass);
+ALTER TABLE ONLY public.recordatorios ALTER COLUMN nro_recordatorio SET DEFAULT nextval('public.recordatorios_nro_recordatorio_seq'::regclass);
 
 
 --
--- Name: recordatorios id; Type: DEFAULT; Schema: public; Owner: -
+-- Name: solicitudes_compra nro_solicitud; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.recordatorios ALTER COLUMN id SET DEFAULT nextval('public.recordatorios_id_seq'::regclass);
-
-
---
--- Name: solicitudes_compra id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.solicitudes_compra ALTER COLUMN id SET DEFAULT nextval('public.solicitudes_compra_id_seq'::regclass);
-
-
---
--- Name: usuarios id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.usuarios ALTER COLUMN id SET DEFAULT nextval('public.usuarios_id_seq'::regclass);
+ALTER TABLE ONLY public.solicitudes_compra ALTER COLUMN nro_solicitud SET DEFAULT nextval('public.solicitudes_compra_nro_solicitud_seq'::regclass);
 
 
 --
@@ -963,15 +743,7 @@ ALTER TABLE ONLY public.usuarios ALTER COLUMN id SET DEFAULT nextval('public.usu
 --
 
 ALTER TABLE ONLY public.api_tokens
-    ADD CONSTRAINT api_tokens_pkey PRIMARY KEY (id);
-
-
---
--- Name: api_tokens api_tokens_token_hash_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.api_tokens
-    ADD CONSTRAINT api_tokens_token_hash_unique UNIQUE (token_hash);
+    ADD CONSTRAINT api_tokens_pkey PRIMARY KEY (token_hash);
 
 
 --
@@ -987,15 +759,7 @@ ALTER TABLE ONLY public.catalogo_cache
 --
 
 ALTER TABLE ONLY public.comisiones
-    ADD CONSTRAINT comisiones_pkey PRIMARY KEY (id);
-
-
---
--- Name: comisiones comisiones_solicitud_compra_id_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.comisiones
-    ADD CONSTRAINT comisiones_solicitud_compra_id_unique UNIQUE (solicitud_compra_id);
+    ADD CONSTRAINT comisiones_pkey PRIMARY KEY (nro_solicitud);
 
 
 --
@@ -1003,7 +767,7 @@ ALTER TABLE ONLY public.comisiones
 --
 
 ALTER TABLE ONLY public.comprobantes_pago
-    ADD CONSTRAINT comprobantes_pago_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT comprobantes_pago_pkey PRIMARY KEY (nro_comprobante);
 
 
 --
@@ -1015,19 +779,11 @@ ALTER TABLE ONLY public.configuraciones
 
 
 --
--- Name: descuentos descuentos_codigo_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.descuentos
-    ADD CONSTRAINT descuentos_codigo_unique UNIQUE (codigo);
-
-
---
 -- Name: descuentos descuentos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.descuentos
-    ADD CONSTRAINT descuentos_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT descuentos_pkey PRIMARY KEY (codigo);
 
 
 --
@@ -1035,7 +791,7 @@ ALTER TABLE ONLY public.descuentos
 --
 
 ALTER TABLE ONLY public.exportaciones
-    ADD CONSTRAINT exportaciones_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT exportaciones_pkey PRIMARY KEY (nro_exportacion);
 
 
 --
@@ -1043,15 +799,7 @@ ALTER TABLE ONLY public.exportaciones
 --
 
 ALTER TABLE ONLY public.inscripciones_comerciales
-    ADD CONSTRAINT inscripciones_comerciales_pkey PRIMARY KEY (id);
-
-
---
--- Name: inscripciones_comerciales inscripciones_comerciales_solicitud_compra_id_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inscripciones_comerciales
-    ADD CONSTRAINT inscripciones_comerciales_solicitud_compra_id_unique UNIQUE (solicitud_compra_id);
+    ADD CONSTRAINT inscripciones_comerciales_pkey PRIMARY KEY (nro_solicitud);
 
 
 --
@@ -1059,7 +807,15 @@ ALTER TABLE ONLY public.inscripciones_comerciales
 --
 
 ALTER TABLE ONLY public.interacciones
-    ADD CONSTRAINT interacciones_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT interacciones_pkey PRIMARY KEY (nro_interaccion);
+
+
+--
+-- Name: intereses intereses_documento_modulo_codigo_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intereses
+    ADD CONSTRAINT intereses_documento_modulo_codigo_unique UNIQUE (documento, modulo_codigo);
 
 
 --
@@ -1067,15 +823,7 @@ ALTER TABLE ONLY public.interacciones
 --
 
 ALTER TABLE ONLY public.intereses
-    ADD CONSTRAINT intereses_pkey PRIMARY KEY (id);
-
-
---
--- Name: intereses intereses_prospecto_external_modulo_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.intereses
-    ADD CONSTRAINT intereses_prospecto_external_modulo_unique UNIQUE (prospecto_id, external_modulo_id);
+    ADD CONSTRAINT intereses_pkey PRIMARY KEY (nro_tarjeta);
 
 
 --
@@ -1083,15 +831,7 @@ ALTER TABLE ONLY public.intereses
 --
 
 ALTER TABLE ONLY public.log_comandos
-    ADD CONSTRAINT log_comandos_pkey PRIMARY KEY (id);
-
-
---
--- Name: motivos_perdida motivos_perdida_nombre_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.motivos_perdida
-    ADD CONSTRAINT motivos_perdida_nombre_unique UNIQUE (nombre);
+    ADD CONSTRAINT log_comandos_pkey PRIMARY KEY (nro_registro);
 
 
 --
@@ -1099,7 +839,7 @@ ALTER TABLE ONLY public.motivos_perdida
 --
 
 ALTER TABLE ONLY public.motivos_perdida
-    ADD CONSTRAINT motivos_perdida_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT motivos_perdida_pkey PRIMARY KEY (nombre);
 
 
 --
@@ -1107,7 +847,7 @@ ALTER TABLE ONLY public.motivos_perdida
 --
 
 ALTER TABLE ONLY public.movimientos_interes
-    ADD CONSTRAINT movimientos_interes_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT movimientos_interes_pkey PRIMARY KEY (nro_movimiento);
 
 
 --
@@ -1115,7 +855,7 @@ ALTER TABLE ONLY public.movimientos_interes
 --
 
 ALTER TABLE ONLY public.notificaciones
-    ADD CONSTRAINT notificaciones_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT notificaciones_pkey PRIMARY KEY (nro_notificacion);
 
 
 --
@@ -1123,7 +863,7 @@ ALTER TABLE ONLY public.notificaciones
 --
 
 ALTER TABLE ONLY public.orden_pago_descuentos
-    ADD CONSTRAINT orden_pago_descuentos_pkey PRIMARY KEY (orden_pago_id, descuento_id);
+    ADD CONSTRAINT orden_pago_descuentos_pkey PRIMARY KEY (nro_orden, descuento_codigo);
 
 
 --
@@ -1131,7 +871,7 @@ ALTER TABLE ONLY public.orden_pago_descuentos
 --
 
 ALTER TABLE ONLY public.ordenes_pago
-    ADD CONSTRAINT ordenes_pago_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT ordenes_pago_pkey PRIMARY KEY (nro_orden);
 
 
 --
@@ -1143,19 +883,11 @@ ALTER TABLE ONLY public.pagos
 
 
 --
--- Name: pagos pagos_orden_pago_id_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.pagos
-    ADD CONSTRAINT pagos_orden_pago_id_unique UNIQUE (orden_pago_id);
-
-
---
 -- Name: pagos pagos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pagos
-    ADD CONSTRAINT pagos_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT pagos_pkey PRIMARY KEY (nro_orden);
 
 
 --
@@ -1163,7 +895,7 @@ ALTER TABLE ONLY public.pagos
 --
 
 ALTER TABLE ONLY public.programas_responsables
-    ADD CONSTRAINT programas_responsables_pkey PRIMARY KEY (external_programa_id);
+    ADD CONSTRAINT programas_responsables_pkey PRIMARY KEY (programa_codigo);
 
 
 --
@@ -1175,19 +907,11 @@ ALTER TABLE ONLY public.prospectos
 
 
 --
--- Name: prospectos prospectos_documento_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.prospectos
-    ADD CONSTRAINT prospectos_documento_unique UNIQUE (documento);
-
-
---
 -- Name: prospectos prospectos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.prospectos
-    ADD CONSTRAINT prospectos_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT prospectos_pkey PRIMARY KEY (documento);
 
 
 --
@@ -1195,7 +919,7 @@ ALTER TABLE ONLY public.prospectos
 --
 
 ALTER TABLE ONLY public.recordatorios
-    ADD CONSTRAINT recordatorios_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT recordatorios_pkey PRIMARY KEY (nro_recordatorio);
 
 
 --
@@ -1211,15 +935,7 @@ ALTER TABLE ONLY public.roles
 --
 
 ALTER TABLE ONLY public.solicitudes_compra
-    ADD CONSTRAINT solicitudes_compra_pkey PRIMARY KEY (id);
-
-
---
--- Name: usuarios usuarios_correo_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.usuarios
-    ADD CONSTRAINT usuarios_correo_unique UNIQUE (correo);
+    ADD CONSTRAINT solicitudes_compra_pkey PRIMARY KEY (nro_solicitud);
 
 
 --
@@ -1227,7 +943,7 @@ ALTER TABLE ONLY public.usuarios
 --
 
 ALTER TABLE ONLY public.usuarios
-    ADD CONSTRAINT usuarios_pkey PRIMARY KEY (id);
+    ADD CONSTRAINT usuarios_pkey PRIMARY KEY (correo);
 
 
 --
@@ -1241,21 +957,21 @@ CREATE INDEX exportaciones_estado_fecha_idx ON public.exportaciones USING btree 
 -- Name: interacciones_usuario_fecha_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX interacciones_usuario_fecha_idx ON public.interacciones USING btree (usuario_id, fecha);
+CREATE INDEX interacciones_usuario_fecha_idx ON public.interacciones USING btree (usuario_correo, fecha);
 
 
 --
--- Name: movimientos_interes_interes_id_fecha_index; Type: INDEX; Schema: public; Owner: -
+-- Name: movimientos_interes_nro_tarjeta_fecha_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX movimientos_interes_interes_id_fecha_index ON public.movimientos_interes USING btree (interes_id, fecha);
+CREATE INDEX movimientos_interes_nro_tarjeta_fecha_idx ON public.movimientos_interes USING btree (nro_tarjeta, fecha);
 
 
 --
 -- Name: notificaciones_usuario_estado_fecha_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX notificaciones_usuario_estado_fecha_idx ON public.notificaciones USING btree (usuario_id, estado, fecha_envio);
+CREATE INDEX notificaciones_usuario_estado_fecha_idx ON public.notificaciones USING btree (usuario_correo, estado, fecha_envio);
 
 
 --
@@ -1276,14 +992,14 @@ CREATE UNIQUE INDEX prospectos_correo_lower_unique ON public.prospectos USING bt
 -- Name: recordatorios_usuario_estado_fecha_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX recordatorios_usuario_estado_fecha_idx ON public.recordatorios USING btree (usuario_id, estado, fecha_programada);
+CREATE INDEX recordatorios_usuario_estado_fecha_idx ON public.recordatorios USING btree (usuario_correo, estado, fecha_programada);
 
 
 --
--- Name: solicitudes_external_modulo_fecha_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: solicitudes_modulo_fecha_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX solicitudes_external_modulo_fecha_idx ON public.solicitudes_compra USING btree (external_modulo_id, fecha);
+CREATE INDEX solicitudes_modulo_fecha_idx ON public.solicitudes_compra USING btree (modulo_codigo, fecha);
 
 
 --
@@ -1315,247 +1031,248 @@ CREATE TRIGGER intereses_historial AFTER INSERT OR UPDATE ON public.intereses FO
 
 
 --
--- Name: api_tokens api_tokens_usuario_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: api_tokens api_tokens_usuario_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.api_tokens
-    ADD CONSTRAINT api_tokens_usuario_id_foreign FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE CASCADE;
+    ADD CONSTRAINT api_tokens_usuario_correo_fk FOREIGN KEY (usuario_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
--- Name: comisiones comisiones_solicitud_compra_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.comisiones
-    ADD CONSTRAINT comisiones_solicitud_compra_id_foreign FOREIGN KEY (solicitud_compra_id) REFERENCES public.solicitudes_compra(id) ON DELETE RESTRICT;
-
-
---
--- Name: comisiones comisiones_vendedor_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: comisiones comisiones_nro_solicitud_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.comisiones
-    ADD CONSTRAINT comisiones_vendedor_id_foreign FOREIGN KEY (vendedor_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT comisiones_nro_solicitud_fk FOREIGN KEY (nro_solicitud) REFERENCES public.solicitudes_compra(nro_solicitud) ON DELETE RESTRICT;
 
 
 --
--- Name: comprobantes_pago comprobantes_pago_pago_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: comisiones comisiones_vendedor_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comisiones
+    ADD CONSTRAINT comisiones_vendedor_correo_fk FOREIGN KEY (vendedor_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: comprobantes_pago comprobantes_pago_nro_orden_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.comprobantes_pago
-    ADD CONSTRAINT comprobantes_pago_pago_id_foreign FOREIGN KEY (pago_id) REFERENCES public.pagos(id) ON DELETE CASCADE;
+    ADD CONSTRAINT comprobantes_pago_nro_orden_fk FOREIGN KEY (nro_orden) REFERENCES public.pagos(nro_orden) ON DELETE CASCADE;
 
 
 --
--- Name: configuraciones configuraciones_actualizado_por_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: configuraciones configuraciones_actualizado_por_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.configuraciones
-    ADD CONSTRAINT configuraciones_actualizado_por_foreign FOREIGN KEY (actualizado_por) REFERENCES public.usuarios(id) ON DELETE SET NULL;
+    ADD CONSTRAINT configuraciones_actualizado_por_fk FOREIGN KEY (actualizado_por) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
--- Name: exportaciones exportaciones_inscripcion_comercial_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exportaciones
-    ADD CONSTRAINT exportaciones_inscripcion_comercial_id_foreign FOREIGN KEY (inscripcion_comercial_id) REFERENCES public.inscripciones_comerciales(id) ON DELETE RESTRICT;
-
-
---
--- Name: exportaciones exportaciones_prospecto_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: exportaciones exportaciones_documento_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.exportaciones
-    ADD CONSTRAINT exportaciones_prospecto_id_foreign FOREIGN KEY (prospecto_id) REFERENCES public.prospectos(id) ON DELETE SET NULL;
+    ADD CONSTRAINT exportaciones_documento_fk FOREIGN KEY (documento) REFERENCES public.prospectos(documento) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
--- Name: exportaciones exportaciones_usuario_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: exportaciones exportaciones_nro_solicitud_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.exportaciones
-    ADD CONSTRAINT exportaciones_usuario_id_foreign FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE SET NULL;
+    ADD CONSTRAINT exportaciones_nro_solicitud_fk FOREIGN KEY (nro_solicitud) REFERENCES public.inscripciones_comerciales(nro_solicitud) ON DELETE RESTRICT;
 
 
 --
--- Name: inscripciones_comerciales inscripciones_comerciales_solicitud_compra_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: exportaciones exportaciones_usuario_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exportaciones
+    ADD CONSTRAINT exportaciones_usuario_correo_fk FOREIGN KEY (usuario_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: inscripciones_comerciales inscripciones_comerciales_nro_solicitud_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inscripciones_comerciales
-    ADD CONSTRAINT inscripciones_comerciales_solicitud_compra_id_foreign FOREIGN KEY (solicitud_compra_id) REFERENCES public.solicitudes_compra(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT inscripciones_comerciales_nro_solicitud_fk FOREIGN KEY (nro_solicitud) REFERENCES public.solicitudes_compra(nro_solicitud) ON DELETE RESTRICT;
 
 
 --
--- Name: interacciones interacciones_interes_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.interacciones
-    ADD CONSTRAINT interacciones_interes_id_foreign FOREIGN KEY (interes_id) REFERENCES public.intereses(id) ON DELETE RESTRICT;
-
-
---
--- Name: interacciones interacciones_usuario_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: interacciones interacciones_nro_tarjeta_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interacciones
-    ADD CONSTRAINT interacciones_usuario_id_foreign FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT interacciones_nro_tarjeta_fk FOREIGN KEY (nro_tarjeta) REFERENCES public.intereses(nro_tarjeta) ON DELETE RESTRICT;
 
 
 --
--- Name: intereses intereses_external_modulo_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: interacciones interacciones_usuario_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.intereses
-    ADD CONSTRAINT intereses_external_modulo_id_foreign FOREIGN KEY (external_modulo_id) REFERENCES public.catalogo_cache(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
-
-
---
--- Name: intereses intereses_motivo_perdida_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.intereses
-    ADD CONSTRAINT intereses_motivo_perdida_id_foreign FOREIGN KEY (motivo_perdida_id) REFERENCES public.motivos_perdida(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY public.interacciones
+    ADD CONSTRAINT interacciones_usuario_correo_fk FOREIGN KEY (usuario_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- Name: intereses intereses_prospecto_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: intereses intereses_documento_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.intereses
-    ADD CONSTRAINT intereses_prospecto_id_foreign FOREIGN KEY (prospecto_id) REFERENCES public.prospectos(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT intereses_documento_fk FOREIGN KEY (documento) REFERENCES public.prospectos(documento) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- Name: intereses intereses_vendedor_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: intereses intereses_modulo_codigo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.intereses
-    ADD CONSTRAINT intereses_vendedor_id_foreign FOREIGN KEY (vendedor_id) REFERENCES public.usuarios(id) ON DELETE SET NULL;
+    ADD CONSTRAINT intereses_modulo_codigo_fk FOREIGN KEY (modulo_codigo) REFERENCES public.catalogo_cache(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- Name: log_comandos log_comandos_usuario_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: intereses intereses_motivo_perdida_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intereses
+    ADD CONSTRAINT intereses_motivo_perdida_fk FOREIGN KEY (motivo_perdida) REFERENCES public.motivos_perdida(nombre) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: intereses intereses_vendedor_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intereses
+    ADD CONSTRAINT intereses_vendedor_correo_fk FOREIGN KEY (vendedor_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: log_comandos log_comandos_usuario_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.log_comandos
-    ADD CONSTRAINT log_comandos_usuario_id_foreign FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT log_comandos_usuario_correo_fk FOREIGN KEY (usuario_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- Name: movimientos_interes movimientos_interes_interes_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.movimientos_interes
-    ADD CONSTRAINT movimientos_interes_interes_id_foreign FOREIGN KEY (interes_id) REFERENCES public.intereses(id) ON DELETE RESTRICT;
-
-
---
--- Name: movimientos_interes movimientos_interes_usuario_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: movimientos_interes movimientos_interes_nro_tarjeta_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.movimientos_interes
-    ADD CONSTRAINT movimientos_interes_usuario_id_foreign FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT movimientos_interes_nro_tarjeta_fk FOREIGN KEY (nro_tarjeta) REFERENCES public.intereses(nro_tarjeta) ON DELETE RESTRICT;
 
 
 --
--- Name: notificaciones notificaciones_usuario_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: movimientos_interes movimientos_interes_usuario_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.movimientos_interes
+    ADD CONSTRAINT movimientos_interes_usuario_correo_fk FOREIGN KEY (usuario_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: notificaciones notificaciones_usuario_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notificaciones
-    ADD CONSTRAINT notificaciones_usuario_id_foreign FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE SET NULL;
+    ADD CONSTRAINT notificaciones_usuario_correo_fk FOREIGN KEY (usuario_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
--- Name: orden_pago_descuentos orden_pago_descuentos_descuento_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.orden_pago_descuentos
-    ADD CONSTRAINT orden_pago_descuentos_descuento_id_foreign FOREIGN KEY (descuento_id) REFERENCES public.descuentos(id) ON DELETE RESTRICT;
-
-
---
--- Name: orden_pago_descuentos orden_pago_descuentos_orden_pago_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: orden_pago_descuentos orden_pago_descuentos_descuento_codigo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.orden_pago_descuentos
-    ADD CONSTRAINT orden_pago_descuentos_orden_pago_id_foreign FOREIGN KEY (orden_pago_id) REFERENCES public.ordenes_pago(id) ON DELETE CASCADE;
+    ADD CONSTRAINT orden_pago_descuentos_descuento_codigo_fk FOREIGN KEY (descuento_codigo) REFERENCES public.descuentos(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- Name: ordenes_pago ordenes_pago_interes_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: orden_pago_descuentos orden_pago_descuentos_nro_orden_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orden_pago_descuentos
+    ADD CONSTRAINT orden_pago_descuentos_nro_orden_fk FOREIGN KEY (nro_orden) REFERENCES public.ordenes_pago(nro_orden) ON DELETE CASCADE;
+
+
+--
+-- Name: ordenes_pago ordenes_pago_nro_tarjeta_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ordenes_pago
-    ADD CONSTRAINT ordenes_pago_interes_id_foreign FOREIGN KEY (interes_id) REFERENCES public.intereses(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT ordenes_pago_nro_tarjeta_fk FOREIGN KEY (nro_tarjeta) REFERENCES public.intereses(nro_tarjeta) ON DELETE RESTRICT;
 
 
 --
--- Name: ordenes_pago ordenes_pago_vendedor_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: ordenes_pago ordenes_pago_vendedor_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ordenes_pago
-    ADD CONSTRAINT ordenes_pago_vendedor_id_foreign FOREIGN KEY (vendedor_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT ordenes_pago_vendedor_correo_fk FOREIGN KEY (vendedor_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- Name: pagos pagos_orden_pago_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: pagos pagos_nro_orden_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pagos
-    ADD CONSTRAINT pagos_orden_pago_id_foreign FOREIGN KEY (orden_pago_id) REFERENCES public.ordenes_pago(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT pagos_nro_orden_fk FOREIGN KEY (nro_orden) REFERENCES public.ordenes_pago(nro_orden) ON DELETE RESTRICT;
 
 
 --
--- Name: programas_responsables programas_responsables_coordinador_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: programas_responsables programas_responsables_coordinador_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.programas_responsables
-    ADD CONSTRAINT programas_responsables_coordinador_id_foreign FOREIGN KEY (coordinador_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT programas_responsables_coordinador_correo_fk FOREIGN KEY (coordinador_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- Name: recordatorios recordatorios_interes_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.recordatorios
-    ADD CONSTRAINT recordatorios_interes_id_foreign FOREIGN KEY (interes_id) REFERENCES public.intereses(id) ON DELETE RESTRICT;
-
-
---
--- Name: recordatorios recordatorios_usuario_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: recordatorios recordatorios_nro_tarjeta_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.recordatorios
-    ADD CONSTRAINT recordatorios_usuario_id_foreign FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT recordatorios_nro_tarjeta_fk FOREIGN KEY (nro_tarjeta) REFERENCES public.intereses(nro_tarjeta) ON DELETE RESTRICT;
 
 
 --
--- Name: solicitudes_compra solicitudes_compra_external_modulo_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: recordatorios recordatorios_usuario_correo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recordatorios
+    ADD CONSTRAINT recordatorios_usuario_correo_fk FOREIGN KEY (usuario_correo) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: solicitudes_compra solicitudes_compra_modulo_codigo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.solicitudes_compra
-    ADD CONSTRAINT solicitudes_compra_external_modulo_id_foreign FOREIGN KEY (external_modulo_id) REFERENCES public.catalogo_cache(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
+    ADD CONSTRAINT solicitudes_compra_modulo_codigo_fk FOREIGN KEY (modulo_codigo) REFERENCES public.catalogo_cache(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
--- Name: solicitudes_compra solicitudes_compra_orden_pago_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: solicitudes_compra solicitudes_compra_nro_orden_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.solicitudes_compra
-    ADD CONSTRAINT solicitudes_compra_orden_pago_id_foreign FOREIGN KEY (orden_pago_id) REFERENCES public.ordenes_pago(id) ON DELETE CASCADE;
+    ADD CONSTRAINT solicitudes_compra_nro_orden_fk FOREIGN KEY (nro_orden) REFERENCES public.ordenes_pago(nro_orden) ON DELETE CASCADE;
 
 
 --
--- Name: usuarios usuarios_rol_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: usuarios usuarios_rol_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.usuarios
-    ADD CONSTRAINT usuarios_rol_foreign FOREIGN KEY (rol) REFERENCES public.roles(nombre) ON UPDATE CASCADE ON DELETE RESTRICT;
+    ADD CONSTRAINT usuarios_rol_fk FOREIGN KEY (rol) REFERENCES public.roles(nombre) ON UPDATE CASCADE ON DELETE RESTRICT;
 
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 8q65OelT68gd3jlNk9G3lNJmnGEz99oGodYauGkACfddBWpiEm9fuDJKgKt0S8f
+\unrestrict GrhxxdSQSvnnGcny1osHKsFGviVWUYZKEWsPkkbW0UmpaPX4XfgjPbzst3YNAbk
+

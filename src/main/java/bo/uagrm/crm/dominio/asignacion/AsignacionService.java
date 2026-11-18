@@ -36,38 +36,40 @@ public final class AsignacionService {
           c,
           Interes::de,
           Interes.SQL
-              + " WHERE i.vendedor_id IS NULL AND i.estado NOT IN ('Convertido', 'Perdido') AND "
+              + " WHERE i.vendedor_correo IS NULL AND i.estado NOT IN ('Convertido', 'Perdido') AND "
               + Alcance.visible(u)
-              + " ORDER BY i.created_at, i.id",
+              + " ORDER BY i.created_at, i.nro_tarjeta",
           Alcance.params(u));
     }
   }
 
-  public Asignacion asignar(Usuario u, int tarjetaId, int vendedorId)
+  public Asignacion asignar(Usuario u, int nroTarjeta, String vendedor)
       throws SQLException, CrmException {
     return db.enTransaccion(
         c -> {
           if (u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR)
             throw new CrmException("Solo coordinacion o administracion pueden asignar.");
           uno(c, rs -> 1, "SELECT pg_advisory_xact_lock(51305)");
-          Interes t = EmbudoService.tarjeta(c, u, tarjetaId, true);
+          Interes t = EmbudoService.tarjeta(c, u, nroTarjeta, true);
           if (t.cerrada())
             throw new CrmException(
-                "La tarjeta #" + tarjetaId + " está en " + t.estado() + ": ya no se asigna.");
+                "La tarjeta #" + nroTarjeta + " está en " + t.estado() + ": ya no se asigna.");
           Usuario v =
               uno(
                   c,
                   Usuario::de,
-                  Usuario.SQL + " WHERE id = ? AND rol = 'vendedor' AND estado = 'activo'",
-                  vendedorId);
+                  Usuario.SQL
+                      + " WHERE lower(correo) = lower(?) AND rol = 'vendedor' AND estado = 'activo'"
+                      + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin",
+                  vendedor);
           if (v == null)
             throw new CrmException(
                 "El usuario "
-                    + vendedorId
-                    + " no es un vendedor activo. Vea LISTARUSUARIOS[\"vendedor\"].");
-          if (v.id() == (t.vendedorId() == null ? -1 : t.vendedorId()))
+                    + vendedor
+                    + " no es un vendedor activo y vigente. Vea LISTARUSUARIOS[\"vendedor\"].");
+          if (v.correo().equals(t.vendedorCorreo()))
             throw new CrmException(
-                "La tarjeta #" + tarjetaId + " ya es de " + v.getNombreCompleto() + ".");
+                "La tarjeta #" + nroTarjeta + " ya es de " + v.getNombreCompleto() + ".");
           Asignacion a = asignarA(c, u, t, v, "Asignada a " + v.getNombreCompleto());
           return a;
         });
@@ -87,7 +89,8 @@ public final class AsignacionService {
               lista(
                   c,
                   Usuario::de,
-                  Usuario.SQL + " WHERE rol = 'vendedor' AND estado = 'activo' ORDER BY id");
+                  Usuario.SQL
+                      + " WHERE rol = 'vendedor' AND estado = 'activo' AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin ORDER BY correo");
           if (vendedores.isEmpty())
             throw new CrmException("No hay vendedores activos para repartir.");
           List<Interes> pendientes =
@@ -95,49 +98,50 @@ public final class AsignacionService {
                   c,
                   Interes::de,
                   Interes.SQL
-                      + " WHERE i.vendedor_id IS NULL AND i.estado NOT IN ('Convertido', 'Perdido')"
+                      + " WHERE i.vendedor_correo IS NULL AND i.estado NOT IN ('Convertido', 'Perdido')"
                       + " AND "
                       + Alcance.visible(u)
-                      + " ORDER BY i.created_at, i.id FOR UPDATE OF i",
+                      + " ORDER BY i.created_at, i.nro_tarjeta FOR UPDATE OF i",
                   Alcance.params(u));
           if (pendientes.isEmpty())
             throw new CrmException("La bolsa común está vacía: no hay prospectos sin vendedor.");
-          java.util.Map<Integer, Long> carga = new java.util.LinkedHashMap<>();
+          java.util.Map<String, Long> carga = new java.util.LinkedHashMap<>();
           for (Usuario v : vendedores)
             carga.put(
-                v.id(),
+                v.correo(),
                 uno(
                     c,
                     rs -> rs.getLong(1),
-                    "SELECT count(*) FROM intereses WHERE vendedor_id=? AND estado NOT IN"
+                    "SELECT count(*) FROM intereses WHERE vendedor_correo=? AND estado NOT IN"
                         + " ('Convertido','Perdido')",
-                    v.id()));
-          java.util.Map<Integer, Usuario> porProspecto = new java.util.HashMap<>();
+                    v.correo()));
+          java.util.Map<String, Usuario> porProspecto = new java.util.HashMap<>();
           List<Asignacion> hechas = new ArrayList<>();
           for (Interes t : pendientes) {
-            Usuario v = porProspecto.get(t.prospecto().id());
+            Usuario v = porProspecto.get(t.prospecto().ci());
             if (v == null) {
               v =
                   uno(
                       c,
                       Usuario::de,
                       Usuario.SQL
-                          + " WHERE id=(SELECT vendedor_id FROM intereses WHERE prospecto_id=? AND"
-                          + " vendedor_id IS NOT NULL AND estado NOT IN ('Convertido','Perdido')"
-                          + " ORDER BY id LIMIT 1) AND estado='activo' AND rol='vendedor'",
-                      t.prospecto().id());
+                          + " WHERE correo=(SELECT vendedor_correo FROM intereses WHERE documento=? AND"
+                          + " vendedor_correo IS NOT NULL AND estado NOT IN ('Convertido','Perdido')"
+                          + " ORDER BY nro_tarjeta LIMIT 1) AND estado='activo' AND rol='vendedor'"
+                          + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin",
+                      t.prospecto().ci());
               if (v == null) {
-                int elegido =
+                String elegido =
                     carga.entrySet().stream()
                         .min(java.util.Map.Entry.comparingByValue())
                         .orElseThrow()
                         .getKey();
-                v = vendedores.stream().filter(x -> x.id() == elegido).findFirst().orElseThrow();
+                v = vendedores.stream().filter(x -> x.correo().equals(elegido)).findFirst().orElseThrow();
               }
-              porProspecto.put(t.prospecto().id(), v);
+              porProspecto.put(t.prospecto().ci(), v);
             }
             hechas.add(asignarA(c, u, t, v, "Distribucion equitativa a " + v.getNombreCompleto()));
-            carga.put(v.id(), carga.get(v.id()) + 1);
+            carga.put(v.correo(), carga.get(v.correo()) + 1);
           }
           return hechas;
         });
@@ -148,17 +152,17 @@ public final class AsignacionService {
       throws SQLException, CrmException {
     actualizar(
         c,
-        "UPDATE intereses SET vendedor_id = ?, fecha_asignacion = COALESCE(fecha_asignacion,"
-            + " clock_timestamp()), updated_at=now() WHERE id = ?",
-        v.id(),
-        t.id());
+        "UPDATE intereses SET vendedor_correo = ?, fecha_asignacion = COALESCE(fecha_asignacion,"
+            + " clock_timestamp()), updated_at=now() WHERE nro_tarjeta = ?",
+        v.correo(),
+        t.nro());
     actualizar(
         c,
-        "UPDATE recordatorios SET usuario_id=?, updated_at=now() WHERE interes_id=? AND estado IN"
+        "UPDATE recordatorios SET usuario_correo=?, updated_at=now() WHERE nro_tarjeta=? AND estado IN"
             + " ('Pendiente','Atrasada')",
-        v.id(),
-        t.id());
-    EmbudoService.registrarMovimiento(c, t.id(), actor.id(), t.estado(), t.estado(), detalle);
-    return new Asignacion(uno(c, Interes::de, Interes.SQL + " WHERE i.id = ?", t.id()), v);
+        v.correo(),
+        t.nro());
+    EmbudoService.registrarMovimiento(c, t.nro(), actor.correo(), t.estado(), t.estado(), detalle);
+    return new Asignacion(uno(c, Interes::de, Interes.SQL + " WHERE i.nro_tarjeta = ?", t.nro()), v);
   }
 }

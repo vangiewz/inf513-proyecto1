@@ -19,9 +19,9 @@ public final class ExportacionService {
   };
   private static final String FROM =
       """
-      FROM inscripciones_comerciales m JOIN solicitudes_compra sc ON sc.id=m.solicitud_compra_id
-      JOIN ordenes_pago op ON op.id=sc.orden_pago_id JOIN intereses i ON i.id=op.interes_id
-      JOIN prospectos p ON p.id=i.prospecto_id JOIN pagos pg ON pg.orden_pago_id=op.id
+      FROM inscripciones_comerciales m JOIN solicitudes_compra sc ON sc.nro_solicitud=m.nro_solicitud
+      JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN intereses i ON i.nro_tarjeta=op.nro_tarjeta
+      JOIN prospectos p ON p.documento=i.documento JOIN pagos pg ON pg.nro_orden=op.nro_orden
       """;
   private final DatabaseService db;
 
@@ -38,13 +38,13 @@ public final class ExportacionService {
   private static String alcance(Usuario u) {
     if (u.rol() == Rol.ADMINISTRADOR) return "TRUE";
     return "EXISTS (SELECT 1 FROM catalogo_cache ac JOIN programas_responsables pr ON"
-        + " pr.external_programa_id=ac.programa_codigo WHERE ac.codigo=sc.external_modulo_id"
-        + " AND pr.coordinador_id=?)";
+        + " pr.programa_codigo=ac.programa_codigo WHERE ac.codigo=sc.modulo_codigo"
+        + " AND pr.coordinador_correo=?)";
   }
 
   private static Object[] args(Usuario u, Object... previos) {
     var l = new ArrayList<Object>(Arrays.asList(previos));
-    if (u.rol() == Rol.COORDINADOR) l.add(u.id());
+    if (u.rol() == Rol.COORDINADOR) l.add(u.correo());
     return l.toArray();
   }
 
@@ -53,11 +53,11 @@ public final class ExportacionService {
     try (Connection c = db.getConnection()) {
       return filas(
           c,
-          "SELECT e.id,m.id,p.nombre || ' ' || p.apellido,sc.external_modulo_id,e.estado "
+          "SELECT e.nro_exportacion,m.nro_solicitud,p.nombre || ' ' || p.apellido,sc.modulo_codigo,e.estado "
               + FROM
-              + " JOIN exportaciones e ON e.inscripcion_comercial_id=m.id WHERE "
+              + " JOIN exportaciones e ON e.nro_solicitud=m.nro_solicitud WHERE "
               + alcance(u)
-              + " ORDER BY e.id DESC",
+              + " ORDER BY e.nro_exportacion DESC",
           args(u));
     }
   }
@@ -70,19 +70,19 @@ public final class ExportacionService {
           lista(
               c,
               r -> r.getInt(1),
-              "SELECT id FROM inscripciones_comerciales ORDER BY id FOR UPDATE");
+              "SELECT nro_solicitud FROM inscripciones_comerciales ORDER BY nro_solicitud FOR UPDATE");
           var ids =
               lista(
                   c,
                   r -> r.getInt(1),
-                  "SELECT m.id "
+                  "SELECT m.nro_solicitud "
                       + FROM
-                      + " WHERE (?::int IS NULL OR m.id=?) AND m.estado='Confirmada' AND"
+                      + " WHERE (?::int IS NULL OR m.nro_solicitud=?) AND m.estado='Confirmada' AND"
                       + " pg.estado='Pago aprobado' AND NOT EXISTS(SELECT 1 FROM exportaciones e"
-                      + " WHERE e.inscripcion_comercial_id=m.id AND e.estado IN"
+                      + " WHERE e.nro_solicitud=m.nro_solicitud AND e.estado IN"
                       + " ('preparada','exportada','recibida')) AND "
                       + alcance(u)
-                      + " ORDER BY m.id LIMIT 1000",
+                      + " ORDER BY m.nro_solicitud LIMIT 1000",
                   args(u, matricula, matricula));
           if (matricula != null && ids.isEmpty())
             throw new CrmException(
@@ -90,31 +90,32 @@ public final class ExportacionService {
                     + " LISTAREXPORTACIONES y VEREXPORTACION para recuperarla.");
           var rows = new ArrayList<String[]>();
           var csv = new StringBuilder(encabezado());
-          for (int id : ids) {
+          for (int nro : ids) {
             Object[] data =
                 uno(
                     c,
-                    r -> new Object[] {r.getInt(1), r.getInt(2), r.getString(3), r.getString(4)},
-                    "SELECT p.id,m.id,p.nombre || ' ' || p.apellido,sc.external_modulo_id "
+                    r -> new Object[] {r.getString(1), r.getInt(2), r.getString(3), r.getString(4)},
+                    "SELECT p.documento,m.nro_solicitud,p.nombre || ' ' || p.apellido,sc.modulo_codigo "
                         + FROM
-                        + " WHERE m.id=?",
-                    id);
+                        + " WHERE m.nro_solicitud=?",
+                    nro);
             int exportacion =
                 insertar(
                     c,
+                    "nro_exportacion",
                     """
-INSERT INTO exportaciones(usuario_id,prospecto_id,inscripcion_comercial_id,fecha_exportacion,estado,respuesta,created_at,updated_at)
-VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object('id',?::int),'origen','correo','envio_SIS','pendiente de API')::text,now(),now())
+INSERT INTO exportaciones(usuario_correo,documento,nro_solicitud,fecha_exportacion,estado,respuesta,created_at,updated_at)
+VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object('nro_solicitud',?::int),'origen','correo','envio_SIS','pendiente de API')::text,now(),now())
 """,
-                    u.id(),
+                    u.correo(),
                     data[0],
-                    id,
-                    id);
+                    nro,
+                    nro);
             rows.add(
                 new String[] {
-                  "" + exportacion, "" + id, (String) data[2], (String) data[3], "preparada"
+                  "" + exportacion, "" + nro, (String) data[2], (String) data[3], "preparada"
                 });
-            csv.append(linea(c, id));
+            csv.append(linea(c, nro));
           }
           return new Preparacion(
               List.copyOf(rows),
@@ -127,29 +128,29 @@ VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object
         });
   }
 
-  public Preparacion recuperar(Usuario u, int id) throws SQLException, CrmException {
+  public Preparacion recuperar(Usuario u, int nro) throws SQLException, CrmException {
     rol(u);
     try (Connection c = db.getConnection()) {
       var rows =
           filas(
               c,
-              "SELECT e.id,m.id,p.nombre || ' ' || p.apellido,sc.external_modulo_id,e.estado "
+              "SELECT e.nro_exportacion,m.nro_solicitud,p.nombre || ' ' || p.apellido,sc.modulo_codigo,e.estado "
                   + FROM
-                  + " JOIN exportaciones e ON e.inscripcion_comercial_id=m.id WHERE e.id=? AND "
+                  + " JOIN exportaciones e ON e.nro_solicitud=m.nro_solicitud WHERE e.nro_exportacion=? AND "
                   + alcance(u),
-              args(u, id));
+              args(u, nro));
       if (rows.isEmpty()) throw new CrmException("No existe esa exportacion en su alcance.");
       int inscripcion = Integer.parseInt(rows.get(0)[1]);
       return new Preparacion(
           rows,
           new Adjunto(
-              "matricula_exportacion_" + id + ".csv",
+              "matricula_exportacion_" + nro + ".csv",
               "text/csv; charset=UTF-8",
               (encabezado() + linea(c, inscripcion)).getBytes(StandardCharsets.UTF_8)));
     }
   }
 
-  public void resultado(Usuario u, int id, String estado, String respuesta)
+  public void resultado(Usuario u, int nro, String estado, String respuesta)
       throws SQLException, CrmException {
     rol(u);
     String e =
@@ -166,21 +167,21 @@ VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object
                   r -> r.getString(1),
                   "SELECT e.estado "
                       + FROM
-                      + " JOIN exportaciones e ON e.inscripcion_comercial_id=m.id WHERE e.id=? AND "
+                      + " JOIN exportaciones e ON e.nro_solicitud=m.nro_solicitud WHERE e.nro_exportacion=? AND "
                       + alcance(u)
                       + " FOR UPDATE OF e",
-                  args(u, id));
+                  args(u, nro));
           if (anterior == null) throw new CrmException("No existe esa exportacion en su alcance.");
           if (anterior.equals("recibida") && !e.equals("recibida"))
             throw new CrmException("Una recepcion confirmada no se revierte manualmente.");
           actualizar(
               c,
               "UPDATE exportaciones SET"
-                  + " estado=?,respuesta=json_build_object('inscripcion',json_build_object('id',inscripcion_comercial_id),'origen','correo','constancia_manual',?::text)::text,updated_at=now()"
-                  + " WHERE id=?",
+                  + " estado=?,respuesta=json_build_object('inscripcion',json_build_object('nro_solicitud',nro_solicitud),'origen','correo','constancia_manual',?::text)::text,updated_at=now()"
+                  + " WHERE nro_exportacion=?",
               e,
               nota,
-              id);
+              nro);
           return null;
         });
   }
@@ -189,16 +190,16 @@ VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object
     return "\ufeffnombres,apellidos,ci,telefono,profesion,ubicacion,correo,programa,modulo,external_modulo_id,precio_acordado,estado_pago,fecha_inscripcion\r\n";
   }
 
-  private static String linea(Connection c, int id) throws SQLException {
+  private static String linea(Connection c, int nro) throws SQLException {
     List<String[]> fields =
         filas(
             c,
             "SELECT"
-                + " p.nombre,p.apellido,p.documento,p.telefono,p.profesion,p.ubicacion,p.correo,sc.programa_nombre,sc.modulo_nombre,sc.external_modulo_id,sc.precio_acordado,pg.estado,m.fecha_confirmacion"
+                + " p.nombre,p.apellido,p.documento,p.telefono,p.profesion,p.ubicacion,p.correo,sc.programa_nombre,sc.modulo_nombre,sc.modulo_codigo,sc.precio_acordado,pg.estado,m.fecha_confirmacion"
                 + " "
                 + FROM
-                + " WHERE m.id=?",
-            id);
+                + " WHERE m.nro_solicitud=?",
+            nro);
     return Arrays.stream(fields.get(0))
             .map(ExportacionService::celda)
             .collect(java.util.stream.Collectors.joining(","))

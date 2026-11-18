@@ -3,9 +3,8 @@ package bo.uagrm.crm.dominio.captacion;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-/** Entidad prospecto (lead): persona interesada en la oferta. */
+/** Entidad prospecto (lead): persona interesada en la oferta. Su clave es el documento (CI). */
 public record Prospecto(
-    int id,
     String ci,
     String nombre,
     String apellido,
@@ -14,11 +13,10 @@ public record Prospecto(
     String origen) {
 
   public static final String SQL =
-      "SELECT id, documento, nombre, apellido, telefono, correo, origen FROM prospectos";
+      "SELECT documento, nombre, apellido, telefono, correo, origen FROM prospectos";
 
   public static Prospecto de(ResultSet rs) throws SQLException {
     return new Prospecto(
-        rs.getInt("id"),
         rs.getString("documento"),
         rs.getString("nombre"),
         rs.getString("apellido"),

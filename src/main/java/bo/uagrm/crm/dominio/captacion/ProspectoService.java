@@ -122,7 +122,7 @@ public final class ProspectoService {
                     String.valueOf(i + 1),
                     ci,
                     "Tarjeta #"
-                        + a.tarjeta().id()
+                        + a.tarjeta().nro()
                         + " en "
                         + a.tarjeta().ofertaCodigo()
                         + (a.prospectoNuevo() ? "" : " (prospecto ya registrado)")
@@ -147,7 +147,7 @@ public final class ProspectoService {
               + " WHERE "
               + Alcance.visible(u)
               + " AND (? = '' OR p.documento = upper(?) OR p.nombre || ' ' || p.apellido ILIKE '%'"
-              + " || ? || '%') ORDER BY i.id",
+              + " || ? || '%') ORDER BY i.nro_tarjeta",
           Alcance.params(u, t, t, t));
     }
   }
@@ -175,15 +175,15 @@ public final class ProspectoService {
               && uno(
                       c,
                       rs -> 1,
-                      "SELECT 1 FROM intereses i WHERE i.prospecto_id = ? AND " + Alcance.propio(u),
-                      Alcance.despues(u, p.id()))
+                      "SELECT 1 FROM intereses i WHERE i.documento = ? AND " + Alcance.propio(u),
+                      Alcance.despues(u, p.ci()))
                   == null)
             throw new CrmException("El prospecto " + c1 + " no tiene tarjetas a su cargo.");
           actualizar(
               c,
               "UPDATE prospectos SET nombre = ?, apellido = ?, telefono = ?, correo = ?, origen ="
                   + " ?, profesion=COALESCE(?,profesion),ubicacion=COALESCE(?,ubicacion),updated_at"
-                  + " = now() WHERE id = ?",
+                  + " = now() WHERE documento = ?",
               n,
               a,
               t,
@@ -191,7 +191,7 @@ public final class ProspectoService {
               o,
               Valida.opcional(ficha.length > 0 ? ficha[0] : null, "profesion", 120),
               Valida.opcional(ficha.length > 1 ? ficha[1] : null, "ubicacion", 160),
-              p.id());
+              p.ci());
           return porCi(c, c1);
         });
   }
@@ -200,16 +200,16 @@ public final class ProspectoService {
     return db.enTransaccion(
         c -> {
           Prospecto p = porCi(c, Valida.ci(ci));
-          if (uno(c, rs -> 1, "SELECT 1 FROM intereses WHERE prospecto_id = ?", p.id()) != null)
+          if (uno(c, rs -> 1, "SELECT 1 FROM intereses WHERE documento = ?", p.ci()) != null)
             throw new CrmException(
                 "El prospecto tiene intereses o historial comercial: se conserva y no se puede"
                     + " eliminar.");
-          actualizar(c, "DELETE FROM prospectos WHERE id = ?", p.id());
+          actualizar(c, "DELETE FROM prospectos WHERE documento = ?", p.ci());
           return p;
         });
   }
 
-  public int asignarCoordinador(Usuario actor, String programa, int coordinador)
+  public int asignarCoordinador(Usuario actor, String programa, String coordinador)
       throws SQLException, CrmException {
     return new ProgramaService(db).asignar(actor, programa, coordinador);
   }
@@ -247,7 +247,7 @@ public final class ProspectoService {
       throw new CrmException("La oferta esta cerrada y no recibe inscripciones.");
     if (actor != null
         && actor.rol() == Rol.COORDINADOR
-        && ofertas.stream().anyMatch(of -> !Objects.equals(of.coordinadorId(), actor.id())))
+        && ofertas.stream().anyMatch(of -> !actor.correo().equalsIgnoreCase(Objects.toString(of.coordinadorCorreo(), ""))))
       throw new CrmException("El programa no esta a su cargo.");
     Prospecto p =
         uno(
@@ -260,9 +260,8 @@ public final class ProspectoService {
     if (!nuevo && (!p.ci().equals(doc) || !p.correo().equalsIgnoreCase(email)))
       throw new CrmException(
           "No se pudo registrar el interes con esos datos. Contacte a coordinacion.");
-    int prospectoId =
-        nuevo
-            ? DatabaseService.insertar(
+    if (nuevo)
+      actualizar(
                 c,
                 "INSERT INTO"
                     + " prospectos(documento,nombre,apellido,telefono,correo,origen,profesion,ubicacion,created_at,updated_at)"
@@ -274,26 +273,26 @@ public final class ProspectoService {
                 email,
                 fuente,
                 Valida.opcional(ficha.length > 0 ? ficha[0] : null, "profesion", 120),
-                Valida.opcional(ficha.length > 1 ? ficha[1] : null, "ubicacion", 160))
-            : p.id();
+                Valida.opcional(ficha.length > 1 ? ficha[1] : null, "ubicacion", 160));
     int primero = 0, creados = 0;
     for (Oferta of : ofertas) {
       if (uno(
               c,
               rs -> 1,
-              "SELECT 1 FROM intereses WHERE prospecto_id=? AND external_modulo_id=?",
-              prospectoId,
+              "SELECT 1 FROM intereses WHERE documento=? AND modulo_codigo=?",
+              doc,
               of.codigo())
           != null) continue;
-      int id =
+      int nro =
           DatabaseService.insertar(
               c,
+              "nro_tarjeta",
               """
-INSERT INTO intereses(prospecto_id,external_modulo_id,external_anuncio_id,programa_nombre,modulo_nombre,
+INSERT INTO intereses(documento,modulo_codigo,anuncio_codigo,programa_nombre,modulo_nombre,
     modulo_descripcion,precio,estado,created_at,updated_at,ultima_actividad_en)
 VALUES(?,?,?,?,?,?,?,'Nuevo',now(),now(),now())
 """,
-              prospectoId,
+              doc,
               of.codigo(),
               of.anuncioId(),
               of.programa(),
@@ -302,16 +301,16 @@ VALUES(?,?,?,?,?,?,?,'Nuevo',now(),now(),now())
               of.precio());
       EmbudoService.registrarMovimiento(
           c,
-          id,
-          actor == null ? null : actor.id(),
+          nro,
+          actor == null ? null : actor.correo(),
           null,
           "Nuevo",
           "Registro por correo. Origen: " + fuente);
-      if (primero == 0) primero = id;
+      if (primero == 0) primero = nro;
       creados++;
     }
     if (creados == 0) throw new CrmException("El prospecto ya tiene registrado ese interes.");
-    return new Alta(uno(c, Interes::de, Interes.SQL + " WHERE i.id=?", primero), nuevo, creados);
+    return new Alta(uno(c, Interes::de, Interes.SQL + " WHERE i.nro_tarjeta=?", primero), nuevo, creados);
   }
 
   private static Prospecto porCi(Connection c, String ci) throws SQLException, CrmException {

@@ -2,7 +2,6 @@ package bo.uagrm.crm.dominio.perdidas;
 
 import static bo.uagrm.crm.persistencia.DatabaseService.actualizar;
 import static bo.uagrm.crm.persistencia.DatabaseService.lista;
-import static bo.uagrm.crm.persistencia.DatabaseService.uno;
 
 import bo.uagrm.crm.dominio.CrmException;
 import bo.uagrm.crm.dominio.Valida;
@@ -14,7 +13,10 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
 
-/** CU5. Gestión de Pérdida de Prospectos y Clasificación de Motivos (RF3.3). */
+/**
+ * CU5. Gestión de Pérdida de Prospectos y Clasificación de Motivos (RF3.3). La clave del motivo es
+ * su nombre; al escribirlo en un comando no importan mayúsculas ni tildes.
+ */
 public final class PerdidaService {
 
   public static final List<String> CATEGORIAS =
@@ -28,10 +30,7 @@ public final class PerdidaService {
 
   public List<MotivoPerdida> listarMotivos() throws SQLException {
     try (Connection c = db.getConnection()) {
-      return lista(
-          c,
-          MotivoPerdida::de,
-          MotivoPerdida.SQL + MotivoPerdida.AGRUPAR + " ORDER BY mp.categoria, mp.id");
+      return todos(c);
     }
   }
 
@@ -41,30 +40,33 @@ public final class PerdidaService {
         cat = Valida.elegir(categoria, CATEGORIAS, "categoría");
     return db.enTransaccion(
         c -> {
-          return porId(
-              c,
-              DatabaseService.insertar(
-                  c, "INSERT INTO motivos_perdida (nombre, categoria) VALUES (?, ?)", n, cat));
+          if (buscar(c, n) != null) throw new CrmException("Ya existe el motivo \"" + n + "\".");
+          actualizar(c, "INSERT INTO motivos_perdida (nombre, categoria) VALUES (?, ?)", n, cat);
+          return porNombre(c, n);
         });
   }
 
-  public MotivoPerdida modificarMotivo(int id, String nombre, String categoria)
+  /** Cambia el nombre (se propaga a las tarjetas: ON UPDATE CASCADE) o la categoría. */
+  public MotivoPerdida modificarMotivo(String motivo, String nombreNuevo, String categoria)
       throws SQLException, CrmException {
-    String n = Valida.texto(nombre, "nombre del motivo", 80),
+    String n = Valida.texto(nombreNuevo, "nombre nuevo del motivo", 80),
         cat = Valida.elegir(categoria, CATEGORIAS, "categoría");
     return db.enTransaccion(
         c -> {
-          porId(c, id);
+          MotivoPerdida m = porNombre(c, motivo);
+          MotivoPerdida otro = buscar(c, n);
+          if (otro != null && !otro.nombre().equals(m.nombre()))
+            throw new CrmException("Ya existe el motivo \"" + otro.nombre() + "\".");
           actualizar(
-              c, "UPDATE motivos_perdida SET nombre = ?, categoria = ? WHERE id = ?", n, cat, id);
-          return porId(c, id);
+              c, "UPDATE motivos_perdida SET nombre = ?, categoria = ? WHERE nombre = ?", n, cat, m.nombre());
+          return porNombre(c, n);
         });
   }
 
-  public MotivoPerdida eliminarMotivo(int id) throws SQLException, CrmException {
+  public MotivoPerdida eliminarMotivo(String motivo) throws SQLException, CrmException {
     return db.enTransaccion(
         c -> {
-          MotivoPerdida m = porId(c, id);
+          MotivoPerdida m = porNombre(c, motivo);
           if (m.usos() > 0)
             throw new CrmException(
                 "El motivo \""
@@ -72,47 +74,57 @@ public final class PerdidaService {
                     + "\" clasifica "
                     + m.usos()
                     + " tarjeta(s): no se puede eliminar, solo modificar.");
-          actualizar(c, "DELETE FROM motivos_perdida WHERE id = ?", id);
+          actualizar(c, "DELETE FROM motivos_perdida WHERE nombre = ?", m.nombre());
           return m;
         });
   }
 
   /** Pasa la tarjeta a Perdido con su motivo obligatorio. */
-  public Interes marcarPerdido(Usuario u, int tarjetaId, int motivoId, String detalle)
+  public Interes marcarPerdido(Usuario u, int nroTarjeta, String motivo, String detalle)
       throws SQLException, CrmException {
     String d = Valida.opcional(detalle, "detalle", 200);
     return db.enTransaccion(
         c -> {
-          Interes t = EmbudoService.tarjeta(c, u, tarjetaId, true);
+          Interes t = EmbudoService.tarjeta(c, u, nroTarjeta, true);
           if (t.cerrada())
-            throw new CrmException("La tarjeta #" + tarjetaId + " ya está en " + t.estado() + ".");
-          MotivoPerdida m = porId(c, motivoId);
+            throw new CrmException("La tarjeta #" + nroTarjeta + " ya está en " + t.estado() + ".");
+          MotivoPerdida m = porNombre(c, motivo);
           actualizar(
               c,
-              "UPDATE intereses SET estado = 'Perdido', motivo_perdida_id = ?, observacion = ?"
-                  + " WHERE id = ?",
-              m.id(),
+              "UPDATE intereses SET estado = 'Perdido', motivo_perdida = ?, observacion = ?"
+                  + " WHERE nro_tarjeta = ?",
+              m.nombre(),
               d,
-              tarjetaId);
+              nroTarjeta);
           EmbudoService.registrarMovimiento(
               c,
-              tarjetaId,
-              u.id(),
+              nroTarjeta,
+              u.correo(),
               t.estado(),
               "Perdido",
               "Motivo: " + m.nombre() + " (" + m.categoria() + ")" + (d == null ? "" : ". " + d));
-          return EmbudoService.tarjeta(c, u, tarjetaId, false);
+          return EmbudoService.tarjeta(c, u, nroTarjeta, false);
         });
   }
 
-  private static MotivoPerdida porId(Connection c, int id) throws SQLException, CrmException {
-    MotivoPerdida m =
-        uno(
-            c,
-            MotivoPerdida::de,
-            MotivoPerdida.SQL + " WHERE mp.id = ?" + MotivoPerdida.AGRUPAR,
-            id);
-    if (m == null) throw new CrmException("No existe el motivo " + id + ". Vea LISTARMOTIVOS[].");
+  private static List<MotivoPerdida> todos(Connection c) throws SQLException {
+    return lista(
+        c, MotivoPerdida::de, MotivoPerdida.SQL + MotivoPerdida.AGRUPAR + " ORDER BY mp.categoria, mp.nombre");
+  }
+
+  /** El motivo con ese nombre (sin importar mayúsculas ni tildes), o null. */
+  private static MotivoPerdida buscar(Connection c, String nombre) throws SQLException {
+    String buscado = Valida.normal(nombre == null ? "" : nombre);
+    for (MotivoPerdida m : todos(c)) if (Valida.normal(m.nombre()).equals(buscado)) return m;
+    return null;
+  }
+
+  private static MotivoPerdida porNombre(Connection c, String nombre)
+      throws SQLException, CrmException {
+    Valida.texto(nombre, "motivo", 80);
+    MotivoPerdida m = buscar(c, nombre);
+    if (m == null)
+      throw new CrmException("No existe el motivo \"" + nombre.trim() + "\". Vea LISTARMOTIVOS[].");
     return m;
   }
 }

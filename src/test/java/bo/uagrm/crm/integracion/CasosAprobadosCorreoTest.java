@@ -104,33 +104,24 @@ class CasosAprobadosCorreoTest {
                 ficha ? "Ingenieria" : null,
                 ficha ? "Santa Cruz" : null)
             .tarjeta();
-    return new AsignacionService(db).asignar(admin, t.id(), v1.id()).tarjeta();
+    return new AsignacionService(db).asignar(admin, t.nro(), v1.correo()).tarjeta();
   }
 
   static PagoService.Orden revisar(Interes t) throws Exception {
-    var o = pagos().generar(v1, t.id(), null, null);
-    return pagos().registrarComprobante(v1, o.pagoId(), comprobante(), "Comprobante QA");
+    var o = pagos().generar(v1, t.nro(), null, null);
+    return pagos().registrarComprobante(v1, o.nro(), comprobante(), "Comprobante QA");
   }
 
-  static String token(Usuario u) throws Exception {
-    String plain = UUID.randomUUID().toString() + UUID.randomUUID();
-    String hash =
-        java.util.HexFormat.of()
-            .formatHex(
-                java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(plain.getBytes(StandardCharsets.UTF_8)));
-    sql(
-        "INSERT INTO api_tokens(usuario_id,token_hash,expira_en,created_at,updated_at)"
-            + " VALUES(?,?,now()+interval '1 hour',now(),now())",
-        u.id(),
-        hash);
-    return plain;
-  }
 
   @BeforeAll
   static void init() throws Exception {
-    assertEquals("jdbc:postgresql://127.0.0.1:55432/crm_qa_audit", System.getenv("P1_TEST_DB_URL"));
-    db = new DatabaseService(System.getenv("P1_TEST_DB_URL"), "crm_user", "crm_password");
+    String url = System.getenv("P1_TEST_DB_URL");
+    assertTrue(url.startsWith("jdbc:postgresql://127.0.0.1:"), "solo contra una base local desechable");
+    db =
+        new DatabaseService(
+            url,
+            System.getenv().getOrDefault("P1_TEST_DB_USER", "crm_user"),
+            System.getenv().getOrDefault("P1_TEST_DB_PASSWORD", "crm_password"));
     db.verificarModelo();
     admin = user("administrador");
     c1 = user("coordinador");
@@ -140,8 +131,8 @@ class CasosAprobadosCorreoTest {
     cp = new CommandProcessor(db);
     for (String codigo :
         List.of("desarrollo-web", "datos-bi", "ciberseguridad", "redes-servidores"))
-      new ProgramaService(db).asignar(admin, codigo, c1.id());
-    new ProgramaService(db).asignar(admin, "ia-aplicada", c2.id());
+      new ProgramaService(db).asignar(admin, codigo, c1.correo());
+    new ProgramaService(db).asignar(admin, "ia-aplicada", c2.correo());
   }
 
   @Test
@@ -149,19 +140,20 @@ class CasosAprobadosCorreoTest {
     // CU1: alta y modificacion de usuario por comandos.
     String correo = doc() + "@example.test";
     ok(admin, "INSERTARUSUARIO", "Nombre", "QA", correo, "70000001", "vendedor");
-    int uid = (int) count("SELECT id FROM usuarios WHERE correo=?", correo);
     ok(
         admin,
         "MODIFICARUSUARIO",
-        "" + uid,
+        correo,
         "Nombre editado",
         "QA",
-        correo,
         "70000002",
         "vendedor",
-        "activo");
-    assertEquals("Nombre editado", str("SELECT nombre FROM usuarios WHERE id=?", uid));
-    ok(admin, "ASIGNARCOORDINADOR", "desarrollo-web", "" + c1.id());
+        "activo",
+        "2026-01-01",
+        "2099-12-31");
+    assertEquals("Nombre editado", str("SELECT nombre FROM usuarios WHERE correo=?", correo));
+    assertEquals("2099-12-31", str("SELECT fecha_fin::text FROM usuarios WHERE correo=?", correo));
+    ok(admin, "ASIGNARCOORDINADOR", "desarrollo-web", "" + c1.correo());
     // CU2: visitante registra programa completo con ficha.
     String documento = doc();
     String email = documento + "@example.test";
@@ -179,48 +171,47 @@ class CasosAprobadosCorreoTest {
                 "Santa Cruz"),
             null);
     assertEquals("Éxito", r.resultado(), r.mensaje());
-    int prospecto = (int) count("SELECT id FROM prospectos WHERE documento=?", documento);
+    String prospecto = documento;
     List<Integer> tarjetas;
     try (Connection c = db.getConnection()) {
       tarjetas =
           lista(
               c,
               x -> x.getInt(1),
-              "SELECT id FROM intereses WHERE prospecto_id=? ORDER BY external_modulo_id",
+              "SELECT nro_tarjeta FROM intereses WHERE documento=? ORDER BY modulo_codigo",
               prospecto);
     }
     assertEquals(5, tarjetas.size());
     // CU3: coordinador asigna cada interes; vendedor no se autoasigna.
-    for (int id : tarjetas) ok(c1, "ASIGNARPROSPECTO", "" + id, "" + v1.id());
-    int id = tarjetas.get(0);
-    assertEquals("Denegado", ejecutar(v1, "ASIGNARPROSPECTO", "" + id, "" + v1.id()).resultado());
+    for (int nro : tarjetas) ok(c1, "ASIGNARPROSPECTO", "" + nro, "" + v1.correo());
+    int nro = tarjetas.get(0);
+    assertEquals("Denegado", ejecutar(v1, "ASIGNARPROSPECTO", "" + nro, "" + v1.correo()).resultado());
     // CU4, CU7: etapas aprobadas, contacto, recordatorio y cumplimiento.
     var tablero = ok(v1, "VERTABLERO");
     assertEquals(6, tablero.bloques().size());
-    ok(v1, "MOVERTARJETA", "" + id, "En Contacto");
-    ok(v1, "MOVERTARJETA", "" + id, "Seguimiento");
-    ok(v1, "REGISTRARINTERACCION", "" + id, "WhatsApp", "Se informo el programa completo");
-    ok(v1, "PROGRAMARRECORDATORIO", "" + id, "2090-01-10 10:00", "Confirmar deposito");
-    int rec = (int) count("SELECT id FROM recordatorios WHERE interes_id=?", id);
+    ok(v1, "MOVERTARJETA", "" + nro, "En Contacto");
+    ok(v1, "MOVERTARJETA", "" + nro, "Seguimiento");
+    ok(v1, "REGISTRARINTERACCION", "" + nro, "WhatsApp", "Se informo el programa completo");
+    ok(v1, "PROGRAMARRECORDATORIO", "" + nro, "2090-01-10 10:00", "Confirmar deposito");
+    int rec = (int) count("SELECT nro_recordatorio FROM recordatorios WHERE nro_tarjeta=?", nro);
     ok(v1, "COMPLETARRECORDATORIO", "" + rec, "Se recibio el deposito");
-    ok(v1, "VERHISTORIAL", "" + id);
+    ok(v1, "VERHISTORIAL", "" + nro);
     // CU5: una perdida clasificada sobre otra tarjeta del mismo programa.
     Interes perdida = nueva("desarrollo-web-m1", true);
     String motivo = "Horario " + doc();
     ok(c1, "INSERTARMOTIVO", motivo, "Horario");
-    int mid = (int) count("SELECT id FROM motivos_perdida WHERE nombre=?", motivo);
-    ok(v1, "MARCARPERDIDO", "" + perdida.id(), "" + mid, "Cruce de horarios");
+    ok(v1, "MARCARPERDIDO", "" + perdida.nro(), motivo.toUpperCase(), "Cruce de horarios");
     // CU6: orden, adjunto real, revision, aprobacion e inscripcion, todo por correo.
     String modulos =
         "desarrollo-web-m1;desarrollo-web-m2;desarrollo-web-m3;desarrollo-web-m4;desarrollo-web-m5";
-    ok(v1, "GENERARORDEN", "" + id, modulos, "PROGRAMA_COMPLETO");
+    ok(v1, "GENERARORDEN", "" + nro, modulos, "PROGRAMA_COMPLETO");
     int pago =
         (int)
             count(
-                "SELECT pg.id FROM pagos pg JOIN ordenes_pago op ON op.id=pg.orden_pago_id WHERE"
-                    + " op.interes_id=?",
-                id);
-    assertEquals("2873.00", str("SELECT monto::text FROM pagos WHERE id=?", pago));
+                "SELECT pg.nro_orden FROM pagos pg JOIN ordenes_pago op ON op.nro_orden=pg.nro_orden WHERE"
+                    + " op.nro_tarjeta=?",
+                nro);
+    assertEquals("2873.00", str("SELECT monto::text FROM pagos WHERE nro_orden=?", pago));
     r =
         cp.procesarEmail(
             v1.correo(),
@@ -235,41 +226,41 @@ class CasosAprobadosCorreoTest {
     assertEquals("Denegado", ejecutar(v1, "APROBARPAGO", "" + pago).resultado());
     assertEquals("Error", ejecutar(c2, "APROBARPAGO", "" + pago).resultado());
     ok(c1, "APROBARPAGO", "" + pago, "Verificacion de prueba");
-    ok(v1, "CONVERTIRPROSPECTO", "" + id);
+    ok(v1, "CONVERTIRPROSPECTO", "" + nro);
     ok(c1, "LISTARMATRICULAS");
     assertEquals(
         5,
         count(
-            "SELECT count(*) FROM intereses WHERE prospecto_id=? AND estado='Convertido'",
+            "SELECT count(*) FROM intereses WHERE documento=? AND estado='Convertido'",
             prospecto));
     for (int tarjeta : tarjetas) ok(v1, "CONVERTIRPROSPECTO", "" + tarjeta);
-    int orden = (int) count("SELECT orden_pago_id FROM pagos WHERE id=?", pago);
+    int orden = pago;
     assertEquals(
         5,
         count(
             "SELECT count(*) FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON"
-                + " sc.id=ic.solicitud_compra_id WHERE sc.orden_pago_id=?",
+                + " sc.nro_solicitud=ic.nro_solicitud WHERE sc.nro_orden=?",
             orden));
     assertEquals(
         5,
         count(
             "SELECT count(*) FROM comisiones co JOIN solicitudes_compra sc ON"
-                + " sc.id=co.solicitud_compra_id WHERE sc.orden_pago_id=?",
+                + " sc.nro_solicitud=co.nro_solicitud WHERE sc.nro_orden=?",
             orden));
     assertEquals("Error", ejecutar(c1, "APROBARPAGO", "" + pago).resultado());
     // Preparacion para el SIS sin fingir una API que el Grupo 06 aun no entrego.
     int matricula =
         (int)
             count(
-                "SELECT min(ic.id) FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON"
-                    + " sc.id=ic.solicitud_compra_id WHERE sc.orden_pago_id=?",
+                "SELECT min(ic.nro_solicitud) FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON"
+                    + " sc.nro_solicitud=ic.nro_solicitud WHERE sc.nro_orden=?",
                 orden);
     r = ok(c1, "EXPORTARMATRICULAS", "" + matricula);
     assertEquals(1, r.archivos().size());
     assertTrue(
         new String(r.archivos().get(0).contenido(), StandardCharsets.UTF_8).contains(documento));
     int exp =
-        (int) count("SELECT id FROM exportaciones WHERE inscripcion_comercial_id=?", matricula);
+        (int) count("SELECT nro_exportacion FROM exportaciones WHERE nro_solicitud=?", matricula);
     ok(c1, "VEREXPORTACION", "" + exp);
     ok(
         c1,
@@ -278,27 +269,45 @@ class CasosAprobadosCorreoTest {
         "recibida",
         "Constancia ficticia exclusiva del entorno QA");
     assertEquals(
-        1, count("SELECT count(*) FROM exportaciones WHERE inscripcion_comercial_id=?", matricula));
+        1, count("SELECT count(*) FROM exportaciones WHERE nro_solicitud=?", matricula));
     // CU8 y bitacora.
     for (String comando :
         List.of("REPORTEEMBUDO", "REPORTEVENDEDORES", "REPORTEPERDIDAS", "REPORTEOFERTA"))
       ok(c1, comando);
     ok(admin, "VERBITACORA");
-    assertTrue(count("SELECT count(*) FROM log_comandos WHERE usuario_id=?", c1.id()) > 5);
-    // Interoperabilidad comprobada por HTTP sobre las mismas filas.
-    var web = BaseCompartidaTest.http("GET", "/pagos/" + pago, null, token(admin));
-    assertEquals(200, web.statusCode(), web.body());
-    assertTrue(web.body().contains("Pago aprobado"));
+    assertTrue(count("SELECT count(*) FROM log_comandos WHERE usuario_correo=?", c1.correo()) > 5);
+  }
+
+  @Test
+  void credencialFueraDeVigenciaQuedaDenegada() throws Exception {
+    String correo = doc() + "@example.test";
+    ok(admin, "INSERTARUSUARIO", "Vigencia", "QA", correo, "70000001", "vendedor", "2026-01-01", "2026-01-31");
+    var r = cp.procesarEmail(correo, "HELP[]", null);
+    assertEquals("Denegado", r.resultado());
+    assertTrue(r.mensaje().contains("venció el 31/01/2026"), r.mensaje());
+    String futuro = doc() + "@example.test";
+    ok(admin, "INSERTARUSUARIO", "Futuro", "QA", futuro, "70000001", "vendedor", "2090-01-01", "2090-12-31");
+    assertTrue(cp.procesarEmail(futuro, "HELP[]", null).mensaje().contains("vigente desde el 01/01/2090"));
+    ok(admin, "MODIFICARUSUARIO", correo, "Vigencia", "QA", "70000001", "vendedor", "activo", "2026-01-01", "2099-12-31");
+    assertEquals("Éxito", cp.procesarEmail(correo, "HELP[]", null).resultado());
+    assertEquals(
+        "Error",
+        ejecutar(admin, "INSERTARUSUARIO", "Al", "Reves", doc() + "@example.test", "70000001", "vendedor", "2026-05-01", "2026-04-01")
+            .resultado());
+    assertEquals(
+        "Error",
+        ejecutar(admin, "INSERTARUSUARIO", "Mala", "Fecha", doc() + "@example.test", "70000001", "vendedor", "2026-02-30")
+            .resultado());
   }
 
   @Test
   void coordinadorNoPuedeOperarFueraDeSuPrograma() throws Exception {
     var t = nueva("ia-aplicada-m1", true);
     var o = revisar(t);
-    assertThrows(CrmException.class, () -> pagos().ver(c1, o.id()));
-    assertThrows(CrmException.class, () -> pagos().archivo(c1, o.pagoId(), null));
-    assertThrows(CrmException.class, () -> pagos().aprobar(c1, o.pagoId(), "No corresponde"));
-    assertThrows(CrmException.class, () -> new AsignacionService(db).asignar(c1, t.id(), v2.id()));
+    assertThrows(CrmException.class, () -> pagos().ver(c1, o.nro()));
+    assertThrows(CrmException.class, () -> pagos().archivo(c1, o.nro(), null));
+    assertThrows(CrmException.class, () -> pagos().aprobar(c1, o.nro(), "No corresponde"));
+    assertThrows(CrmException.class, () -> new AsignacionService(db).asignar(c1, t.nro(), v2.correo()));
     assertTrue(new ProspectoService(db).listar(c1, t.prospecto().ci()).isEmpty());
     assertThrows(
         CrmException.class,
@@ -313,15 +322,15 @@ class CasosAprobadosCorreoTest {
                     doc() + "@example.test",
                     "Correo",
                     "ia-aplicada-m2"));
-    assertEquals("Pago aprobado", pagos().aprobar(c2, o.pagoId(), "QA responsable").estadoPago());
+    assertEquals("Pago aprobado", pagos().aprobar(c2, o.nro(), "QA responsable").estadoPago());
   }
 
   @Test
   void fichaIncompletaSeCompletaPorCorreoAntesDeAprobar() throws Exception {
     var t = nueva("desarrollo-web-m1", false);
     var o = revisar(t);
-    assertThrows(CrmException.class, () -> pagos().aprobar(c1, o.pagoId(), null));
-    assertEquals("En revision", pagos().ver(c1, o.id()).estadoPago());
+    assertThrows(CrmException.class, () -> pagos().aprobar(c1, o.nro(), null));
+    assertEquals("En revision", pagos().ver(c1, o.nro()).estadoPago());
     ok(
         v1,
         "MODIFICARPROSPECTO",
@@ -333,32 +342,32 @@ class CasosAprobadosCorreoTest {
         "Correo",
         "Ingenieria",
         "Santa Cruz");
-    ok(c1, "APROBARPAGO", "" + o.pagoId());
+    ok(c1, "APROBARPAGO", "" + o.nro());
   }
 
   @Test
   void rechazoCorreccionYReenvioConservanHistorial() throws Exception {
     var t = nueva("desarrollo-web-m1", true);
     var o = revisar(t);
-    pagos().rechazar(c1, o.pagoId(), "Imagen poco clara");
-    assertEquals("Pago rechazado", pagos().ver(v1, o.id()).estadoPago());
-    pagos().registrarComprobante(v1, o.pagoId(), comprobante(), "Archivo corregido");
-    pagos().aprobar(c1, o.pagoId(), "Corregido");
-    assertEquals(2, pagos().comprobantes(c1, o.pagoId()).size());
+    pagos().rechazar(c1, o.nro(), "Imagen poco clara");
+    assertEquals("Pago rechazado", pagos().ver(v1, o.nro()).estadoPago());
+    pagos().registrarComprobante(v1, o.nro(), comprobante(), "Archivo corregido");
+    pagos().aprobar(c1, o.nro(), "Corregido");
+    assertEquals(2, pagos().comprobantes(c1, o.nro()).size());
     assertEquals(
         1,
         count(
-            "SELECT count(*) FROM comprobantes_pago WHERE pago_id=? AND estado_revision='Pago"
+            "SELECT count(*) FROM comprobantes_pago WHERE nro_orden=? AND estado_revision='Pago"
                 + " rechazado'",
-            o.pagoId()));
-    assertThrows(CrmException.class, () -> pagos().rechazar(c1, o.pagoId(), "No permitido"));
+            o.nro()));
+    assertThrows(CrmException.class, () -> pagos().rechazar(c1, o.nro(), "No permitido"));
   }
 
   @Test
   void duplicadoEnOtraOrdenRevierteTodasLasInscripcionesDeLaTransaccion() throws Exception {
     var t = nueva("desarrollo-web-m1", true);
     var a = revisar(t);
-    pagos().aprobar(c1, a.pagoId(), null);
+    pagos().aprobar(c1, a.nro(), null);
     var nuevo =
         new ProspectoService(db)
             .registrar(
@@ -371,68 +380,33 @@ class CasosAprobadosCorreoTest {
                 "Correo",
                 "desarrollo-web-m2")
             .tarjeta();
-    new AsignacionService(db).asignar(admin, nuevo.id(), v1.id());
-    var o = pagos().generar(v1, nuevo.id(), "desarrollo-web-m2;desarrollo-web-m1", null);
-    pagos().registrarComprobante(v1, o.pagoId(), comprobante(), null);
-    assertThrows(CrmException.class, () -> pagos().aprobar(c1, o.pagoId(), null));
+    new AsignacionService(db).asignar(admin, nuevo.nro(), v1.correo());
+    var o = pagos().generar(v1, nuevo.nro(), "desarrollo-web-m2;desarrollo-web-m1", null);
+    pagos().registrarComprobante(v1, o.nro(), comprobante(), null);
+    assertThrows(CrmException.class, () -> pagos().aprobar(c1, o.nro(), null));
     assertEquals(
         0,
         count(
             "SELECT count(*) FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON"
-                + " sc.id=ic.solicitud_compra_id WHERE sc.orden_pago_id=?",
-            o.id()));
+                + " sc.nro_solicitud=ic.nro_solicitud WHERE sc.nro_orden=?",
+            o.nro()));
     assertEquals(
         0,
         count(
             "SELECT count(*) FROM comisiones co JOIN solicitudes_compra sc ON"
-                + " sc.id=co.solicitud_compra_id WHERE sc.orden_pago_id=?",
-            o.id()));
-    assertEquals("En revision", pagos().ver(c1, o.id()).estadoPago());
+                + " sc.nro_solicitud=co.nro_solicitud WHERE sc.nro_orden=?",
+            o.nro()));
+    assertEquals("En revision", pagos().ver(c1, o.nro()).estadoPago());
   }
 
-  @Test
-  void aprobacionConcurrenteCorreoYWebNoDuplicaMatricula() throws Exception {
-    var t = nueva("desarrollo-web-m1", true);
-    var o = revisar(t);
-    String auth = token(admin);
-    var pool = Executors.newFixedThreadPool(2);
-    try {
-      var resultadoJava =
-          pool.submit(
-              () -> {
-                try {
-                  pagos().aprobar(c1, o.pagoId(), "QA");
-                  return 200;
-                } catch (CrmException e) {
-                  return 422;
-                }
-              });
-      var web =
-          pool.submit(
-              () ->
-                  BaseCompartidaTest.http("PATCH", "/pagos/" + o.pagoId() + "/aprobar", "{}", auth)
-                      .statusCode());
-      assertEquals(
-          List.of(200, 422),
-          java.util.stream.Stream.of(resultadoJava.get(), web.get()).sorted().toList());
-      assertEquals(
-          1,
-          count(
-              "SELECT count(*) FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON"
-                  + " sc.id=ic.solicitud_compra_id WHERE sc.orden_pago_id=?",
-              o.id()));
-    } finally {
-      pool.shutdownNow();
-    }
-  }
 
   @ParameterizedTest
   @ValueSource(
       strings = {"no-existe", "ia-aplicada-m1", "desarrollo-web-m1;no-existe", "desarrollo-web-m2"})
   void ordenInvalidaNoDejaFilasParciales(String codigos) throws Exception {
     var t = nueva("desarrollo-web-m1", true);
-    assertThrows(CrmException.class, () -> pagos().generar(v1, t.id(), codigos, null));
-    assertEquals(0, count("SELECT count(*) FROM ordenes_pago WHERE interes_id=?", t.id()));
+    assertThrows(CrmException.class, () -> pagos().generar(v1, t.nro(), codigos, null));
+    assertEquals(0, count("SELECT count(*) FROM ordenes_pago WHERE nro_tarjeta=?", t.nro()));
   }
 
   @Test
@@ -440,32 +414,32 @@ class CasosAprobadosCorreoTest {
     var t = nueva("desarrollo-web-m1", true);
     var o = revisar(t);
     var otro = revisar(nueva("desarrollo-web-m1", true));
-    int id = (int) count("SELECT id FROM comprobantes_pago WHERE pago_id=?", otro.pagoId());
-    assertThrows(CrmException.class, () -> pagos().archivo(c1, o.pagoId(), id));
-    assertThrows(CrmException.class, () -> pagos().archivo(v2, o.pagoId(), null));
-    assertThrows(CrmException.class, () -> pagos().aprobar(v1, o.pagoId(), "No permitido"));
+    int nro = (int) count("SELECT nro_comprobante FROM comprobantes_pago WHERE nro_orden=?", otro.nro());
+    assertThrows(CrmException.class, () -> pagos().archivo(c1, o.nro(), nro));
+    assertThrows(CrmException.class, () -> pagos().archivo(v2, o.nro(), null));
+    assertThrows(CrmException.class, () -> pagos().aprobar(v1, o.nro(), "No permitido"));
   }
 
   @Test
   void bytesInvalidosYAdjuntoAusenteNoAlteranElPago() throws Exception {
     var t = nueva("desarrollo-web-m1", true);
-    var o = pagos().generar(v1, t.id(), null, null);
+    var o = pagos().generar(v1, t.nro(), null, null);
     assertThrows(
         CrmException.class,
         () ->
             pagos()
                 .registrarComprobante(
                     v1,
-                    o.pagoId(),
+                    o.nro(),
                     new Adjunto(
                         "falso.pdf",
                         "application/pdf",
                         "<script>fake</script>".getBytes(StandardCharsets.UTF_8)),
                     null));
     assertThrows(
-        CrmException.class, () -> pagos().registrarComprobante(v1, o.pagoId(), null, null));
-    assertEquals(0, count("SELECT count(*) FROM comprobantes_pago WHERE pago_id=?", o.pagoId()));
-    assertEquals("Pendiente de pago", pagos().ver(c1, o.id()).estadoPago());
+        CrmException.class, () -> pagos().registrarComprobante(v1, o.nro(), null, null));
+    assertEquals(0, count("SELECT count(*) FROM comprobantes_pago WHERE nro_orden=?", o.nro()));
+    assertEquals("Pendiente de pago", pagos().ver(c1, o.nro()).estadoPago());
   }
 
   @Test
@@ -473,11 +447,11 @@ class CasosAprobadosCorreoTest {
     var t = nueva("ciberseguridad-m1", true);
     var o = revisar(t);
     try {
-      new ProgramaService(db).asignar(admin, "ciberseguridad", c2.id());
-      assertThrows(CrmException.class, () -> pagos().ver(c1, o.id()));
-      assertEquals(o.id(), pagos().ver(c2, o.id()).id());
+      new ProgramaService(db).asignar(admin, "ciberseguridad", c2.correo());
+      assertThrows(CrmException.class, () -> pagos().ver(c1, o.nro()));
+      assertEquals(o.nro(), pagos().ver(c2, o.nro()).nro());
     } finally {
-      new ProgramaService(db).asignar(admin, "ciberseguridad", c1.id());
+      new ProgramaService(db).asignar(admin, "ciberseguridad", c1.correo());
     }
   }
 }

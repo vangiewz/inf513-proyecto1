@@ -61,8 +61,8 @@ class CorreoServidorFinancieroTest {
   static void init() throws Exception {
     db =
         new DatabaseService(
-            "jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?currentSchema=crm_qa_correo&ApplicationName=crm-mail-qa-finanzas",
-            "grupo05sa",
+            System.getenv().getOrDefault("P1_REMOTE_DB_URL", "jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?currentSchema=crm_qa_correo&ApplicationName=crm-mail-qa-finanzas"),
+            System.getenv().getOrDefault("P1_REMOTE_DB_USER", "grupo05sa"),
             System.getenv("P1_REMOTE_DB_PASSWORD"));
     try (Connection c = db.getConnection()) {
       assertEquals("crm_qa_correo", uno(c, r -> r.getString(1), "SELECT current_schema()"));
@@ -73,8 +73,8 @@ class CorreoServidorFinancieroTest {
     otro = user("coordinador");
     vendedor = user("vendedor");
     cp = new CommandProcessor(db);
-    new ProgramaService(db).asignar(admin, "desarrollo-web", coor.id());
-    new ProgramaService(db).asignar(admin, "ia-aplicada", otro.id());
+    new ProgramaService(db).asignar(admin, "desarrollo-web", coor.correo());
+    new ProgramaService(db).asignar(admin, "ia-aplicada", otro.correo());
   }
 
   @Test
@@ -94,17 +94,17 @@ class CorreoServidorFinancieroTest {
                 "SCZ"),
             null);
     assertEquals("Éxito", r.resultado(), r.mensaje());
-    int p = (int) numero("SELECT id FROM prospectos WHERE documento=?", doc);
+    String p = doc;
     List<Integer> ids;
     try (Connection c = db.getConnection()) {
       ids =
           lista(
               c,
               x -> x.getInt(1),
-              "SELECT id FROM intereses WHERE prospecto_id=? ORDER BY external_modulo_id",
+              "SELECT nro_tarjeta FROM intereses WHERE documento=? ORDER BY modulo_codigo",
               p);
     }
-    for (int id : ids) ok(coor, "ASIGNARPROSPECTO", "" + id, "" + vendedor.id());
+    for (int nro : ids) ok(coor, "ASIGNARPROSPECTO", "" + nro, "" + vendedor.correo());
     int tarjeta = ids.get(0);
     ok(
         vendedor,
@@ -115,8 +115,8 @@ class CorreoServidorFinancieroTest {
     int pago =
         (int)
             numero(
-                "SELECT pg.id FROM pagos pg JOIN ordenes_pago op ON op.id=pg.orden_pago_id WHERE"
-                    + " op.interes_id=?",
+                "SELECT pg.nro_orden FROM pagos pg JOIN ordenes_pago op ON op.nro_orden=pg.nro_orden WHERE"
+                    + " op.nro_tarjeta=?",
                 tarjeta);
     r =
         cp.procesarEmail(
@@ -141,14 +141,14 @@ class CorreoServidorFinancieroTest {
     ok(coor, "APROBARPAGO", "" + pago, "Prueba aislada");
     assertEquals(
         5,
-        numero("SELECT count(*) FROM intereses WHERE prospecto_id=? AND estado='Convertido'", p));
-    for (int id : ids) ok(vendedor, "CONVERTIRPROSPECTO", "" + id);
+        numero("SELECT count(*) FROM intereses WHERE documento=? AND estado='Convertido'", p));
+    for (int nro : ids) ok(vendedor, "CONVERTIRPROSPECTO", "" + nro);
     int ic =
         (int)
             numero(
-                "SELECT min(ic.id) FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON"
-                    + " sc.id=ic.solicitud_compra_id JOIN ordenes_pago op ON op.id=sc.orden_pago_id"
-                    + " WHERE op.interes_id=?",
+                "SELECT min(ic.nro_solicitud) FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON"
+                    + " sc.nro_solicitud=ic.nro_solicitud JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden"
+                    + " WHERE op.nro_tarjeta=?",
                 tarjeta);
     assertEquals(1, ok(coor, "EXPORTARMATRICULAS", "" + ic).archivos().size());
     ok(coor, "LISTAREXPORTACIONES");
@@ -175,13 +175,13 @@ class CorreoServidorFinancieroTest {
                 "Ingenieria",
                 "SCZ")
             .tarjeta();
-    ok(coor, "ASIGNARPROSPECTO", "" + t.id(), "" + vendedor.id());
+    ok(coor, "ASIGNARPROSPECTO", "" + t.nro(), "" + vendedor.correo());
     PagoService pagos = new PagoService(db);
-    var o = pagos.generar(vendedor, t.id(), null, null);
-    pagos.registrarComprobante(vendedor, o.pagoId(), pdf(), null);
+    var o = pagos.generar(vendedor, t.nro(), null, null);
+    pagos.registrarComprobante(vendedor, o.nro(), pdf(), null);
     var pool = Executors.newFixedThreadPool(2);
     try {
-      Callable<String> llamada = () -> ejecutar(coor, "APROBARPAGO", "" + o.pagoId()).resultado();
+      Callable<String> llamada = () -> ejecutar(coor, "APROBARPAGO", "" + o.nro()).resultado();
       var respuestas = pool.invokeAll(List.of(llamada, llamada));
       int exitos = 0;
       for (var f : respuestas) if (f.get().equals("Éxito")) exitos++;
@@ -193,13 +193,13 @@ class CorreoServidorFinancieroTest {
         1,
         numero(
             "SELECT count(*) FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON"
-                + " sc.id=ic.solicitud_compra_id WHERE sc.orden_pago_id=?",
-            o.id()));
+                + " sc.nro_solicitud=ic.nro_solicitud WHERE sc.nro_orden=?",
+            o.nro()));
     assertEquals(
         1,
         numero(
             "SELECT count(*) FROM comisiones co JOIN solicitudes_compra sc ON"
-                + " sc.id=co.solicitud_compra_id WHERE sc.orden_pago_id=?",
-            o.id()));
+                + " sc.nro_solicitud=co.nro_solicitud WHERE sc.nro_orden=?",
+            o.nro()));
   }
 }

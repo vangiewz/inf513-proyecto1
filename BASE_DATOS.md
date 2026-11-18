@@ -13,16 +13,28 @@ P1 correo es la entrega actual. P2 web sigue en desarrollo: ambos proyectos usar
 
 Correo consulta directamente las tablas del CRM. No requiere ejecutar Laravel ni abrir la web. No crear otra base de produccion para correo.
 
-## Claves y relaciones (17/11/2026)
+## Claves de diseño y vigencia (17/11/2026)
 
-Migracion aplicada en produccion: `sql/migraciones/2026-11-17_claves_catalogo.sql` (respaldo previo en `.secrets/respaldos/`).
-Siguiendo la clase 46 del docente (ninguna tabla sin relacion; sin un `id` extra cuando la tabla ya tiene su clave):
+Migraciones aplicadas en produccion, en orden (respaldo previo en `.secrets/respaldos/`):
+`sql/migraciones/2026-11-17_claves_catalogo.sql`, `2026-11-17_claves_diseno.sql` y `2026-11-17_nombres_not_null.sql`.
+Clase 46 del docente: ninguna tabla sin relacion, una sola clave por tabla con el nombre del diseño, **ningun campo `id`**.
+Clase 03: toda credencial lleva fecha de inicio, fecha de fin y rol.
 
-- `catalogo_cache` usa `codigo` como clave primaria (sin `id`); `intereses.external_modulo_id` y
-  `solicitudes_compra.external_modulo_id` la referencian (ON UPDATE CASCADE, ON DELETE RESTRICT).
-- `orden_pago_descuentos` tiene clave `(orden_pago_id, descuento_id)` (sin `id`) y conserva `porcentaje` y `monto`.
-- Resultado: 23 tablas de negocio y 30 claves foraneas; ninguna tabla aislada (`migrations` es de Laravel).
-- P2 web debe replicar el cambio con una migracion de Laravel antes de usar estas tablas.
+| Tipo de clave | Tablas |
+|---|---|
+| Natural | `usuarios(correo)`, `prospectos(documento)`, `descuentos(codigo)`, `motivos_perdida(nombre)`, `roles(nombre)`, `catalogo_cache(codigo)`, `configuraciones(clave)`, `api_tokens(token_hash)`, `programas_responsables(programa_codigo)` |
+| La del dueño (1 a 1) | `pagos(nro_orden)`, `comisiones(nro_solicitud)`, `inscripciones_comerciales(nro_solicitud)` |
+| Correlativo con nombre | `intereses.nro_tarjeta`, `ordenes_pago.nro_orden`, `solicitudes_compra.nro_solicitud`, `interacciones.nro_interaccion`, `movimientos_interes.nro_movimiento`, `recordatorios.nro_recordatorio`, `notificaciones.nro_notificacion`, `log_comandos.nro_registro`, `exportaciones.nro_exportacion`, `comprobantes_pago.nro_comprobante` |
+| Compuesta (N-N con campos propios) | `orden_pago_descuentos(nro_orden, descuento_codigo)` con `porcentaje` y `monto` |
+
+- Cada FK lleva el nombre de la clave a la que apunta o su papel: `vendedor_correo`, `coordinador_correo`, `usuario_correo`,
+  `documento`, `nro_tarjeta`, `modulo_codigo`... Las que apuntan a usuarios, prospectos, motivos y descuentos son
+  `ON UPDATE CASCADE`: cambiar un correo o el nombre de un motivo se propaga solo.
+- `usuarios.fecha_inicio` y `usuarios.fecha_fin` (CHECK `fecha_fin >= fecha_inicio`): fuera de vigencia, todo comando se
+  responde "Denegado".
+- Resultado: 23 tablas de negocio y 30 claves foraneas; ninguna tabla aislada. `migrations` es la tabla de control de
+  Laravel (P2): queda pendiente decidir con el P2 que hacer con ella antes de la defensa.
+- **P2 web debe replicar estas claves** en sus migraciones y modelos (`$primaryKey`, `$incrementing`, `$keyType`).
 
 ## Estructura y referencias
 

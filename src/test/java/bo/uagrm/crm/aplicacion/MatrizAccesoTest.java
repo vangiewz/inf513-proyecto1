@@ -21,10 +21,13 @@ class MatrizAccesoTest {
       new DatabaseService("jdbc:postgresql://0.0.0.0:1/ninguna", "x", "x");
   private final ResponseFormatter fmt = new ResponseFormatter();
   private final CommandParser parser = new CommandParser();
+  private static final java.time.LocalDate HOY = java.time.LocalDate.now();
   private final Usuario vendedor =
-      new Usuario(3, "Vendedor", "Uno", "v@example.com", "70000003", Rol.VENDEDOR, "activo");
+      new Usuario(
+          "v@example.com", "Vendedor", "Uno", "70000003", Rol.VENDEDOR, "activo", HOY, HOY.plusYears(1));
   private final Usuario coordinador =
-      new Usuario(2, "Coord", "Uno", "c@example.com", "70000002", Rol.COORDINADOR, "activo");
+      new Usuario(
+          "c@example.com", "Coord", "Uno", "70000002", Rol.COORDINADOR, "activo", HOY, HOY.plusYears(1));
 
   private String resultado(RolCommandProcessor p, String asunto, Usuario u) {
     return p.procesar(parser.parse(asunto, u == null ? "x@example.com" : u.correo(), null), u)

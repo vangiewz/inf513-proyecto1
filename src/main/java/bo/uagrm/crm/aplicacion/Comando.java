@@ -16,21 +16,22 @@ public enum Comando {
       "CU1", "rol?", "Lista los usuarios, opcionalmente de un rol", "LISTARUSUARIOS[\"vendedor\"]"),
   INSERTARUSUARIO(
       "CU1",
-      "nombre,apellido,correo,telefono,rol",
-      "Registra un usuario (administrador, coordinador o vendedor)",
+      "nombre,apellido,correo,telefono,rol,fecha_inicio?,fecha_fin?",
+      "Registra un usuario (administrador, coordinador o vendedor) con la vigencia de su credencial"
+          + " (por omisión, un año desde hoy)",
       "INSERTARUSUARIO[\"Ana\",\"Rojas"
-          + " Vaca\",\"ana.rojas@example.com\",\"71234567\",\"vendedor\"]"),
+          + " Vaca\",\"ana.rojas@example.com\",\"71234567\",\"vendedor\",\"2026-11-18\",\"2027-06-30\"]"),
   MODIFICARUSUARIO(
       "CU1",
-      "id,nombre,apellido,correo,telefono,rol,estado",
-      "Modifica los datos, el rol o el estado (activo/inactivo) de un usuario",
-      "MODIFICARUSUARIO[\"4\",\"Ana\",\"Rojas"
-          + " Vaca\",\"ana.rojas@example.com\",\"71234567\",\"coordinador\",\"activo\"]"),
+      "correo,nombre,apellido,telefono,rol,estado,fecha_inicio?,fecha_fin?,correo_nuevo?",
+      "Modifica los datos, el rol, el estado (activo/inactivo), la vigencia o el correo de un usuario",
+      "MODIFICARUSUARIO[\"ana.rojas@example.com\",\"Ana\",\"Rojas"
+          + " Vaca\",\"71234567\",\"coordinador\",\"activo\",\"2026-11-18\",\"2027-12-31\"]"),
   ELIMINARUSUARIO(
       "CU1",
-      "id",
+      "correo",
       "Da de baja a un usuario y devuelve sus prospectos abiertos a la bolsa común",
-      "ELIMINARUSUARIO[\"4\"]"),
+      "ELIMINARUSUARIO[\"ana.rojas@example.com\"]"),
 
   LISTAROFERTA(
       "CU2",
@@ -74,16 +75,16 @@ public enum Comando {
       "ELIMINARPROSPECTO[\"4715292\"]"),
   ASIGNARCOORDINADOR(
       "CU2",
-      "codigo_programa,id_coordinador",
+      "codigo_programa,correo_coordinador",
       "Pone un programa y sus módulos a cargo de un coordinador",
-      "ASIGNARCOORDINADOR[\"desarrollo-web\",\"2\"]"),
+      "ASIGNARCOORDINADOR[\"desarrollo-web\",\"coordinador@example.com\"]"),
 
   LISTARBOLSA("CU3", "", "Lista los prospectos sin vendedor (bolsa común)", "LISTARBOLSA[]"),
   ASIGNARPROSPECTO(
       "CU3",
-      "id_tarjeta,id_vendedor",
+      "nro_tarjeta,correo_vendedor",
       "Asigna un prospecto a un vendedor",
-      "ASIGNARPROSPECTO[\"7\",\"3\"]"),
+      "ASIGNARPROSPECTO[\"7\",\"vendedor@example.com\"]"),
   ASIGNARAUTOMATICO(
       "CU3",
       "",
@@ -93,7 +94,7 @@ public enum Comando {
   VERTABLERO("CU4", "", "Muestra el tablero Kanban del embudo de ventas", "VERTABLERO[]"),
   MOVERTARJETA(
       "CU4",
-      "id_tarjeta,estado",
+      "nro_tarjeta,estado",
       "Mueve a Nuevo, Contactado o Interesado; el pago determina las etapas financieras",
       "MOVERTARJETA[\"7\",\"En Contacto\"]"),
 
@@ -105,24 +106,28 @@ public enum Comando {
       "INSERTARMOTIVO[\"Prefiere clases presenciales\",\"Incompatibilidad\"]"),
   MODIFICARMOTIVO(
       "CU5",
-      "id,nombre,categoria",
-      "Modifica un motivo o su categoría",
-      "MODIFICARMOTIVO[\"10\",\"Prefiere modalidad presencial\",\"Incompatibilidad\"]"),
-  ELIMINARMOTIVO("CU5", "id", "Elimina un motivo que no se haya usado", "ELIMINARMOTIVO[\"10\"]"),
+      "motivo,nombre_nuevo,categoria",
+      "Cambia el nombre de un motivo o su categoría",
+      "MODIFICARMOTIVO[\"Prefiere clases presenciales\",\"Prefiere modalidad presencial\",\"Incompatibilidad\"]"),
+  ELIMINARMOTIVO(
+      "CU5",
+      "motivo",
+      "Elimina un motivo que no se haya usado",
+      "ELIMINARMOTIVO[\"Prefiere modalidad presencial\"]"),
   MARCARPERDIDO(
       "CU5",
-      "id_tarjeta,id_motivo,detalle?",
-      "Marca una tarjeta como Perdido; el motivo es obligatorio",
-      "MARCARPERDIDO[\"7\",\"3\",\"Trabaja por las noches\"]"),
+      "nro_tarjeta,motivo,detalle?",
+      "Marca una tarjeta como Perdido; el motivo (su nombre, ver LISTARMOTIVOS) es obligatorio",
+      "MARCARPERDIDO[\"7\",\"Horario incompatible con su trabajo\",\"Trabaja por las noches\"]"),
 
   VALIDARCONVERSION(
       "CU6",
-      "id_tarjeta",
+      "nro_tarjeta",
       "Revisa si los datos están completos para la matrícula",
       "VALIDARCONVERSION[\"7\"]"),
   CONVERTIRPROSPECTO(
       "CU6",
-      "id_tarjeta",
+      "nro_tarjeta",
       "Comprueba la inscripcion confirmada mediante pago aprobado por APROBARPAGO",
       "CONVERTIRPROSPECTO[\"7\"]"),
   LISTARMATRICULAS(
@@ -133,39 +138,39 @@ public enum Comando {
 
   GENERARORDEN(
       "CU6",
-      "id_tarjeta,codigos_modulos?,codigos_descuentos?",
+      "nro_tarjeta,codigos_modulos?,codigos_descuentos?",
       "Genera una orden y referencia de pago demostrativa; codigos multiples separados por punto y"
           + " coma",
       "GENERARORDEN[\"7\",\"desarrollo-web-m1;desarrollo-web-m2\"]"),
   LISTARORDENES(
       "CU6", "estado_pago?", "Lista las ordenes y pagos de su alcance", "LISTARORDENES[]"),
-  VERORDEN("CU6", "id_orden", "Consulta la orden y sus modulos", "VERORDEN[\"1\"]"),
+  VERORDEN("CU6", "nro_orden", "Consulta la orden y sus modulos", "VERORDEN[\"1\"]"),
   LISTARDESCUENTOS("CU6", "", "Lista los descuentos activos para una orden", "LISTARDESCUENTOS[]"),
   LISTARPAGOS(
       "CU6", "estado?", "Consulta pagos dentro de su alcance", "LISTARPAGOS[\"En revision\"]"),
   REGISTRARCOMPROBANTE(
       "CU6",
-      "id_pago,observacion?",
+      "nro_orden,observacion?",
       "Adjunta un unico comprobante PNG, JPEG, GIF, WebP o PDF (hasta 5 MB)",
       "REGISTRARCOMPROBANTE[\"1\",\"Deposito realizado\"] con recibo.pdf adjunto"),
   VERCOMPROBANTE(
       "CU6",
-      "id_pago,id_comprobante?",
+      "nro_orden,nro_comprobante?",
       "Devuelve el comprobante adjunto y el historial de revisiones",
       "VERCOMPROBANTE[\"1\"]"),
   APROBARPAGO(
       "CU6",
-      "id_pago,observacion?",
+      "nro_orden,observacion?",
       "Aprueba el pago, valida la ficha y confirma las inscripciones y comisiones",
       "APROBARPAGO[\"1\",\"Comprobante verificado\"]"),
   RECHAZARPAGO(
       "CU6",
-      "id_pago,motivo",
+      "nro_orden,motivo",
       "Rechaza un comprobante para que el vendedor lo corrija",
       "RECHAZARPAGO[\"1\",\"El monto no coincide\"]"),
   EXPORTARMATRICULAS(
       "CU6",
-      "id_inscripcion?",
+      "nro_solicitud?",
       "Prepara un CSV adjunto para el SIS; la API del Grupo 06 aun no esta disponible",
       "EXPORTARMATRICULAS[]"),
   LISTAREXPORTACIONES(
@@ -175,34 +180,34 @@ public enum Comando {
       "LISTAREXPORTACIONES[]"),
   VEREXPORTACION(
       "CU6",
-      "id_exportacion",
+      "nro_exportacion",
       "Recupera el CSV de una preparacion sin duplicarla",
       "VEREXPORTACION[\"1\"]"),
   REGISTRARRESULTADOSIS(
       "CU6",
-      "id_exportacion,estado,constancia",
+      "nro_exportacion,estado,constancia",
       "Registra una constancia manual: preparada, exportada, recibida o error",
       "REGISTRARRESULTADOSIS[\"1\",\"recibida\",\"Confirmacion facilitada por el SIS\"]"),
 
   REGISTRARINTERACCION(
       "CU7",
-      "id_tarjeta,tipo,descripcion",
+      "nro_tarjeta,tipo,descripcion",
       "Registra una interacción o nota (tipo: Llamada, WhatsApp, Correo, Reunión o Nota)",
       "REGISTRARINTERACCION[\"7\",\"WhatsApp\",\"Se envió el PDF del diplomado\"]"),
   PROGRAMARRECORDATORIO(
       "CU7",
-      "id_tarjeta,fecha_programada,descripcion",
+      "nro_tarjeta,fecha_programada,descripcion",
       "Programa un recordatorio (AAAA-MM-DD HH:MM); llega por correo a esa hora",
       "PROGRAMARRECORDATORIO[\"7\",\"2026-10-15 10:00\",\"Llamar para confirmar el pago\"]"),
   LISTARRECORDATORIOS("CU7", "", "Lista sus recordatorios pendientes", "LISTARRECORDATORIOS[]"),
   COMPLETARRECORDATORIO(
       "CU7",
-      "id_recordatorio,resultado",
+      "nro_recordatorio,resultado",
       "Marca un recordatorio como realizado",
       "COMPLETARRECORDATORIO[\"5\",\"Se contacto al prospecto\"]"),
   VERHISTORIAL(
       "CU7",
-      "id_tarjeta",
+      "nro_tarjeta",
       "Bitácora cronológica de una tarjeta: movimientos, interacciones y recordatorios",
       "VERHISTORIAL[\"7\"]"),
   VERBITACORA(

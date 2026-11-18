@@ -14,11 +14,11 @@ import java.util.*;
 
 /** CU6. Orden, comprobante, revision e inscripcion sobre las mismas filas que Laravel. */
 public final class PagoService {
+  /** Orden de pago; su pago es 1 a 1 y comparte la clave nro_orden. */
   public record Orden(
-      int id,
-      int tarjetaId,
-      int vendedorId,
-      int pagoId,
+      int nro,
+      int nroTarjeta,
+      String vendedorCorreo,
       String codigoPago,
       String prospecto,
       BigDecimal subtotal,
@@ -28,31 +28,29 @@ public final class PagoService {
       String estadoPago,
       String fecha) {
     public static final String[] COLUMNAS = {
-      "Orden", "Tarjeta", "Prospecto", "Total (Bs)", "Pago", "Estado", "Codigo de referencia"
+      "Orden", "Tarjeta", "Prospecto", "Total (Bs)", "Estado del pago", "Codigo de referencia"
     };
 
     public String[] fila() {
-      return new String[] {
-        "" + id, "" + tarjetaId, prospecto, texto(total), "" + pagoId, estadoPago, codigoPago
-      };
+      return new String[] {"" + nro, "" + nroTarjeta, prospecto, texto(total), estadoPago, codigoPago};
     }
   }
 
   public record Comprobante(
-      int id,
-      int pagoId,
+      int nro,
+      int nroOrden,
       String nombre,
       String mime,
       String fecha,
       String estado,
       String observacion) {
     public static final String[] COLUMNAS = {
-      "ID", "Pago", "Archivo", "Tipo", "Fecha", "Estado", "Observacion"
+      "Nro.", "Orden", "Archivo", "Tipo", "Fecha", "Estado", "Observacion"
     };
 
     public String[] fila() {
       return new String[] {
-        "" + id, "" + pagoId, nombre, mime, fecha, estado, observacion == null ? "" : observacion
+        "" + nro, "" + nroOrden, nombre, mime, fecha, estado, observacion == null ? "" : observacion
       };
     }
   }
@@ -61,11 +59,11 @@ public final class PagoService {
       List.of("Pendiente de pago", "En revision", "Pago aprobado", "Pago rechazado");
   private static final String ORDEN_SQL =
       """
-      SELECT op.id,op.interes_id,op.vendedor_id,op.subtotal,op.descuento_total,op.total,op.estado,
-      pg.id AS pago_id,pg.codigo_qr,pg.estado AS estado_pago,op.fecha_generacion,
+      SELECT op.nro_orden,op.nro_tarjeta,op.vendedor_correo,op.subtotal,op.descuento_total,op.total,op.estado,
+      pg.codigo_qr,pg.estado AS estado_pago,op.fecha_generacion,
       p.nombre || ' ' || p.apellido AS prospecto
-      FROM ordenes_pago op JOIN intereses i ON i.id=op.interes_id
-      JOIN prospectos p ON p.id=i.prospecto_id JOIN pagos pg ON pg.orden_pago_id=op.id
+      FROM ordenes_pago op JOIN intereses i ON i.nro_tarjeta=op.nro_tarjeta
+      JOIN prospectos p ON p.documento=i.documento JOIN pagos pg ON pg.nro_orden=op.nro_orden
       """;
   private final DatabaseService db;
 
@@ -75,10 +73,9 @@ public final class PagoService {
 
   private static Orden de(ResultSet r) throws SQLException {
     return new Orden(
-        r.getInt("id"),
-        r.getInt("interes_id"),
-        r.getInt("vendedor_id"),
-        r.getInt("pago_id"),
+        r.getInt("nro_orden"),
+        r.getInt("nro_tarjeta"),
+        r.getString("vendedor_correo"),
         r.getString("codigo_qr"),
         r.getString("prospecto"),
         r.getBigDecimal("subtotal"),
@@ -90,12 +87,12 @@ public final class PagoService {
   }
 
   private static String alcance(Usuario u) {
-    return Alcance.propio(u) + (u.rol() == Rol.VENDEDOR ? " AND op.vendedor_id=?" : "");
+    return Alcance.propio(u) + (u.rol() == Rol.VENDEDOR ? " AND op.vendedor_correo=?" : "");
   }
 
   private static Object[] args(Usuario u, Object... previos) {
     var values = new ArrayList<Object>(Arrays.asList(Alcance.despues(u, previos)));
-    if (u.rol() == Rol.VENDEDOR) values.add(u.id());
+    if (u.rol() == Rol.VENDEDOR) values.add(u.correo());
     return values.toArray();
   }
 
@@ -108,20 +105,21 @@ public final class PagoService {
     if (uno(
             c,
             r -> 1,
-            "SELECT 1 FROM usuarios WHERE id=? AND estado='activo' AND rol=?",
-            u.id(),
+            "SELECT 1 FROM usuarios WHERE correo=? AND estado='activo' AND rol=?"
+                + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin",
+            u.correo(),
             u.rol().nombre())
         == null) throw new CrmException("Su usuario o rol cambio; se requiere una cuenta activa.");
   }
 
-  private static Orden porPago(Connection c, Usuario u, int id, boolean bloquear)
+  private static Orden porPago(Connection c, Usuario u, int nro, boolean bloquear)
       throws SQLException, CrmException {
     Orden o =
         uno(
             c,
             PagoService::de,
-            ORDEN_SQL + " WHERE pg.id=? AND " + alcance(u) + (bloquear ? " FOR UPDATE OF pg" : ""),
-            args(u, id));
+            ORDEN_SQL + " WHERE pg.nro_orden=? AND " + alcance(u) + (bloquear ? " FOR UPDATE OF pg" : ""),
+            args(u, nro));
     if (o == null) throw new CrmException("El pago no existe o no pertenece a su alcance.");
     return o;
   }
@@ -132,7 +130,7 @@ public final class PagoService {
       return lista(
           c,
           PagoService::de,
-          ORDEN_SQL + " WHERE (?='' OR pg.estado=?) AND " + alcance(u) + " ORDER BY op.id DESC",
+          ORDEN_SQL + " WHERE (?='' OR pg.estado=?) AND " + alcance(u) + " ORDER BY op.nro_orden DESC",
           args(u, filtro, filtro));
     }
   }
@@ -140,7 +138,7 @@ public final class PagoService {
   public Orden ver(Usuario u, int orden) throws SQLException, CrmException {
     try (Connection c = db.getConnection()) {
       Orden o =
-          uno(c, PagoService::de, ORDEN_SQL + " WHERE op.id=? AND " + alcance(u), args(u, orden));
+          uno(c, PagoService::de, ORDEN_SQL + " WHERE op.nro_orden=? AND " + alcance(u), args(u, orden));
       if (o == null) throw new CrmException("La orden no existe o no pertenece a su alcance.");
       return o;
     }
@@ -151,8 +149,8 @@ public final class PagoService {
     try (Connection c = db.getConnection()) {
       return filas(
           c,
-          "SELECT external_modulo_id,programa_nombre,modulo_nombre,precio_acordado,estado FROM"
-              + " solicitudes_compra WHERE orden_pago_id=? ORDER BY id",
+          "SELECT modulo_codigo,programa_nombre,modulo_nombre,precio_acordado,estado FROM"
+              + " solicitudes_compra WHERE nro_orden=? ORDER BY nro_solicitud",
           orden);
     }
   }
@@ -160,7 +158,7 @@ public final class PagoService {
   public List<String[]> descuentos() throws SQLException {
     try (Connection c = db.getConnection()) {
       return filas(
-          c, "SELECT codigo,nombre,porcentaje FROM descuentos WHERE estado='activo' ORDER BY id");
+          c, "SELECT codigo,nombre,porcentaje FROM descuentos WHERE estado='activo' ORDER BY codigo");
     }
   }
 
@@ -172,12 +170,13 @@ public final class PagoService {
           Interes t = EmbudoService.tarjeta(c, u, tarjeta, true);
           if (t.cerrada())
             throw new CrmException("No se generan ordenes sobre intereses cerrados.");
-          if (t.vendedorId() == null
+          if (t.vendedorCorreo() == null
               || uno(
                       c,
                       r -> 1,
-                      "SELECT 1 FROM usuarios WHERE id=? AND rol='vendedor' AND estado='activo'",
-                      t.vendedorId())
+                      "SELECT 1 FROM usuarios WHERE correo=? AND rol='vendedor' AND estado='activo'"
+                          + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin",
+                      t.vendedorCorreo())
                   == null) throw new CrmException("Asigne primero un vendedor activo.");
           Oferta base = uno(c, Oferta::de, Oferta.SQL + " WHERE o.codigo=?", t.ofertaCodigo());
           if (base == null)
@@ -195,7 +194,7 @@ public final class PagoService {
             if (!f.programaCodigo().equals(base.programaCodigo()))
               throw new CrmException(
                   "Los modulos de una orden deben corresponder al programa de la tarjeta.");
-            if (u.rol() == Rol.COORDINADOR && !Objects.equals(f.coordinadorId(), u.id()))
+            if (u.rol() == Rol.COORDINADOR && !Objects.equals(f.coordinadorCorreo(), u.correo()))
               throw new CrmException("El programa no esta a su cargo.");
             ofertas.add(f);
           }
@@ -210,8 +209,8 @@ public final class PagoService {
             Object[] f =
                 uno(
                     c,
-                    r -> new Object[] {r.getInt(1), r.getBigDecimal(2)},
-                    "SELECT id,porcentaje FROM descuentos WHERE codigo=? AND estado='activo'",
+                    r -> new Object[] {r.getString(1), r.getBigDecimal(2)},
+                    "SELECT codigo,porcentaje FROM descuentos WHERE upper(codigo)=upper(?) AND estado='activo'",
                     codigo);
             if (f == null)
               throw new CrmException("No existe un descuento activo con codigo " + codigo);
@@ -230,12 +229,13 @@ public final class PagoService {
           int orden =
               insertar(
                   c,
+                  "nro_orden",
                   """
-INSERT INTO ordenes_pago(interes_id,vendedor_id,subtotal,descuento_total,total,estado,fecha_generacion,created_at,updated_at)
+INSERT INTO ordenes_pago(nro_tarjeta,vendedor_correo,subtotal,descuento_total,total,estado,fecha_generacion,created_at,updated_at)
 VALUES(?,?,?,?,?,'Pendiente de pago',now(),now(),now())
 """,
-                  t.id(),
-                  t.vendedorId(),
+                  t.nro(),
+                  t.vendedorCorreo(),
                   subtotal,
                   rebaja,
                   total);
@@ -243,7 +243,7 @@ VALUES(?,?,?,?,?,'Pendiente de pago',now(),now(),now())
             actualizar(
                 c,
                 "INSERT INTO"
-                    + " orden_pago_descuentos(orden_pago_id,descuento_id,porcentaje,monto,created_at,updated_at)"
+                    + " orden_pago_descuentos(nro_orden,descuento_codigo,porcentaje,monto,created_at,updated_at)"
                     + " VALUES(?,?,?,?,now(),now())",
                 orden,
                 f[0],
@@ -253,7 +253,7 @@ VALUES(?,?,?,?,?,'Pendiente de pago',now(),now(),now())
             actualizar(
                 c,
                 """
-INSERT INTO solicitudes_compra(orden_pago_id,external_anuncio_id,external_modulo_id,programa_nombre,modulo_nombre,modulo_descripcion,precio_acordado,estado,fecha,created_at,updated_at)
+INSERT INTO solicitudes_compra(nro_orden,anuncio_codigo,modulo_codigo,programa_nombre,modulo_nombre,modulo_descripcion,precio_acordado,estado,fecha,created_at,updated_at)
 VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
 """,
                 orden,
@@ -272,11 +272,10 @@ VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
                       .replace("-", "")
                       .substring(0, 10)
                       .toUpperCase(Locale.ROOT);
-          int pago =
-              insertar(
+          actualizar(
                   c,
                   "INSERT INTO"
-                      + " pagos(orden_pago_id,monto,codigo_qr,estado,fecha_generacion,created_at,updated_at)"
+                      + " pagos(nro_orden,monto,codigo_qr,estado,fecha_generacion,created_at,updated_at)"
                       + " VALUES(?,?,?,'Pendiente de pago',now(),now(),now())",
                   orden,
                   total,
@@ -292,7 +291,7 @@ VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
                   + " por Bs "
                   + texto(total)
                   + ". Referencia de demostracion; no es un cobro bancario.");
-          return porPago(c, u, pago, false);
+          return porPago(c, u, orden, false);
         });
   }
 
@@ -306,7 +305,7 @@ VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
         c -> {
           actor(c, u, false);
           Orden o = porPago(c, u, pago, true);
-          Interes t = EmbudoService.tarjeta(c, u, o.tarjetaId(), true);
+          Interes t = EmbudoService.tarjeta(c, u, o.nroTarjeta(), true);
           if (!List.of("Pendiente de pago", "Pago rechazado").contains(o.estadoPago()))
             throw new CrmException("El pago ya esta en revision o fue aprobado.");
           if (t.cerrada())
@@ -314,7 +313,7 @@ VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
           actualizar(
               c,
               """
-INSERT INTO comprobantes_pago(pago_id,archivo,nombre_archivo,mime,fecha_envio,observacion,estado_revision,created_at,updated_at)
+INSERT INTO comprobantes_pago(nro_orden,archivo,nombre_archivo,mime,fecha_envio,observacion,estado_revision,created_at,updated_at)
 VALUES(?,?,?,?,now(),?,'En revision',now(),now())
 """,
               pago,
@@ -341,31 +340,31 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
           c,
           r ->
               new Comprobante(
-                  r.getInt("id"),
+                  r.getInt("nro_comprobante"),
                   pago,
                   r.getString("nombre_archivo"),
                   r.getString("mime"),
                   texto(r.getTimestamp("fecha_envio")),
                   r.getString("estado_revision"),
                   r.getString("observacion")),
-          "SELECT id,nombre_archivo,mime,fecha_envio,estado_revision,observacion FROM"
-              + " comprobantes_pago WHERE pago_id=? ORDER BY id DESC",
+          "SELECT nro_comprobante,nombre_archivo,mime,fecha_envio,estado_revision,observacion FROM"
+              + " comprobantes_pago WHERE nro_orden=? ORDER BY nro_comprobante DESC",
           pago);
     }
   }
 
-  public Adjunto archivo(Usuario u, int pago, Integer id) throws SQLException, CrmException {
+  public Adjunto archivo(Usuario u, int pago, Integer nro) throws SQLException, CrmException {
     try (Connection c = db.getConnection()) {
       porPago(c, u, pago, false);
       String[] f =
           uno(
               c,
               r -> new String[] {r.getString(1), r.getString(2)},
-              "SELECT nombre_archivo,archivo FROM comprobantes_pago WHERE pago_id=? AND (?::int IS"
-                  + " NULL OR id=?) ORDER BY id DESC LIMIT 1",
+              "SELECT nombre_archivo,archivo FROM comprobantes_pago WHERE nro_orden=? AND (?::int IS"
+                  + " NULL OR nro_comprobante=?) ORDER BY nro_comprobante DESC LIMIT 1",
               pago,
-              id,
-              id);
+              nro,
+              nro);
       if (f == null) throw new CrmException("No existe ese comprobante para el pago.");
       return Adjunto.desdeDataUrl(f[0], f[1]);
     }
@@ -379,14 +378,14 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
           Orden o = porPago(c, u, pago, true);
           if (!"En revision".equals(o.estadoPago()))
             throw new CrmException("Solo se rechaza un pago en revision.");
-          Interes t = EmbudoService.tarjeta(c, u, o.tarjetaId(), true);
+          Interes t = EmbudoService.tarjeta(c, u, o.nroTarjeta(), true);
           if (t.estado().equals("Convertido"))
             throw new CrmException("La inscripcion ya fue confirmada.");
           estados(c, o, "Pago rechazado", nota);
           actualizar(
               c,
               "UPDATE comprobantes_pago SET estado_revision='Pago rechazado',updated_at=now() WHERE"
-                  + " pago_id=? AND estado_revision='En revision'",
+                  + " nro_orden=? AND estado_revision='En revision'",
               pago);
           evento(c, u, t, "Pago enviado", "Nota comercial", "Comprobante rechazado: " + nota);
           return porPago(c, u, pago, false);
@@ -402,14 +401,14 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
           if (!"En revision".equals(o.estadoPago()))
             throw new CrmException(
                 "Solo se aprueba un pago en revision; no se repite una aprobacion.");
-          Integer prospecto =
+          String prospecto =
               uno(
                   c,
-                  r -> r.getInt(1),
-                  "SELECT prospecto_id FROM intereses WHERE id=?",
-                  o.tarjetaId());
-          uno(c, r -> r.getInt(1), "SELECT id FROM prospectos WHERE id=? FOR UPDATE", prospecto);
-          Interes t = EmbudoService.tarjeta(c, u, o.tarjetaId(), true);
+                  r -> r.getString(1),
+                  "SELECT documento FROM intereses WHERE nro_tarjeta=?",
+                  o.nroTarjeta());
+          uno(c, r -> r.getString(1), "SELECT documento FROM prospectos WHERE documento=? FOR UPDATE", prospecto);
+          Interes t = EmbudoService.tarjeta(c, u, o.nroTarjeta(), true);
           if (t.cerrada())
             throw new CrmException("La tarjeta esta cerrada; revise su estado antes de aprobar.");
           List<String> faltan = faltantes(c, t);
@@ -421,7 +420,7 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
           if (uno(
                   c,
                   r -> 1,
-                  "SELECT 1 FROM comprobantes_pago WHERE pago_id=? AND estado_revision='En"
+                  "SELECT 1 FROM comprobantes_pago WHERE nro_orden=? AND estado_revision='En"
                       + " revision'",
                   pago)
               == null) throw new CrmException("No hay un comprobante en revision.");
@@ -437,18 +436,18 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
               lista(
                   c,
                   r -> new Object[] {r.getInt(1), r.getString(2), r.getBigDecimal(3)},
-                  "SELECT id,external_modulo_id,precio_acordado FROM solicitudes_compra WHERE"
-                      + " orden_pago_id=? ORDER BY id FOR UPDATE",
-                  o.id());
+                  "SELECT nro_solicitud,modulo_codigo,precio_acordado FROM solicitudes_compra WHERE"
+                      + " nro_orden=? ORDER BY nro_solicitud FOR UPDATE",
+                  o.nro());
           if (ventas.isEmpty()) throw new CrmException("La orden no tiene modulos.");
           for (Object[] venta : ventas) {
             if (uno(
                     c,
                     r -> 1,
                     """
-SELECT 1 FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.id=ic.solicitud_compra_id
-JOIN ordenes_pago op ON op.id=sc.orden_pago_id JOIN intereses i ON i.id=op.interes_id
-WHERE i.prospecto_id=? AND sc.external_modulo_id=? LIMIT 1
+SELECT 1 FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.nro_solicitud=ic.nro_solicitud
+JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN intereses i ON i.nro_tarjeta=op.nro_tarjeta
+WHERE i.documento=? AND sc.modulo_codigo=? LIMIT 1
 """,
                     prospecto,
                     venta[1])
@@ -458,12 +457,12 @@ WHERE i.prospecto_id=? AND sc.external_modulo_id=? LIMIT 1
             actualizar(
                 c,
                 "INSERT INTO"
-                    + " inscripciones_comerciales(solicitud_compra_id,fecha_confirmacion,estado,created_at,updated_at)"
+                    + " inscripciones_comerciales(nro_solicitud,fecha_confirmacion,estado,created_at,updated_at)"
                     + " VALUES(?,now(),'Confirmada',now(),now())",
                 venta[0]);
             actualizar(
                 c,
-                "UPDATE solicitudes_compra SET estado='confirmada',updated_at=now() WHERE id=?",
+                "UPDATE solicitudes_compra SET estado='confirmada',updated_at=now() WHERE nro_solicitud=?",
                 venta[0]);
             BigDecimal comision =
                 ((BigDecimal) venta[2])
@@ -472,9 +471,9 @@ WHERE i.prospecto_id=? AND sc.external_modulo_id=? LIMIT 1
             actualizar(
                 c,
                 "INSERT INTO"
-                    + " comisiones(vendedor_id,solicitud_compra_id,porcentaje,monto,estado,created_at,updated_at)"
+                    + " comisiones(vendedor_correo,nro_solicitud,porcentaje,monto,estado,created_at,updated_at)"
                     + " VALUES(?,?,?,?,'Pendiente',now(),now())",
-                o.vendedorId(),
+                o.vendedorCorreo(),
                 venta[0],
                 porcentaje,
                 comision);
@@ -485,11 +484,11 @@ WHERE i.prospecto_id=? AND sc.external_modulo_id=? LIMIT 1
                     c,
                     Interes::de,
                     Interes.SQL
-                        + " WHERE i.prospecto_id=? AND i.external_modulo_id=? FOR UPDATE OF i",
+                        + " WHERE i.documento=? AND i.modulo_codigo=? FOR UPDATE OF i",
                     prospecto,
                     venta[1]);
-            if (vinculado != null && vinculado.id() != t.id()) {
-              if (vinculado.cerrada() || vinculado.vendedorId() == null)
+            if (vinculado != null && vinculado.nro() != t.nro()) {
+              if (vinculado.cerrada() || vinculado.vendedorCorreo() == null)
                 throw new CrmException(
                     "Asigne o reactive todos los intereses del programa antes de confirmar la"
                         + " venta.");
@@ -499,18 +498,18 @@ WHERE i.prospecto_id=? AND sc.external_modulo_id=? LIMIT 1
                   vinculado,
                   "Convertido",
                   "Compra validada",
-                  "Modulo inscrito mediante la orden #" + o.id());
+                  "Modulo inscrito mediante la orden #" + o.nro());
             }
           }
           estados(c, o, "Pago aprobado", nota);
           actualizar(
               c,
               "UPDATE comprobantes_pago SET estado_revision='Pago aprobado',updated_at=now() WHERE"
-                  + " pago_id=? AND estado_revision='En revision'",
+                  + " nro_orden=? AND estado_revision='En revision'",
               pago);
           actualizar(
               c,
-              "UPDATE prospectos SET estado='Convertido',updated_at=now() WHERE id=?",
+              "UPDATE prospectos SET estado='Convertido',updated_at=now() WHERE documento=?",
               prospecto);
           evento(
               c,
@@ -540,11 +539,11 @@ WHERE i.prospecto_id=? AND sc.external_modulo_id=? LIMIT 1
         uno(
             c,
             r -> new String[] {r.getString(1), r.getString(2)},
-            "SELECT profesion,ubicacion FROM prospectos WHERE id=?",
-            p.id());
+            "SELECT profesion,ubicacion FROM prospectos WHERE documento=?",
+            p.ci());
     if (ficha[0] == null || ficha[0].isBlank()) out.add("profesion");
     if (ficha[1] == null || ficha[1].isBlank()) out.add("ubicacion");
-    if (t.vendedorId() == null) out.add("vendedor asignado");
+    if (t.vendedorCorreo() == null) out.add("vendedor asignado");
     return out;
   }
 
@@ -554,12 +553,12 @@ WHERE i.prospecto_id=? AND sc.external_modulo_id=? LIMIT 1
         c,
         "UPDATE pagos SET estado=?,fecha_validacion=CASE WHEN ? IN ('Pago aprobado','Pago"
             + " rechazado') THEN now() ELSE fecha_validacion"
-            + " END,observacion_validacion=?,updated_at=now() WHERE id=?",
+            + " END,observacion_validacion=?,updated_at=now() WHERE nro_orden=?",
         estado,
         estado,
         nota,
-        o.pagoId());
-    actualizar(c, "UPDATE ordenes_pago SET estado=?,updated_at=now() WHERE id=?", estado, o.id());
+        o.nro());
+    actualizar(c, "UPDATE ordenes_pago SET estado=?,updated_at=now() WHERE nro_orden=?", estado, o.nro());
   }
 
   private static void evento(
@@ -567,19 +566,19 @@ WHERE i.prospecto_id=? AND sc.external_modulo_id=? LIMIT 1
       throws SQLException {
     actualizar(
         c,
-        "UPDATE intereses SET estado=?,ultima_actividad_en=now(),updated_at=now() WHERE id=?",
+        "UPDATE intereses SET estado=?,ultima_actividad_en=now(),updated_at=now() WHERE nro_tarjeta=?",
         estado,
-        t.id());
+        t.nro());
     actualizar(
         c,
         "INSERT INTO"
-            + " interacciones(interes_id,usuario_id,tipo,descripcion,fecha,created_at,updated_at)"
+            + " interacciones(nro_tarjeta,usuario_correo,tipo,descripcion,fecha,created_at,updated_at)"
             + " VALUES(?,?,?,?,now(),now(),now())",
-        t.id(),
-        u.id(),
+        t.nro(),
+        u.correo(),
         tipo,
         detalle);
-    EmbudoService.registrarMovimiento(c, t.id(), u.id(), t.estado(), estado, detalle);
+    EmbudoService.registrarMovimiento(c, t.nro(), u.correo(), t.estado(), estado, detalle);
   }
 
   private static List<String> separar(String texto) throws CrmException {

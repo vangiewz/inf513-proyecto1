@@ -90,6 +90,6 @@ Estructura e instalacion en una base nueva: [BASE_DATOS.md](BASE_DATOS.md).
 - La API del Grupo 06 todavia no esta disponible: no se realiza una matriculacion automatica en SIS.
 
 Pruebas y preparacion del entorno aislado: [PRUEBAS.md](PRUEBAS.md).
-Resumen verificado: `doc/pruebas/base-compartida.json`.
+Resumen verificado: `doc/pruebas/integracion-servidor.json` y `PRUEBAS.md`.
 Documento PUDS y diagramas EA regenerados el 17/11/2026 sobre el modelo vigente: `doc/documento_p1.py` y `doc/ea/ea_p1.py`
 (las firmas de las clases y el despacho de comandos se leen del código con `doc/ea/firmas.py`).

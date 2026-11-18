@@ -40,10 +40,10 @@ public final class ReporteService {
       return filas(
           c,
           """
-SELECT e.estado, COUNT(i.id), COALESCE(ROUND(100.0 * COUNT(i.id) / NULLIF(SUM(COUNT(i.id)) OVER (), 0), 1), 0.0)
+SELECT e.estado, COUNT(i.nro_tarjeta), COALESCE(ROUND(100.0 * COUNT(i.nro_tarjeta) / NULLIF(SUM(COUNT(i.nro_tarjeta)) OVER (), 0), 1), 0.0)
 FROM (VALUES (1, 'Nuevo'), (2, 'En Contacto'), (3, 'Seguimiento'), (4, 'Promesa de Pago'),
              (5, 'Convertido'), (6, 'Perdido')) AS e (orden, estado)
-LEFT JOIN (intereses i LEFT JOIN catalogo_cache o ON o.codigo = i.external_modulo_id) ON (CASE i.estado WHEN 'Contactado' THEN 'En Contacto' WHEN 'Interesado' THEN 'Seguimiento' WHEN 'Pago enviado' THEN 'Promesa de Pago' WHEN 'En revision' THEN 'Promesa de Pago' ELSE i.estado END) = e.estado AND\s"""
+LEFT JOIN (intereses i LEFT JOIN catalogo_cache o ON o.codigo = i.modulo_codigo) ON (CASE i.estado WHEN 'Contactado' THEN 'En Contacto' WHEN 'Interesado' THEN 'Seguimiento' WHEN 'Pago enviado' THEN 'Promesa de Pago' WHEN 'En revision' THEN 'Promesa de Pago' ELSE i.estado END) = e.estado AND\s"""
               + Alcance.propio(u)
               + """
 
@@ -58,28 +58,28 @@ GROUP BY e.orden, e.estado ORDER BY e.orden""",
           c,
           """
 SELECT v.nombre || ' ' || v.apellido || CASE WHEN v.estado = 'inactivo' THEN ' (inactivo)' ELSE '' END,
-       COUNT(i.id),
-       COUNT(i.id) FILTER (WHERE i.estado NOT IN ('Convertido', 'Perdido')),
-       COUNT(i.id) FILTER (WHERE i.estado = 'Convertido'),
-       COUNT(i.id) FILTER (WHERE i.estado = 'Perdido'),
-       COALESCE(ROUND(100.0 * COUNT(i.id) FILTER (WHERE i.estado = 'Convertido') / NULLIF(COUNT(i.id), 0), 1), 0.0),
+       COUNT(i.nro_tarjeta),
+       COUNT(i.nro_tarjeta) FILTER (WHERE i.estado NOT IN ('Convertido', 'Perdido')),
+       COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Convertido'),
+       COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Perdido'),
+       COALESCE(ROUND(100.0 * COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Convertido') / NULLIF(COUNT(i.nro_tarjeta), 0), 1), 0.0),
        COALESCE(SUM(m.monto), 0.00)
 FROM usuarios v
-LEFT JOIN (intereses i LEFT JOIN catalogo_cache o ON o.codigo = i.external_modulo_id) ON i.vendedor_id = v.id AND\s"""
+LEFT JOIN (intereses i LEFT JOIN catalogo_cache o ON o.codigo = i.modulo_codigo) ON i.vendedor_correo = v.correo AND\s"""
               + Alcance.propio(u)
               + """
 
-LEFT JOIN (SELECT origen.prospecto_id,sc.external_modulo_id,SUM(sc.precio_acordado) AS monto
-FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.id=ic.solicitud_compra_id
-JOIN ordenes_pago op ON op.id=sc.orden_pago_id JOIN intereses origen ON origen.id=op.interes_id
-GROUP BY origen.prospecto_id,sc.external_modulo_id) m ON m.prospecto_id=i.prospecto_id AND m.external_modulo_id=i.external_modulo_id
-WHERE v.rol='vendedor' AND (?::int=0 OR v.id=?)
-GROUP BY v.id
-ORDER BY COUNT(i.id) FILTER (WHERE i.estado = 'Convertido') DESC, v.id""",
+LEFT JOIN (SELECT origen.documento,sc.modulo_codigo,SUM(sc.precio_acordado) AS monto
+FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.nro_solicitud=ic.nro_solicitud
+JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN intereses origen ON origen.nro_tarjeta=op.nro_tarjeta
+GROUP BY origen.documento,sc.modulo_codigo) m ON m.documento=i.documento AND m.modulo_codigo=i.modulo_codigo
+WHERE v.rol='vendedor' AND (?::text='' OR v.correo=?)
+GROUP BY v.correo
+ORDER BY COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Convertido') DESC, v.correo""",
           Alcance.params(
               u,
-              u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR ? u.id() : 0,
-              u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR ? u.id() : 0));
+              u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR ? u.correo() : "",
+              u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR ? u.correo() : ""));
     }
   }
 
@@ -88,15 +88,15 @@ ORDER BY COUNT(i.id) FILTER (WHERE i.estado = 'Convertido') DESC, v.id""",
       return filas(
           c,
           """
-SELECT mp.categoria, mp.nombre, COUNT(i.id),
-       COALESCE(ROUND(100.0 * COUNT(i.id) / NULLIF(SUM(COUNT(i.id)) OVER (), 0), 1), 0.0)
+SELECT mp.categoria, mp.nombre, COUNT(i.nro_tarjeta),
+       COALESCE(ROUND(100.0 * COUNT(i.nro_tarjeta) / NULLIF(SUM(COUNT(i.nro_tarjeta)) OVER (), 0), 1), 0.0)
 FROM motivos_perdida mp
-LEFT JOIN (intereses i LEFT JOIN catalogo_cache o ON o.codigo = i.external_modulo_id) ON i.motivo_perdida_id = mp.id AND\s"""
+LEFT JOIN (intereses i LEFT JOIN catalogo_cache o ON o.codigo = i.modulo_codigo) ON i.motivo_perdida = mp.nombre AND\s"""
               + Alcance.propio(u)
               + """
 
-GROUP BY mp.id
-ORDER BY COUNT(i.id) DESC, mp.categoria, mp.nombre""",
+GROUP BY mp.nombre
+ORDER BY COUNT(i.nro_tarjeta) DESC, mp.categoria, mp.nombre""",
           Alcance.params(u));
     }
   }
@@ -106,15 +106,15 @@ ORDER BY COUNT(i.id) DESC, mp.categoria, mp.nombre""",
       return filas(
           c,
           """
-SELECT mp.categoria, COUNT(i.id),
-       COALESCE(ROUND(100.0 * COUNT(i.id) / NULLIF(SUM(COUNT(i.id)) OVER (), 0), 1), 0.0)
+SELECT mp.categoria, COUNT(i.nro_tarjeta),
+       COALESCE(ROUND(100.0 * COUNT(i.nro_tarjeta) / NULLIF(SUM(COUNT(i.nro_tarjeta)) OVER (), 0), 1), 0.0)
 FROM motivos_perdida mp
-LEFT JOIN (intereses i LEFT JOIN catalogo_cache o ON o.codigo = i.external_modulo_id) ON i.motivo_perdida_id = mp.id AND\s"""
+LEFT JOIN (intereses i LEFT JOIN catalogo_cache o ON o.codigo = i.modulo_codigo) ON i.motivo_perdida = mp.nombre AND\s"""
               + Alcance.propio(u)
               + """
 
 GROUP BY mp.categoria
-ORDER BY COUNT(i.id) DESC, mp.categoria""",
+ORDER BY COUNT(i.nro_tarjeta) DESC, mp.categoria""",
           Alcance.params(u));
     }
   }
@@ -124,22 +124,22 @@ ORDER BY COUNT(i.id) DESC, mp.categoria""",
       return filas(
           c,
           """
-SELECT i.external_modulo_id, i.modulo_nombre, COUNT(i.id),
-       COUNT(i.id) FILTER (WHERE i.estado = 'Convertido'),
-       COUNT(i.id) FILTER (WHERE i.estado = 'Perdido'),
+SELECT i.modulo_codigo, i.modulo_nombre, COUNT(i.nro_tarjeta),
+       COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Convertido'),
+       COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Perdido'),
        COALESCE(SUM(m.monto), 0.00)
 FROM intereses i
-LEFT JOIN catalogo_cache o ON o.codigo = i.external_modulo_id
-LEFT JOIN (SELECT origen.prospecto_id,sc.external_modulo_id,SUM(sc.precio_acordado) AS monto
-FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.id=ic.solicitud_compra_id
-JOIN ordenes_pago op ON op.id=sc.orden_pago_id JOIN intereses origen ON origen.id=op.interes_id
-GROUP BY origen.prospecto_id,sc.external_modulo_id) m ON m.prospecto_id=i.prospecto_id AND m.external_modulo_id=i.external_modulo_id
+LEFT JOIN catalogo_cache o ON o.codigo = i.modulo_codigo
+LEFT JOIN (SELECT origen.documento,sc.modulo_codigo,SUM(sc.precio_acordado) AS monto
+FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.nro_solicitud=ic.nro_solicitud
+JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN intereses origen ON origen.nro_tarjeta=op.nro_tarjeta
+GROUP BY origen.documento,sc.modulo_codigo) m ON m.documento=i.documento AND m.modulo_codigo=i.modulo_codigo
 WHERE\s"""
               + Alcance.propio(u)
               + """
 
-GROUP BY i.external_modulo_id, i.modulo_nombre
-ORDER BY COUNT(i.id) DESC, i.external_modulo_id""",
+GROUP BY i.modulo_codigo, i.modulo_nombre
+ORDER BY COUNT(i.nro_tarjeta) DESC, i.modulo_codigo""",
           Alcance.params(u));
     }
   }

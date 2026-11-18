@@ -53,7 +53,7 @@ public final class EmbudoService {
       return lista(
           c,
           Interes::de,
-          Interes.SQL + " WHERE " + Alcance.propio(u) + " ORDER BY i.id",
+          Interes.SQL + " WHERE " + Alcance.propio(u) + " ORDER BY i.nro_tarjeta",
           Alcance.params(u));
     }
   }
@@ -61,7 +61,7 @@ public final class EmbudoService {
   /**
    * Mueve la tarjeta entre las columnas abiertas. Perdido y Convertido tienen su propio comando.
    */
-  public Interes mover(Usuario u, int id, String estado) throws SQLException, CrmException {
+  public Interes mover(Usuario u, int nro, String estado) throws SQLException, CrmException {
     String entrada =
         switch (Valida.normal(estado == null ? "" : estado)) {
           case "en contacto" -> "Contactado";
@@ -73,12 +73,12 @@ public final class EmbudoService {
     if (nuevo.equals("Perdido"))
       throw new CrmException(
           "Para marcar una tarjeta como Perdido use MARCARPERDIDO[\""
-              + id
-              + "\",\"id_motivo\",\"detalle\"]: el motivo es obligatorio. Vea LISTARMOTIVOS[].");
+              + nro
+              + "\",\"motivo\",\"detalle\"]: el motivo es obligatorio. Vea LISTARMOTIVOS[].");
     if (nuevo.equals("Convertido"))
       throw new CrmException(
           "Para convertir use CONVERTIRPROSPECTO[\""
-              + id
+              + nro
               + "\"]: antes se validan los datos para la matrícula.");
     if (nuevo.equals("Pago enviado") || nuevo.equals("En revision"))
       throw new CrmException(
@@ -86,20 +86,20 @@ public final class EmbudoService {
               + " REGISTRARCOMPROBANTE y APROBARPAGO.");
     return db.enTransaccion(
         c -> {
-          Interes t = tarjeta(c, u, id, true);
+          Interes t = tarjeta(c, u, nro, true);
           if (t.estado().equals("Convertido"))
-            throw new CrmException("La tarjeta #" + id + " ya fue convertida en matrícula.");
+            throw new CrmException("La tarjeta #" + nro + " ya fue convertida en matrícula.");
           if (t.estado().equals(nuevo))
-            throw new CrmException("La tarjeta #" + id + " ya está en " + nuevo + ".");
+            throw new CrmException("La tarjeta #" + nro + " ya está en " + nuevo + ".");
           actualizar(
               c,
-              "UPDATE intereses SET estado = ?, motivo_perdida_id = NULL, observacion = NULL,"
-                  + " updated_at = now(), ultima_actividad_en = now() WHERE id = ?",
+              "UPDATE intereses SET estado = ?, motivo_perdida = NULL, observacion = NULL,"
+                  + " updated_at = now(), ultima_actividad_en = now() WHERE nro_tarjeta = ?",
               nuevo,
-              id);
+              nro);
           registrarMovimiento(
-              c, id, u.id(), t.estado(), nuevo, t.estado().equals("Perdido") ? "Reactivada" : null);
-          return tarjeta(c, u, id, false);
+              c, nro, u.correo(), t.estado(), nuevo, t.estado().equals("Perdido") ? "Reactivada" : null);
+          return tarjeta(c, u, nro, false);
         });
   }
 
@@ -107,7 +107,7 @@ public final class EmbudoService {
    * Carga una tarjeta y comprueba que el usuario puede verla (modificar = false) o trabajarla
    * (modificar = true). La usan CU3, CU5, CU6 y CU7.
    */
-  public static Interes tarjeta(Connection c, Usuario u, int id, boolean modificar)
+  public static Interes tarjeta(Connection c, Usuario u, int nro, boolean modificar)
       throws SQLException, CrmException {
     // Al modificar se bloquea la fila (FOR UPDATE) hasta el fin de la transacción: dos usuarios no
     // la cambian a la vez.
@@ -115,34 +115,34 @@ public final class EmbudoService {
         uno(
             c,
             Interes::de,
-            Interes.SQL + " WHERE i.id = ?" + (modificar ? " FOR UPDATE OF i" : ""),
-            id);
-    if (t == null) throw new CrmException("No existe la tarjeta #" + id + ".");
+            Interes.SQL + " WHERE i.nro_tarjeta = ?" + (modificar ? " FOR UPDATE OF i" : ""),
+            nro);
+    if (t == null) throw new CrmException("No existe la tarjeta #" + nro + ".");
     boolean puede =
         switch (u.rol()) {
           case ADMINISTRADOR -> true;
-          case COORDINADOR -> Objects.equals(t.coordinadorId(), u.id());
-          case VENDEDOR -> Objects.equals(t.vendedorId(), u.id());
+          case COORDINADOR -> Objects.equals(t.coordinadorCorreo(), u.correo());
+          case VENDEDOR -> Objects.equals(t.vendedorCorreo(), u.correo());
         };
     if (!puede)
       throw new CrmException(
           u.rol() == Rol.VENDEDOR
               ? "La tarjeta #"
-                  + id
+                  + nro
                   + " no está en su cartera."
-              : "La tarjeta #" + id + " es de un programa que no está a su cargo.");
+              : "La tarjeta #" + nro + " es de un programa que no está a su cargo.");
     return t;
   }
 
   public static void registrarMovimiento(
-      Connection c, int interesId, Integer usuarioId, String anterior, String nuevo, String detalle)
+      Connection c, int nroTarjeta, String usuario, String anterior, String nuevo, String detalle)
       throws SQLException {
     actualizar(
         c,
-        "INSERT INTO movimientos_interes (interes_id, usuario_id, estado_anterior, estado_nuevo,"
+        "INSERT INTO movimientos_interes (nro_tarjeta, usuario_correo, estado_anterior, estado_nuevo,"
             + " detalle) VALUES (?, ?, ?, ?, ?)",
-        interesId,
-        usuarioId,
+        nroTarjeta,
+        usuario,
         anterior,
         nuevo,
         detalle);

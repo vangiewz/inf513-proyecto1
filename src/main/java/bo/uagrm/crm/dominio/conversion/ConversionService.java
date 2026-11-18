@@ -27,16 +27,16 @@ public final class ConversionService {
     this.db = db;
   }
 
-  public List<Requisito> validar(Usuario u, int id) throws SQLException, CrmException {
+  public List<Requisito> validar(Usuario u, int nro) throws SQLException, CrmException {
     try (Connection c = db.getConnection()) {
-      return requisitos(c, EmbudoService.tarjeta(c, u, id, false));
+      return requisitos(c, EmbudoService.tarjeta(c, u, nro, false));
     }
   }
 
-  public Matricula convertir(Usuario u, int id) throws SQLException, CrmException {
+  public Matricula convertir(Usuario u, int nro) throws SQLException, CrmException {
     return db.enTransaccion(
         c -> {
-          Interes t = EmbudoService.tarjeta(c, u, id, true);
+          Interes t = EmbudoService.tarjeta(c, u, nro, true);
           List<String> faltan =
               requisitos(c, t).stream().filter(r -> !r.cumple()).map(Requisito::nombre).toList();
           if (!faltan.isEmpty())
@@ -46,7 +46,7 @@ public final class ConversionService {
                     + ". La conversion se confirma con APROBARPAGO; correo no omite ese"
                     + " control.");
           Matricula m =
-              uno(c, Matricula::de, Matricula.SQL + " WHERE i.id=? ORDER BY m.id LIMIT 1", id);
+              uno(c, Matricula::de, Matricula.SQL + " WHERE i.nro_tarjeta=? ORDER BY m.nro_solicitud LIMIT 1", nro);
           if (m == null)
             throw new CrmException(
                 "No existe una inscripcion comercial confirmada para esta tarjeta.");
@@ -59,7 +59,7 @@ public final class ConversionService {
       return lista(
           c,
           Matricula::de,
-          Matricula.SQL + " WHERE " + Alcance.propio(u) + " ORDER BY m.id DESC",
+          Matricula.SQL + " WHERE " + Alcance.propio(u) + " ORDER BY m.nro_solicitud DESC",
           Alcance.params(u));
     }
   }
@@ -71,12 +71,12 @@ public final class ConversionService {
                 c,
                 r -> 1,
                 """
-SELECT 1 FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.id=ic.solicitud_compra_id
-JOIN ordenes_pago op ON op.id=sc.orden_pago_id JOIN pagos pg ON pg.orden_pago_id=op.id
-JOIN intereses origen ON origen.id=op.interes_id
-WHERE origen.prospecto_id=? AND sc.external_modulo_id=? AND pg.estado='Pago aprobado' AND op.estado='Pago aprobado' AND sc.estado='confirmada' AND ic.estado='Confirmada' LIMIT 1
+SELECT 1 FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.nro_solicitud=ic.nro_solicitud
+JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN pagos pg ON pg.nro_orden=op.nro_orden
+JOIN intereses origen ON origen.nro_tarjeta=op.nro_tarjeta
+WHERE origen.documento=? AND sc.modulo_codigo=? AND pg.estado='Pago aprobado' AND op.estado='Pago aprobado' AND sc.estado='confirmada' AND ic.estado='Confirmada' LIMIT 1
 """,
-                p.id(),
+                p.ci(),
                 t.ofertaCodigo())
             != null;
     java.util.List<Requisito> requisitos =
@@ -90,7 +90,7 @@ WHERE origen.prospecto_id=? AND sc.external_modulo_id=? AND pg.estado='Pago apro
                     !p.nombre().isBlank() && !p.apellido().isBlank()),
                 new Requisito("Telefono valido", p.telefono(), Valida.esTelefono(p.telefono())),
                 new Requisito("Correo valido", p.correo(), Valida.esCorreo(p.correo())),
-                new Requisito("Vendedor asignado", t.nombreVendedor(), t.vendedorId() != null),
+                new Requisito("Vendedor asignado", t.nombreVendedor(), t.vendedorCorreo() != null),
                 new Requisito(
                     "Pago aprobado e inscripcion confirmada",
                     pagado ? "Confirmada" : "Pendiente",

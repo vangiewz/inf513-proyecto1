@@ -60,8 +60,8 @@ class ServidorCompartidoTest {
   static void init() throws Exception {
     db =
         new DatabaseService(
-            "jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?currentSchema=crm_qa_correo&ApplicationName=crm-mail-qa",
-            "grupo05sa",
+            System.getenv().getOrDefault("P1_REMOTE_DB_URL", "jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?currentSchema=crm_qa_correo&ApplicationName=crm-mail-qa"),
+            System.getenv().getOrDefault("P1_REMOTE_DB_USER", "grupo05sa"),
             System.getenv("P1_REMOTE_DB_PASSWORD"));
     try (Connection c = db.getConnection()) {
       assertEquals("crm_qa_correo", uno(c, r -> r.getString(1), "SELECT current_schema()"));
@@ -74,7 +74,7 @@ class ServidorCompartidoTest {
     try (Connection c = db.getConnection()) {
       for (String codigo :
           lista(c, r -> r.getString(1), "SELECT DISTINCT programa_codigo FROM catalogo_cache"))
-        new ProgramaService(db).asignar(admin, codigo, coord.id());
+        new ProgramaService(db).asignar(admin, codigo, coord.correo());
     }
   }
 
@@ -82,9 +82,9 @@ class ServidorCompartidoTest {
   void cu1IdentidadYBajaRemotas() throws Exception {
     var u = user("vendedor");
     var service = new UsuarioService(db);
-    assertEquals(u.id(), service.buscarPorCorreo(u.correo().toUpperCase()).id());
-    service.eliminar(admin, u.id());
-    assertFalse(service.buscarPorId(u.id()).activo());
+    assertEquals(u.correo(), service.buscarPorCorreo(u.correo().toUpperCase()).correo());
+    service.eliminar(admin, u.correo());
+    assertFalse(service.buscarPorCorreo(u.correo()).activo());
   }
 
   @Test
@@ -97,57 +97,57 @@ class ServidorCompartidoTest {
     assertEquals(5, a.interesesCreados());
     assertEquals(
         5,
-        count("SELECT count(*) FROM intereses WHERE prospecto_id=?", a.tarjeta().prospecto().id()));
+        count("SELECT count(*) FROM intereses WHERE documento=?", a.tarjeta().prospecto().ci()));
   }
 
   @Test
   void cu3AsignacionYReasignacionRemotas() throws Exception {
     var t = alta();
     var service = new AsignacionService(db);
-    assertEquals(v1.id(), service.asignar(coord, t.id(), v1.id()).tarjeta().vendedorId());
-    assertEquals(v2.id(), service.asignar(admin, t.id(), v2.id()).tarjeta().vendedorId());
-    assertThrows(CrmException.class, () -> service.asignar(v1, t.id(), v1.id()));
+    assertEquals(v1.correo(), service.asignar(coord, t.nro(), v1.correo()).tarjeta().vendedorCorreo());
+    assertEquals(v2.correo(), service.asignar(admin, t.nro(), v2.correo()).tarjeta().vendedorCorreo());
+    assertThrows(CrmException.class, () -> service.asignar(v1, t.nro(), v1.correo()));
   }
 
   @Test
   void cu4AliasYProteccionDeCartera() throws Exception {
     var t = alta();
-    new AsignacionService(db).asignar(admin, t.id(), v1.id());
+    new AsignacionService(db).asignar(admin, t.nro(), v1.correo());
     var s = new EmbudoService(db);
-    assertEquals("Contactado", s.mover(v1, t.id(), "En Contacto").estado());
-    assertThrows(CrmException.class, () -> s.mover(v2, t.id(), "Interesado"));
+    assertEquals("Contactado", s.mover(v1, t.nro(), "En Contacto").estado());
+    assertThrows(CrmException.class, () -> s.mover(v2, t.nro(), "Interesado"));
   }
 
   @Test
   void cu5PerdidaClasificadaConHistorial() throws Exception {
     var t = alta();
-    new AsignacionService(db).asignar(admin, t.id(), v1.id());
+    new AsignacionService(db).asignar(admin, t.nro(), v1.correo());
     var p = new PerdidaService(db);
     var m = p.insertarMotivo("Motivo remoto " + doc(), "Horario");
-    assertEquals("Perdido", p.marcarPerdido(v1, t.id(), m.id(), "QA").estado());
-    assertThrows(CrmException.class, () -> p.eliminarMotivo(m.id()));
-    assertEquals("Interesado", new EmbudoService(db).mover(v1, t.id(), "Seguimiento").estado());
+    assertEquals("Perdido", p.marcarPerdido(v1, t.nro(), m.nombre(), "QA").estado());
+    assertThrows(CrmException.class, () -> p.eliminarMotivo(m.nombre()));
+    assertEquals("Interesado", new EmbudoService(db).mover(v1, t.nro(), "Seguimiento").estado());
   }
 
   @Test
   void cu6NoConvierteSinPagoEnServidorReal() throws Exception {
     long antes = count("SELECT count(*) FROM inscripciones_comerciales");
     var t = alta();
-    new AsignacionService(db).asignar(admin, t.id(), v1.id());
-    assertThrows(CrmException.class, () -> new ConversionService(db).convertir(v1, t.id()));
+    new AsignacionService(db).asignar(admin, t.nro(), v1.correo());
+    assertThrows(CrmException.class, () -> new ConversionService(db).convertir(v1, t.nro()));
     assertEquals(antes, count("SELECT count(*) FROM inscripciones_comerciales"));
   }
 
   @Test
   void cu7InteraccionRecordatorioYFinalizacion() throws Exception {
     var t = alta();
-    new AsignacionService(db).asignar(admin, t.id(), v1.id());
+    new AsignacionService(db).asignar(admin, t.nro(), v1.correo());
     var s = new SeguimientoService(db);
-    s.registrarInteraccion(v1, t.id(), "Nota", "Prueba JDBC real");
-    var r = s.programarRecordatorio(v1, t.id(), "2090-01-10 10:00", "Prueba remota");
+    s.registrarInteraccion(v1, t.nro(), "Nota", "Prueba JDBC real");
+    var r = s.programarRecordatorio(v1, t.nro(), "2090-01-10 10:00", "Prueba remota");
     assertTrue(r.fechaHora().contains("10:00"));
-    assertEquals("Realizada", s.completarRecordatorio(v1, r.id(), "Verificado").estado());
-    assertFalse(s.historial(v1, t.id()).eventos().isEmpty());
+    assertEquals("Realizada", s.completarRecordatorio(v1, r.nro(), "Verificado").estado());
+    assertFalse(s.historial(v1, t.nro()).eventos().isEmpty());
   }
 
   @Test
@@ -186,8 +186,10 @@ class ServidorCompartidoTest {
   void esquemaAntiguoSeRechazaAntesDeLeerElBuzon() throws Exception {
     var old =
         new DatabaseService(
-            "jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?currentSchema=crm",
-            "grupo05sa",
+            System.getenv()
+                .getOrDefault("P1_REMOTE_DB_URL", "jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?currentSchema=crm_qa_correo")
+                .replaceFirst("currentSchema=[^&]*", "currentSchema=crm"),
+            System.getenv().getOrDefault("P1_REMOTE_DB_USER", "grupo05sa"),
             System.getenv("P1_REMOTE_DB_PASSWORD"));
     assertThrows(SQLException.class, old::verificarModelo);
   }

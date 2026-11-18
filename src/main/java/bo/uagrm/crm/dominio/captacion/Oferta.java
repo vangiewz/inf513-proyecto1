@@ -15,16 +15,16 @@ public record Oferta(
     int numModulos,
     BigDecimal precio,
     String estado,
-    Integer coordinadorId,
+    String coordinadorCorreo,
     String coordinador,
     String programaCodigo,
     String anuncioId,
     String descripcion) {
   public static final String SQL =
-      "SELECT o.*,pr.coordinador_id,u.nombre || ' ' || u.apellido AS coordinador FROM"
+      "SELECT o.*,pr.coordinador_correo,u.nombre || ' ' || u.apellido AS coordinador FROM"
           + " catalogo_cache o LEFT JOIN programas_responsables pr ON"
-          + " pr.external_programa_id=o.programa_codigo LEFT JOIN usuarios u ON"
-          + " u.id=pr.coordinador_id";
+          + " pr.programa_codigo=o.programa_codigo LEFT JOIN usuarios u ON"
+          + " u.correo=pr.coordinador_correo";
   public static final String[] COLUMNAS = {
     "Código",
     "Oferta",
@@ -45,12 +45,10 @@ public record Oferta(
         1,
         r.getBigDecimal("precio"),
         r.getString("estado"),
-        r.getObject("coordinador_id") == null
-            ? null
-            : Math.toIntExact(((Number) r.getObject("coordinador_id")).longValue()),
+        r.getString("coordinador_correo"),
         r.getString("coordinador"),
         r.getString("programa_codigo"),
-        r.getString("external_anuncio_id"),
+        r.getString("anuncio_codigo"),
         r.getString("descripcion"));
   }
 

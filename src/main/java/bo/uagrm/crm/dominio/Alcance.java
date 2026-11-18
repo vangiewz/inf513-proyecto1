@@ -19,9 +19,9 @@ public final class Alcance {
       case ADMINISTRADOR -> "TRUE";
       case COORDINADOR ->
           "EXISTS (SELECT 1 FROM catalogo_cache ac JOIN programas_responsables pr ON"
-              + " pr.external_programa_id=ac.programa_codigo WHERE ac.codigo=i.external_modulo_id"
-              + " AND pr.coordinador_id=?)";
-      case VENDEDOR -> "i.vendedor_id = ?";
+              + " pr.programa_codigo=ac.programa_codigo WHERE ac.codigo=i.modulo_codigo"
+              + " AND pr.coordinador_correo=?)";
+      case VENDEDOR -> "i.vendedor_correo = ?";
     };
   }
 
@@ -31,9 +31,9 @@ public final class Alcance {
       case ADMINISTRADOR -> "TRUE";
       case COORDINADOR ->
           "EXISTS (SELECT 1 FROM catalogo_cache ac JOIN programas_responsables pr ON"
-              + " pr.external_programa_id=ac.programa_codigo WHERE ac.codigo=i.external_modulo_id"
-              + " AND pr.coordinador_id=?)";
-      case VENDEDOR -> "i.vendedor_id = ?";
+              + " pr.programa_codigo=ac.programa_codigo WHERE ac.codigo=i.modulo_codigo"
+              + " AND pr.coordinador_correo=?)";
+      case VENDEDOR -> "i.vendedor_correo = ?";
     };
   }
 
@@ -48,7 +48,7 @@ public final class Alcance {
   }
 
   private static Object[] unir(Object[] antes, Usuario u, Object[] despues) {
-    Object[] propios = u.rol() == Rol.ADMINISTRADOR ? new Object[0] : new Object[] {u.id()};
+    Object[] propios = u.rol() == Rol.ADMINISTRADOR ? new Object[0] : new Object[] {u.correo()};
     Object[] out = new Object[antes.length + propios.length + despues.length];
     System.arraycopy(antes, 0, out, 0, antes.length);
     System.arraycopy(propios, 0, out, antes.length, propios.length);

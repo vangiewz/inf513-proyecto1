@@ -28,33 +28,41 @@ mvn -Dtest=ServidorCompartidoTest,CorreoServidorFinancieroTest test
 
 Al terminar, retirar la variable y eliminar el esquema temporal. Se crean datos ficticios; la clave nunca se escribe en scripts ni archivos publicados.
 
-## Robustez: entradas malas en todos los comandos
+## Pruebas locales: los 8 CU, la vigencia y la robustez
+
+`CasosAprobadosCorreoTest` recorre los ocho casos de uso por el despachador de correo (alta y modificación de usuario con
+su vigencia, registro público, asignación, embudo, pérdida, orden, comprobante, aprobación, inscripción, exportación,
+reportes y bitácora), prueba que una credencial vencida o todavía no vigente queda "Denegado" y las reglas de alcance,
+rechazo y transacción de los pagos.
 
 `RobustezCorreoTest` manda cada comando con cada rol (administrador, coordinador, vendedor y un visitante de Outlook) y
 con entradas malas: vacías, solo espacios, letras donde va un número, negativos, cero, números enormes, inyección SQL,
 5000 caracteres, emojis, tabulaciones, HTML, fechas imposibles, parámetros de más, comas sueltas, corchetes y comillas
 sin cerrar, minúsculas, espacios y `RE:`; además siete CSV dañados para `IMPORTARPROSPECTOS`. Exige que ninguna
 respuesta sea un error interno ni un error SQL sin traducir, que lo vacío o mal formado nunca dé "Éxito" y que las
-tablas sigan en pie. Corre contra un PostgreSQL desechable:
+tablas sigan en pie.
+
+Ambas corren contra un PostgreSQL 18 desechable (solo acepta `127.0.0.1`):
 
 ```sh
-docker run -d --name p1-robustez -p 127.0.0.1:55442:5432 -e POSTGRES_USER=crm_user -e POSTGRES_PASSWORD=crm_password -e POSTGRES_DB=crm_qa_robustez postgres:18-alpine
-docker exec -i p1-robustez psql -U crm_user -d crm_qa_robustez -c "DROP SCHEMA public CASCADE"
-docker exec -i p1-robustez psql -v ON_ERROR_STOP=1 --single-transaction -U crm_user -d crm_qa_robustez < sql/esquema.sql
-docker exec -i p1-robustez psql -v ON_ERROR_STOP=1 --single-transaction -U crm_user -d crm_qa_robustez < sql/referencias.sql
-P1_ROBUSTEZ_DB_URL=jdbc:postgresql://127.0.0.1:55442/crm_qa_robustez mvn test -Dtest=RobustezCorreoTest
-docker rm -f p1-robustez
+docker run -d --name p1-qa -p 127.0.0.1:55442:5432 -e POSTGRES_USER=crm_user -e POSTGRES_PASSWORD=crm_password -e POSTGRES_DB=crm_qa postgres:18-alpine
+docker exec -i p1-qa psql -U crm_user -d crm_qa -c "DROP SCHEMA public CASCADE"
+docker exec -i p1-qa psql -v ON_ERROR_STOP=1 --single-transaction -U crm_user -d crm_qa < sql/esquema.sql
+docker exec -i p1-qa psql -v ON_ERROR_STOP=1 --single-transaction -U crm_user -d crm_qa < sql/referencias.sql
+P1_TEST_DB_URL=jdbc:postgresql://127.0.0.1:55442/crm_qa P1_ROBUSTEZ_DB_URL=jdbc:postgresql://127.0.0.1:55442/crm_qa   mvn test -Dtest=CasosAprobadosCorreoTest,RobustezCorreoTest
+docker rm -f p1-qa
 ```
 
-Ejecución del 17/11/2026: 4515 casos, 0 fallas. Los 76 "Éxito" con valores raros son legítimos: parámetros opcionales
-vacíos (listar todo), texto de búsqueda en `LISTARPROSPECTOS` y `VERBITACORA` con cantidad enorme (se limita a 200).
+Las pruebas de servidor también pueden correr en local: `P1_REMOTE_DB_URL` (con `currentSchema=crm_qa_correo`),
+`P1_REMOTE_DB_USER` y `P1_REMOTE_DB_PASSWORD` apuntan a otra base.
 
-## Pruebas complementarias entre clientes
+## Evidencia (17/11/2026, después de pasar a claves de diseño)
 
-`BaseCompartidaTest` y `CasosAprobadosCorreoTest` incluyen pruebas JDBC y HTTP de interoperabilidad con una version de desarrollo web. Se conservan como pruebas complementarias para P2. Requieren un entorno compatible separado en `crm_qa_audit`, PostgreSQL local en el puerto 55432 y API HTTP en 18002. No modificar web para ejecutarlas como parte de una tarea de correo.
-
-## Evidencia conservada
-
-`doc/pruebas/base-compartida.json` registra la ejecucion del 17/11/2026: 154 pruebas Java sin fallas ni omisiones, incluidas 12 pruebas PostgreSQL del servidor. Las pruebas HTTP se realizaron con una version de desarrollo web que posteriormente se retiro; el registro no certifica la web actual. Tambien se verificaron 12 comandos de consulta del JAR desplegado, sin crear ventas de prueba en produccion ni enviar correos externos.
-
-Los escenarios y capturas academicos antiguos deben actualizarse antes de entregar el PUDS. El codigo de pruebas se conserva; los archivos temporales de Maven no se versionan.
+- 129 pruebas sin fallas ni omisiones: 103 unitarias, 13 de `CasosAprobadosCorreoTest`, 1 de robustez (4515 casos) y las
+  12 de integración, en local y luego contra el PostgreSQL de la facultad (`doc/pruebas/integracion-servidor.json`).
+- Robustez: los 76 "Éxito" con valores raros son legítimos: parámetros opcionales vacíos (listar todo), texto de búsqueda
+  en `LISTARPROSPECTOS` y `VERBITACORA` con cantidad enorme (se limita a 200).
+- Contra la base real migrada se ejecutaron 19 comandos de consulta del JAR (tablero, bolsa, órdenes, matrículas,
+  exportaciones, recordatorios, bitácora y los cuatro reportes) sin crear ventas.
+- La interoperabilidad HTTP con la versión web retirada (`BaseCompartidaTest`) se eliminó: el P2 debe replicar las claves
+  de diseño en sus migraciones de Laravel y tendrá sus propias pruebas.

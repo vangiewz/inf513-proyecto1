@@ -1,6 +1,6 @@
 {
   "fecha": "2026-11-17",
-  "destino": "db.tecnoweb.org.bo:5432/db_grupo05sa, esquema temporal crm_qa_correo (sql/esquema.sql + sql/referencias.sql), eliminado al terminar",
+  "destino": "db.tecnoweb.org.bo:5432/db_grupo05sa, esquema temporal crm_qa_correo (sql/esquema.sql con claves de diseño y vigencia + sql/referencias.sql), eliminado al terminar; corrida de las 23:20",
   "comando": "mvn -Dtest=ServidorCompartidoTest,CorreoServidorFinancieroTest test",
   "suites": [
     {"suite": "ServidorCompartidoTest", "casos": 10, "aprobados": 10},
