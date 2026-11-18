@@ -456,8 +456,7 @@ def tablas_sql():
 
 
 d.p(f'El modelo tiene {len(TABLAS)} tablas en el esquema public de db_grupo05sa, el mismo que usará el Proyecto 2 web, unidas por '
-    f'{len(FKS)} claves foráneas: ninguna tabla queda sin relación. La tabla migrations, propia de Laravel, registra las '
-    'migraciones del Proyecto 2 y no forma parte del modelo del negocio. En el diagrama, las claves foráneas no se repiten como '
+    f'{len(FKS)} claves foráneas: ninguna tabla queda sin relación y no hay otras tablas en el esquema. En el diagrama, las claves foráneas no se repiten como '
     'atributo: cada una es una asociación con su multiplicidad, rotulada con el papel cuando no es obvio (vendedor, coordinador, '
     'emisor, autor, responsable, destinatario, módulo, actualizado por).')
 d.p('Cada tabla tiene una sola clave, la de su diseño y con su nombre; ninguna lleva un campo id. Las entidades que tienen una '

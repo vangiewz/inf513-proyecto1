@@ -32,8 +32,9 @@ Clase 03: toda credencial lleva fecha de inicio, fecha de fin y rol.
   `ON UPDATE CASCADE`: cambiar un correo o el nombre de un motivo se propaga solo.
 - `usuarios.fecha_inicio` y `usuarios.fecha_fin` (CHECK `fecha_fin >= fecha_inicio`): fuera de vigencia, todo comando se
   responde "Denegado".
-- Resultado: 23 tablas de negocio y 30 claves foraneas; ninguna tabla aislada. `migrations` es la tabla de control de
-  Laravel (P2): queda pendiente decidir con el P2 que hacer con ella antes de la defensa.
+- Resultado: 23 tablas y 30 claves foraneas; ninguna tabla aislada. La tabla `migrations` de Laravel se elimino del
+  servidor el 17/11 (respaldo en `.secrets/respaldos/public_20261117_233046.dump`): el P2 debe recrear su control de
+  migraciones sin dejar una tabla suelta en `public` (por ejemplo, en otro esquema).
 - **P2 web debe replicar estas claves** en sus migraciones y modelos (`$primaryKey`, `$incrementing`, `$keyType`).
 
 ## Estructura y referencias
