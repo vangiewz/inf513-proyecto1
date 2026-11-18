@@ -93,6 +93,9 @@ public record Correo(
       // se intenta abajo con la cabecera cruda
     }
     String h = cabecera(m, "From");
+    // Enviado a mano por telnet sin "From:": vale el MAIL FROM que el servidor guardó en Return-Path
+    // (un rebote trae Return-Path <> y queda sin remitente).
+    if (h == null || h.isBlank()) h = cabecera(m, "Return-Path");
     if (h == null) return "";
     try {
       InternetAddress[] a = InternetAddress.parseHeader(h, false);

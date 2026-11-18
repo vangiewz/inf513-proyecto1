@@ -11,6 +11,7 @@ import bo.uagrm.crm.dominio.seguimiento.SeguimientoService;
 import bo.uagrm.crm.persistencia.DatabaseService;
 import bo.uagrm.crm.presentacion.Correo;
 import bo.uagrm.crm.presentacion.Pop3Client;
+import bo.uagrm.crm.presentacion.Rebotes;
 import bo.uagrm.crm.presentacion.SmtpSender;
 import java.io.IOException;
 import java.net.UnknownHostException;
@@ -46,6 +47,8 @@ import java.util.logging.SimpleFormatter;
 public final class App {
 
   private static final int MAX_POR_CICLO = 20;
+  // ponytail: Gmail limita los login IMAP frecuentes; los rebotes tardan minutos en llegar.
+  private static final int CICLOS_ENTRE_REBOTES = 6;
   private static final long MAX_BYTES =
       8L * 1024 * 1024; // correos más grandes se rechazan sin descargarlos
   private static final Logger LOG = Logger.getLogger("crm");
@@ -56,6 +59,8 @@ public final class App {
   private final SmtpSender smtp;
   private final ResponseFormatter fmt;
   private final DatabaseService db;
+  private final Rebotes rebotes;
+  private String fallaRebotes; // última falla al leer rebotes, para no repetirla cada vez
 
   // Estado entre ciclos, para informar cambios y no solo errores sueltos.
   private long ciclo;
@@ -77,6 +82,7 @@ public final class App {
             cfg.smtpUsuario(),
             cfg.smtpPassword(),
             cfg.buzonSistema());
+    this.rebotes = new Rebotes(cfg.smtpHost(), cfg.smtpUsuario(), cfg.smtpPassword());
   }
 
   public static void main(String[] args) throws Exception {
@@ -88,7 +94,7 @@ public final class App {
     if (args.length == 2 && args[0].equals("--diagnostico")) {
       configurarLog(false);
       App app = new App(Config.cargar(Path.of(args[1])));
-      System.exit(Diagnostico.revisar(app.cfg, app.smtp, app.db) ? 0 : 1);
+      System.exit(Diagnostico.revisar(app.cfg, app.smtp, app.rebotes, app.db) ? 0 : 1);
     }
     if (args.length >= 4 && args[0].equals("--probar")) {
       App app = new App(Config.cargar(Path.of(args[1])));
@@ -117,7 +123,7 @@ public final class App {
     Config cfg = Config.cargar(Path.of(args.length > 0 ? args[0] : "crm-mail.properties"));
     log("CRM vía e-mail iniciado. " + cfg);
     App app = new App(cfg);
-    Diagnostico.revisar(cfg, app.smtp, app.db); // informa; el servicio arranca igual y reintenta
+    Diagnostico.revisar(cfg, app.smtp, app.rebotes, app.db); // informa; el servicio arranca igual y reintenta
     app.ejecutar();
   }
 
@@ -266,7 +272,29 @@ public final class App {
     } catch (Exception e) {
       throw new EtapaFallida("Recordatorios (BD)", cfg.dbHost(), cfg.dbPuerto(), e);
     }
+    if (ciclo % CICLOS_ENTRE_REBOTES == 1) revisarRebotes();
     return resumen;
+  }
+
+  /**
+   * Respuestas que Gmail aceptó pero el servidor del destinatario rechazó después. Si Gmail no
+   * responde se avisa una vez y el ciclo sigue: los rebotes quedan sin leer para la próxima.
+   */
+  private void revisarRebotes() {
+    try {
+      for (Rebotes.Rebote r : rebotes.nuevos()) {
+        LOG.warning("REBOTE respuesta a " + r.destinatario() + " no entregada → " + r.motivo());
+        procesador.bitacora(
+            r.destinatario(), null, "(rebote)", "Error", "La respuesta no se entregó: " + r.motivo());
+      }
+      if (fallaRebotes != null) log("Rebotes: lectura IMAP recuperada");
+      fallaRebotes = null;
+    } catch (Exception e) {
+      String causa = Diagnostico.explicar(rebotes.host(), 993, e);
+      if (!causa.equals(fallaRebotes))
+        LOG.warning("Rebotes: no se pudo leer IMAP " + rebotes.host() + ":993 → " + causa);
+      fallaRebotes = causa;
+    }
   }
 
   /**

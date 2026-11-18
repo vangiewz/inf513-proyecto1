@@ -28,6 +28,27 @@ mvn -Dtest=ServidorCompartidoTest,CorreoServidorFinancieroTest test
 
 Al terminar, retirar la variable y eliminar el esquema temporal. Se crean datos ficticios; la clave nunca se escribe en scripts ni archivos publicados.
 
+## Robustez: entradas malas en todos los comandos
+
+`RobustezCorreoTest` manda cada comando con cada rol (administrador, coordinador, vendedor y un visitante de Outlook) y
+con entradas malas: vacías, solo espacios, letras donde va un número, negativos, cero, números enormes, inyección SQL,
+5000 caracteres, emojis, tabulaciones, HTML, fechas imposibles, parámetros de más, comas sueltas, corchetes y comillas
+sin cerrar, minúsculas, espacios y `RE:`; además siete CSV dañados para `IMPORTARPROSPECTOS`. Exige que ninguna
+respuesta sea un error interno ni un error SQL sin traducir, que lo vacío o mal formado nunca dé "Éxito" y que las
+tablas sigan en pie. Corre contra un PostgreSQL desechable:
+
+```sh
+docker run -d --name p1-robustez -p 127.0.0.1:55442:5432 -e POSTGRES_USER=crm_user -e POSTGRES_PASSWORD=crm_password -e POSTGRES_DB=crm_qa_robustez postgres:18-alpine
+docker exec -i p1-robustez psql -U crm_user -d crm_qa_robustez -c "DROP SCHEMA public CASCADE"
+docker exec -i p1-robustez psql -v ON_ERROR_STOP=1 --single-transaction -U crm_user -d crm_qa_robustez < sql/esquema.sql
+docker exec -i p1-robustez psql -v ON_ERROR_STOP=1 --single-transaction -U crm_user -d crm_qa_robustez < sql/referencias.sql
+P1_ROBUSTEZ_DB_URL=jdbc:postgresql://127.0.0.1:55442/crm_qa_robustez mvn test -Dtest=RobustezCorreoTest
+docker rm -f p1-robustez
+```
+
+Ejecución del 17/11/2026: 4515 casos, 0 fallas. Los 76 "Éxito" con valores raros son legítimos: parámetros opcionales
+vacíos (listar todo), texto de búsqueda en `LISTARPROSPECTOS` y `VERBITACORA` con cantidad enorme (se limita a 200).
+
 ## Pruebas complementarias entre clientes
 
 `BaseCompartidaTest` y `CasosAprobadosCorreoTest` incluyen pruebas JDBC y HTTP de interoperabilidad con una version de desarrollo web. Se conservan como pruebas complementarias para P2. Requieren un entorno compatible separado en `crm_qa_audit`, PostgreSQL local en el puerto 55432 y API HTTP en 18002. No modificar web para ejecutarlas como parte de una tarea de correo.

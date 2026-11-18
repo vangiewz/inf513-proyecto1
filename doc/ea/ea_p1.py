@@ -393,6 +393,7 @@ def construir(ea):
     goo = ea.elemento(dep, 'Google', 'Node', 'External System')
     gweb = ea.elemento(dep, 'Gmail (mail.google.com): buzón del usuario', 'ExecutionEnvironment', padre=goo)
     gsmtp = ea.elemento(dep, 'smtp.gmail.com (SMTP 587)', 'ExecutionEnvironment', padre=goo)
+    gimap = ea.elemento(dep, 'imap.gmail.com (IMAP 993)', 'ExecutionEnvironment', padre=goo)
     fac = ea.elemento(dep, 'Servidor tecnoweb.org.bo 139.99.68.169 (mail, db)', 'Device')
     so_f = ea.elemento(dep, 'Linux', 'ExecutionEnvironment', padre=fac)
     pg = ea.elemento(dep, 'PostgreSQL 18.6 (5432)', 'ExecutionEnvironment', padre=so_f)
@@ -419,10 +420,12 @@ def construir(ea):
                               (jvm, 1020, 300, 520, 230, 3), (jar, 1040, 350, 480, 165, 2),
                               (capas_jar[0], 1060, 392, 210, 52, 1), (capas_jar[1], 1290, 392, 210, 52, 1),
                               (capas_jar[2], 1060, 455, 210, 52, 1), (capas_jar[3], 1290, 455, 210, 52, 1),
-                              (goo, 380, 650, 1200, 150, 9), (gweb, 420, 705, 440, 70, 1), (gsmtp, 1100, 705, 440, 70, 1)]:
+                              (goo, 380, 650, 1200, 150, 9), (gweb, 420, 705, 400, 70, 1), (gsmtp, 880, 705, 300, 70, 1),
+                              (gimap, 1240, 705, 300, 70, 1)]:
         ea.poner(d, e, x, y, w, h, s_)
     for a, b, t_ in [(cli, gweb, 'HTTPS 443'), (gweb, smail, 'SMTP 25'), (jvm, dove, 'POP3 110'),
-                     (jvm, pg, 'JDBC TCP 5432'), (jvm, gsmtp, 'SMTP 587 STARTTLS')]:
+                     (jvm, pg, 'JDBC TCP 5432'), (jvm, gsmtp, 'SMTP 587 STARTTLS'),
+                     (jvm, gimap, 'IMAP 993 TLS (rebotes)')]:
         ea.conector(a, b, 'CommunicationPath', t_, dirigido=True)
     for a, b, t_ in [(script, jar, 'java -jar'), (jar, props, 'lee'), (jar, logf, 'escribe'), (smail, buzon, 'entrega'),
                      (dove, buzon, 'lee'), (gsmtp, gweb, 'entrega')]:
@@ -439,7 +442,8 @@ def construir(ea):
         ea.poner(d, ea.elemento(cap, nombre, 'Text', notas=nombre), 40, y + 6, 200, 20, seq=40)
     APP, DIAG, CPR, DBS = 'App (bucle cada 10 s)', 'Diagnostico (causa de cada falla)', 'CommandProcessor y procesadores por rol', 'DatabaseService (PostgreSQL)'
     sitio = {APP: (420, 60), DIAG: (760, 60), 'Lector de Correos POP3 (Pop3Client)': (60, 180), 'Correo (MIME)': (380, 180),
-             'Emisor SMTP (SmtpSender)': (620, 180), CPR: (470, 350), DBS: (520, 690)}
+             'Emisor SMTP (SmtpSender)': (620, 180), 'Lector de rebotes IMAP (Rebotes)': (920, 180),
+             CPR: (470, 350), DBS: (520, 690)}
     dominio = ['usuarios', 'captacion', 'asignacion', 'embudo', 'perdidas', 'conversion', 'pagos', 'seguimiento', 'reportes']
     for j, h in enumerate(dominio):
         sitio[h] = (45 + j * 137, 520)
@@ -447,7 +451,8 @@ def construir(ea):
     for h, (x, y) in sitio.items():
         pk[h] = ea.paquete(cap, h)
         ea.poner(d, pk[h], x, y, 120 if h in dominio else (170 if h == 'Correo (MIME)' else (300 if h == CPR else 260)), 80, seq=1)
-    for b in ['Lector de Correos POP3 (Pop3Client)', 'Correo (MIME)', 'Emisor SMTP (SmtpSender)', CPR, DIAG]:
+    for b in ['Lector de Correos POP3 (Pop3Client)', 'Correo (MIME)', 'Emisor SMTP (SmtpSender)',
+              'Lector de rebotes IMAP (Rebotes)', CPR, DIAG]:
         ea.conector(pk[APP], pk[b], 'Dependency', dirigido=True)
     ea.conector(pk[CPR], pk[DBS], 'Dependency', dirigido=True)
     for h in dominio:
@@ -552,7 +557,7 @@ def construir(ea):
     app_c = comp('App (bucle del servicio)', padre=c_pre)
     diag_c = comp('Diagnostico (causa de cada falla)', padre=c_pre)
     lector = comp('Lector de correo (Pop3Client, Correo)', padre=c_pre)
-    emisor = comp('Emisor SMTP (SmtpSender)', padre=c_pre)
+    emisor = comp('Emisor SMTP y lector de rebotes (SmtpSender, Rebotes)', padre=c_pre)
     proc = comp('Procesador de comandos (CommandProcessor, CommandParser)', padre=c_apl)
     porrol = comp('Procesadores por rol (RolCommandProcessor y 4 subclases)', padre=c_apl)
     fmt_c = comp('Formateador (ResponseFormatter)', padre=c_apl)
@@ -562,18 +567,20 @@ def construir(ea):
     pgj = comp('PostgreSQL JDBC 42.7.13', 'library')
     bcr = comp('jBCrypt 0.4', 'library')
     dov = comp('Dovecot mail.tecnoweb.org.bo', 'system extern')
-    gm = comp('Gmail smtp.gmail.com', 'system extern')
+    gm = comp('Gmail smtp.gmail.com, imap.gmail.com', 'system extern')
     pgc = comp('PostgreSQL 18.6 db.tecnoweb.org.bo', 'Database')
     jar_a = ea.elemento(imp, 'crm-mail.jar', 'Artifact', 'executable')
     i_pop = ea.elemento(imp, 'POP3 (RFC 1939)', 'Interface')
     i_mail = ea.elemento(imp, 'Jakarta Mail API', 'Interface')
     i_smtp = ea.elemento(imp, 'SMTP (RFC 5321) + STARTTLS', 'Interface')
+    i_imap = ea.elemento(imp, 'IMAP (RFC 9051) + TLS', 'Interface')
     i_jdbc = ea.elemento(imp, 'JDBC (java.sql)', 'Interface')
     i_pgp = ea.elemento(imp, 'Protocolo PostgreSQL v3', 'Interface')
     DY = 80   # la capa de dominio crece una fila (11 servicios): lo de abajo baja DY
     expuestas = [(lector, ' ', 'RequiredInterface', i_pop, 932, 82), (dov, 'POP3 :110', 'ProvidedInterface', i_pop, 1452, 82),
                  (emisor, ' ', 'RequiredInterface', i_mail, 932, 192), (angus, 'Jakarta Mail API', 'ProvidedInterface', i_mail, 1082, 192),
                  (angus, ' ', 'RequiredInterface', i_smtp, 1282, 192), (gm, 'SMTP :587', 'ProvidedInterface', i_smtp, 1452, 192),
+                 (angus, ' ', 'RequiredInterface', i_imap, 1282, 222), (gm, 'IMAP :993', 'ProvidedInterface', i_imap, 1452, 222),
                  (dbs, ' ', 'RequiredInterface', i_jdbc, 732, 862 + DY), (pgj, 'JDBC', 'ProvidedInterface', i_jdbc, 1082, 862 + DY),
                  (pgj, ' ', 'RequiredInterface', i_pgp, 1282, 862 + DY), (pgc, 'PostgreSQL v3 :5432', 'ProvidedInterface', i_pgp, 1452, 862 + DY)]
     for e, x, y, w, h, s_ in [(c_sis, 255, -50, 770, 990 + DY, 10),
@@ -581,20 +588,21 @@ def construir(ea):
                               (lector, 640, 55, 300, 70, 1), (emisor, 640, 165, 300, 70, 1),
                               (c_apl, 280, 300, 720, 230, 9), (proc, 300, 355, 240, 70, 1), (porrol, 760, 355, 225, 70, 1), (fmt_c, 560, 455, 200, 60, 1),
                               (c_dom, 280, 560, 720, 200 + DY, 9), (c_per, 280, 800 + DY, 720, 120, 9), (dbs, 540, 835 + DY, 200, 60, 1),
-                              (angus, 1090, 165, 200, 70, 1), (pgj, 1090, 830 + DY, 200, 70, 1), (bcr, 1090, 815, 200, 70, 1),
-                              (dov, 1460, 45, 260, 80, 1), (gm, 1460, 155, 260, 80, 1), (pgc, 1460, 820 + DY, 260, 90, 1),
+                              (angus, 1090, 165, 200, 100, 1), (pgj, 1090, 830 + DY, 200, 70, 1), (bcr, 1090, 815, 200, 70, 1),
+                              (dov, 1460, 45, 260, 80, 1), (gm, 1460, 155, 260, 100, 1), (pgc, 1460, 820 + DY, 260, 90, 1),
                               (jar_a, 20, 430, 190, 70, 1)]:
         ea.poner(d, e, x, y + 60, w, h, s_)   # +60: cabecera del subsistema contenedor
     for i, s in enumerate(servs_c):
         ea.poner(d, s, 300 + (i % 4) * 172, 665 + (i // 4) * 75, 160, 60, 1)
     pts = {}
     for e, n_, t_, cl, x, y in expuestas:
-        pts[(e.ElementID, t_)] = ie = ea.interfaz(e, n_, t_, cl)
+        pts[(e.ElementID, t_, cl.ElementID)] = ie = ea.interfaz(e, n_, t_, cl)
         ea.poner(d, ie, x, y + 60, 16, 16, 0)
-    for ra, pa, nombre in [(lector, dov, 'sockets TCP 110'), (emisor, angus, ''), (angus, gm, 'STARTTLS'), (dbs, pgj, ''), (pgj, pgc, 'TCP')]:
-        c = pts[(ra.ElementID, 'RequiredInterface')].Connectors.AddNew(nombre, 'Assembly')
-        c.SupplierID = pts[(pa.ElementID, 'ProvidedInterface')].ElementID; c.Update()
-    for a_, b_, t_ in [(app_c, lector, 'retr()'), (app_c, emisor, 'enviar()'), (app_c, proc, 'procesarEmail()'), (app_c, fmt_c, 'html()'),
+    for ra, pa, i_, nombre in [(lector, dov, i_pop, 'sockets TCP 110'), (emisor, angus, i_mail, ''), (angus, gm, i_smtp, 'STARTTLS'),
+                               (angus, gm, i_imap, 'TLS'), (dbs, pgj, i_jdbc, ''), (pgj, pgc, i_pgp, 'TCP')]:
+        c = pts[(ra.ElementID, 'RequiredInterface', i_.ElementID)].Connectors.AddNew(nombre, 'Assembly')
+        c.SupplierID = pts[(pa.ElementID, 'ProvidedInterface', i_.ElementID)].ElementID; c.Update()
+    for a_, b_, t_ in [(app_c, lector, 'retr()'), (app_c, emisor, 'enviar(), nuevos()'), (app_c, proc, 'procesarEmail()'), (app_c, fmt_c, 'html()'),
                        (app_c, diag_c, 'revisar(), explicar()'), (diag_c, lector, ''), (diag_c, emisor, 'verificar()'),
                        (proc, porrol, 'procesar()'), (proc, fmt_c, ''), (porrol, fmt_c, ''), (porrol, c_dom, 'invoca el servicio del CU'),
                        (c_dom, dbs, 'enTransaccion(), lista(), filas()'), (servs_c[-1], bcr, 'hashpw()')]:
@@ -605,7 +613,8 @@ def construir(ea):
 
 # ---------------------------------------------------------------- Diseño: secuencia
 SLOT, Y1 = 35, 133   # alto fijo de cada mensaje en EA 15 y y del primero con las líneas de vida en y=40 (medidos)
-ROBUSTEZ = {'Pop3Client': 'boundary', 'SmtpSender': 'boundary', 'DatabaseService': 'entity'}
+ROBUSTEZ = {'Pop3Client': 'boundary', 'SmtpSender': 'boundary', 'Rebotes': 'boundary', 'Logger': 'boundary',
+            'DatabaseService': 'entity'}
 
 
 def ancho_msg(texto):
@@ -629,7 +638,7 @@ def secuencias(ea, dis):
         guarda = {}
         for _, ops, ci, _, nivel in frags:
             guarda[ci] = max(guarda.get(ci, 0), 60 + 22 * nivel + max(ancho_msg('[' + g + ']') for g, _, _ in ops))
-        xs = [80]
+        xs = [80 + guarda.get(0, 0)]
         for i in range(1, len(cols)):
             etq = [t + (f'({a})' if a else '') for o, dd, t, _, a in pasos
                    if {idx[o.ElementID], idx[dd.ElementID]} == {i - 1, i} or (idx[o.ElementID] == idx[dd.ElementID] == i - 1)]
@@ -697,6 +706,20 @@ def secuencias(ea, dis):
              (o2['smtp'], rem, '3. respuesta HTML', 'signal', ''),
              (o2['App'], o2['proc'], '4. bitacora', 'call', 'para, null, asunto, "Error", ...')]
     dibujar(d, cols, pasos, [(1, [('el envío falló', 5, 5)], 1, 2, 0)], 'sd-responder.png', extra_der=120)
+
+    # --- Leer rebotes: respuestas que Gmail aceptó y el servidor del destinatario rechazó después (App.revisarRebotes)
+    d = ea.diagrama(seq, 'Leer rebotes', 'Sequence'); d.StyleEx = 'SuppressBrackets=1;'; d.Update()
+    o3 = {'App': vida('App', ''), 'reb': vida('Rebotes', 'rebotes'), 'log': vida('Logger', 'LOG'),
+          'proc': vida('CommandProcessor', 'procesador')}
+    cols = [o3['App'], o3['reb'], o3['log'], o3['proc']]
+    pasos = [(o3['App'], o3['App'], '1. ciclo', 'call', ' '),
+             (o3['App'], o3['App'], '1.1 revisarRebotes', 'call', ' '),
+             (o3['App'], o3['reb'], '1.2 nuevos', 'call', ' '),
+             (o3['reb'], o3['App'], 'List<Rebote>', 'return', ''),
+             (o3['App'], o3['log'], '1.3 warning', 'call', '"REBOTE respuesta a " + destinatario + ...'),
+             (o3['App'], o3['proc'], '1.4 bitacora', 'call', 'destinatario, null, "(rebote)", "Error", motivo')]
+    dibujar(d, cols, pasos, [(1, [('ciclo % 6 == 1 (cada minuto)', 2, 6)], 0, 3, 0),
+                             (4, [('por cada rebote nuevo', 5, 6)], 0, 3, 1)], 'sd-rebotes.png', extra_der=120)
 
     # --- Una por CU
     for k in CU:

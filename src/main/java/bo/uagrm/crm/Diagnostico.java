@@ -102,7 +102,8 @@ public final class Diagnostico {
   }
 
   /** Revisión completa paso a paso; devuelve true si todo está bien. */
-  public static boolean revisar(Config cfg, SmtpSender smtp, DatabaseService db) {
+  public static boolean revisar(
+      Config cfg, SmtpSender smtp, bo.uagrm.crm.presentacion.Rebotes rebotes, DatabaseService db) {
     boolean ok = red(cfg.pop3Host(), cfg.pop3Puerto());
     ok &= paso("POP3", cfg.pop3Host(), cfg.pop3Puerto(), () -> {
       try (Pop3Client pop =
@@ -116,6 +117,10 @@ public final class Diagnostico {
     ok &= paso("SMTP", cfg.smtpHost(), cfg.smtpPuerto(), () -> {
       smtp.verificar();
       return "login STARTTLS de " + cfg.smtpUsuario() + " OK";
+    });
+    ok &= paso("IMAP", rebotes.host(), 993, () -> {
+      rebotes.verificar();
+      return "login de " + cfg.smtpUsuario() + " OK (lectura de rebotes)";
     });
     ok &= red(cfg.dbHost(), cfg.dbPuerto());
     ok &= paso("BD", cfg.dbHost(), cfg.dbPuerto(), () -> String.join(", ", db.diagnostico()));

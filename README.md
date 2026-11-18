@@ -53,6 +53,20 @@ Cada ciclo deja una línea (`ciclo 812 OK · BD 42 ms · POP3 0 msg 310 ms`). An
 destino y la causa probable (DNS, puerto cerrado, IP fuera de `pg_hba.conf`, clave cambiada, tabla borrada, permiso
 revocado, buzón bloqueado por otro lector, clave de aplicación de Gmail revocada); mientras sigue, una línea corta por
 ciclo, y al volver, `RECUPERADO` con su duración. La traducción está en `Diagnostico.java` (prueba: `DiagnosticoTest`).
+Si la BD no responde o le faltan tablas, el ciclo no retira mensajes del buzón: se atienden cuando vuelve.
+Si el servidor de un destinatario rechaza una respuesta después de que Gmail la aceptó, el aviso de rebote llega a la
+cuenta emisora; cada minuto se lee por IMAP y queda como `REBOTE respuesta a X no entregada → motivo` en el log y en
+la bitácora. Si IMAP falla, se avisa una vez y el ciclo sigue.
+
+Si borran tablas o datos, se repone el esquema `public` desde un respaldo (todo o nada, en una sola transacción):
+
+```powershell
+.\respaldo.ps1                                          # respaldo en ..\.secrets\respaldos\public_AAAAMMDD_HHMMSS.dump
+.\respaldo.ps1 -Restaurar ..\.secrets\respaldos\X.dump  # recrea tablas, claves y datos de ese respaldo
+```
+
+Cualquier remitente puede escribir (Gmail, Outlook, `@uagrm.edu.bo`...): el rol se busca por su correo en `usuarios`
+y, si no está, actúa como visitante. Se aceptan los prefijos `Re:`/`RV:`/`Fwd:` y las comillas tipográficas.
 
 Prueba sin correo: `java -jar target/crm-mail.jar --probar crm-mail.properties remitente@gmail.com "VERTABLERO[]"`.
 

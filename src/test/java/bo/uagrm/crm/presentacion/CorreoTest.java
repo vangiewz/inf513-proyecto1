@@ -41,6 +41,15 @@ class CorreoTest {
   }
 
   @Test
+  void enviadoPorTelnetSinFromUsaReturnPath() {
+    Correo c = leer("Return-Path: <Ana@Hotmail.com>\r\nSubject: HELP[]\r\n\r\n");
+    assertEquals("ana@hotmail.com", c.remitente());
+    assertEquals("HELP[]", c.asunto());
+    assertEquals("", leer("Return-Path: <>\r\nSubject: Undelivered\r\n\r\n").remitente());
+    assertEquals("x@y.com", leer("Subject: HELP[]\nReturn-Path: <x@y.com>\n\n").remitente());
+  }
+
+  @Test
   void cabecerasRotasNoLanzanExcepcion() {
     Correo c =
         leer(

@@ -16,9 +16,19 @@ public final class CommandParser {
       Pattern.compile("^\\s*([A-Za-z]+)\\s*\\[(.*)\\]\\s*$", Pattern.DOTALL);
   private static final Pattern INICIO = Pattern.compile("^\\s*([A-Za-z]+)\\s*\\[");
   private static final String AYUDA = " Envíe HELP[] para ver los comandos de su rol.";
+  /** Prefijos que agregan Gmail, Outlook y Thunderbird al responder o reenviar (Re:, RV:, Fwd:...). */
+  private static final Pattern PREFIJO =
+      Pattern.compile("^\\s*((re|rv|res|fw|fwd|enc|tr|aw|wg)\\s*:\\s*)+", Pattern.CASE_INSENSITIVE);
+
+  /** Asunto sin prefijos de respuesta y con comillas tipográficas normalizadas. */
+  static String limpiar(String asunto) {
+    return asunto == null
+        ? ""
+        : PREFIJO.matcher(asunto).replaceFirst("").replaceAll("[“”„‟«»]", "\"");
+  }
 
   public Command parse(String asunto, String remitente, String adjunto) {
-    String a = asunto == null ? "" : asunto.replaceAll("[“”„‟«»]", "\"");
+    String a = limpiar(asunto);
     Matcher m = FORMA.matcher(a);
     if (!m.matches()) {
       Matcher inicio = INICIO.matcher(a);
@@ -77,7 +87,8 @@ public final class CommandParser {
    * (spam).
    */
   public static boolean pareceComando(String asunto) {
-    return asunto != null && (FORMA.matcher(asunto).matches() || INICIO.matcher(asunto).find());
+    String a = limpiar(asunto);
+    return FORMA.matcher(a).matches() || INICIO.matcher(a).find();
   }
 
   static List<String> parametros(String texto) {

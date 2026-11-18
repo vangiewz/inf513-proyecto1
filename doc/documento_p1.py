@@ -82,7 +82,7 @@ d.revision('Datos para la Revisión', [
     ('Repositorio', dato(GITHUB, 'URL de GitHub inf513-proyecto1'), False),
     ('Base de datos', 'PostgreSQL 18.6, db.tecnoweb.org.bo:5432, db_grupo05sa, esquema public (compartido con el Proyecto 2)', False),
     ('Ejecución', 'p1/ejecutar.ps1 en la PC del grupo; revisa el buzón cada 10 segundos y deja cada ciclo y cada falla en p1/logs/crm-mail.0.log', False),
-    ('Diagnóstico', 'p1/ejecutar.ps1 -Diagnostico revisa DNS, puertos, POP3, SMTP y la base de datos', False),
+    ('Diagnóstico', 'p1/ejecutar.ps1 -Diagnostico revisa DNS, puertos, POP3, SMTP, IMAP de rebotes y la base de datos', False),
 ], 'El remitente se identifica por su correo: el rol lo da la cuenta registrada (el administrador crea las demás con '
    'INSERTARUSUARIO). Un correo no registrado actúa como visitante (consulta la oferta y registra su interés).')
 d.indices()
@@ -396,7 +396,9 @@ d.p('El usuario escribe desde su cuenta de correo. El mensaje llega por SMTP al 
     'PC del grupo (Windows 11, Eclipse Temurin JDK 21.0.12): p1/ejecutar.ps1 arranca p1/target/crm-mail.jar con la configuración '
     '.secrets/crm-mail.properties, que no se publica porque lleva las contraseñas. El programa lee el buzón por POP3 (Dovecot, puerto '
     '110), consulta y actualiza la base db_grupo05sa en PostgreSQL 18.6 (puerto 5432) y responde por smtp.gmail.com (puerto 587 con '
-    'STARTTLS), porque el SMTP de la facultad rechaza el reenvío a dominios externos con "550 5.7.1 Relaying denied". Cada ciclo y '
+    'STARTTLS), porque el SMTP de la facultad rechaza el reenvío a dominios externos con "550 5.7.1 Relaying denied". Si después '
+    'el servidor del destinatario rechaza una respuesta, el aviso de rebote vuelve a la cuenta de Gmail del sistema: el lector lo '
+    'lee cada minuto por imap.gmail.com (puerto 993, TLS) y lo registra. Cada ciclo y '
     'cada falla quedan en p1/logs/crm-mail.0.log. PostgreSQL acepta la conexión según la IP de origen (pg_hba.conf): si el equipo '
     'cambia de red, el diagnóstico muestra la IP rechazada.')
 fig('despliegue.png', 'Diagrama de despliegue', horizontal=True)
@@ -407,7 +409,7 @@ d.p('En el diagrama, cada servidor es un nodo «device» con sus entornos de eje
     'ruta de comunicación lleva su protocolo y puerto. Google, que no administra el grupo, se modela como «External System».')
 d.h('Diseño lógico: capas', 3)
 d.tabla('Capas del sistema', ['Capa', 'Paquete Java', 'Clases'], [
-    ('Presentación', 'bo.uagrm.crm.presentacion y bo.uagrm.crm', 'App (bucle del servicio: lee, procesa y responde), Diagnostico (causa probable de cada falla y revisión de conexiones), Pop3Client (lector POP3 con sockets), SmtpSender (emisor SMTP), Correo (MIME)'),
+    ('Presentación', 'bo.uagrm.crm.presentacion y bo.uagrm.crm', 'App (bucle del servicio: lee, procesa y responde), Diagnostico (causa probable de cada falla y revisión de conexiones), Pop3Client (lector POP3 con sockets), SmtpSender (emisor SMTP), Rebotes (lector IMAP de los avisos de rebote), Correo (MIME)'),
     ('Aplicación', 'bo.uagrm.crm.aplicacion', 'CommandParser, Command, Comando, CommandProcessor, RolCommandProcessor y sus cuatro subclases por rol, ResponseFormatter, Respuesta'),
     ('Dominio', 'bo.uagrm.crm.dominio.<cu>', 'Un paquete por caso de uso con su servicio y sus entidades: usuarios, captacion, asignacion, embudo, perdidas, conversion, pagos, seguimiento, reportes'),
     ('Persistencia', 'bo.uagrm.crm.persistencia', 'DatabaseService: conexión JDBC, consultas parametrizadas y transacciones'),
@@ -430,6 +432,7 @@ d.p('Los correos (el comando que llega al buzón y la respuesta HTML) son mensaj
     'en la etiqueta se muestran los primeros y puntos suspensivos; la lista completa de cada comando está en el Anexo A.')
 fig('sd-recibir.png', 'Diagrama de secuencia común: Recibir comando')
 fig('sd-responder.png', 'Diagrama de secuencia común: Registrar y responder')
+fig('sd-rebotes.png', 'Diagrama de secuencia común: Leer rebotes')
 for cu, v in CU.items():
     fig(f'sd-{cu.lower()}.png', f'Diagrama de secuencia {cu}: {v[0]}')
 for i, (cu, v) in enumerate(CU.items()):
@@ -468,11 +471,12 @@ for nombre, cols in tablas_sql():
 fig('componentes.png', 'Diagrama de componentes', horizontal=True,
     titulos=[('Flujo de Trabajo: Implementación', 2), ('Implementación de la arquitectura', 3)])
 d.p('El subsistema agrupa las cuatro capas como componentes contenedores, y el artefacto crm-mail.jar lo manifiesta («manifest»). '
-    'Las dependencias internas llevan la operación que se invoca; Diagnostico revisa el lector y el emisor, y UsuarioService usa '
+    'Las dependencias internas llevan la operación que se invoca; Diagnostico revisa el lector, el emisor y el lector de rebotes, y UsuarioService usa '
     'jBCrypt para guardar la clave web del usuario como hash. Hacia afuera, cada componente expone una interfaz requerida '
     '(semicírculo) que se une por un conector de ensamblaje con la interfaz provista (círculo) de quien la implementa: el lector '
     'de correo con el POP3 de Dovecot (puerto 110), el emisor SMTP con la API Jakarta Mail de Angus Mail y esta con el SMTP de '
-    'Gmail (587), y DatabaseService con JDBC de PostgreSQL JDBC y este con el protocolo de PostgreSQL 18.6 (puerto 5432).')
+    'Gmail (587) y con su IMAP (993) para leer los rebotes, y DatabaseService con JDBC de PostgreSQL JDBC y este con el protocolo '
+    'de PostgreSQL 18.6 (puerto 5432).')
 d.p('El corazón del sistema es la verificación en cuatro pasos de cada correo, en este orden: formato del comando '
     '(CommandParser), identidad del remitente (tabla usuario), permiso del rol (la subclase de RolCommandProcessor) y, recién '
     'entonces, el servicio del caso de uso. Un comando no permitido se responde como "Denegado" sin abrir una conexión a la '
@@ -495,7 +499,7 @@ d.tabla('Herramientas y versiones', ['Herramienta', 'Versión', 'Uso'], [
     ('Eclipse Temurin JDK', '21.0.12', 'Compilación, pruebas y ejecución del lector'),
     ('Windows 11 Home', '10.0.26300', 'Sistema operativo del equipo que ejecuta el lector'),
     ('Apache Maven', '3.9.16', 'Construcción y dependencias; jar único con maven-shade-plugin 3.6.0'),
-    ('Angus Mail / Jakarta Mail API', '2.0.5 / 2.1.5', 'Análisis MIME y envío SMTP'),
+    ('Angus Mail / Jakarta Mail API', '2.0.5 / 2.1.5', 'Análisis MIME, envío SMTP y lectura IMAP de rebotes'),
     ('PostgreSQL JDBC', '42.7.13', 'Conexión a la base de datos'),
     ('jBCrypt', '0.4', 'Hash de la clave web al registrar un usuario'),
     ('PostgreSQL', '18.6', 'Base de datos de la facultad'),
@@ -522,11 +526,19 @@ d.tabla('Pruebas de integración contra el PostgreSQL de la facultad', ['Clase d
         nota_txt=f"Ejecutadas el 17/11/2026 con {integ['comando']} sobre un esquema temporal (crm_qa_correo) creado con "
                  'sql/esquema.sql y sql/referencias.sql y eliminado al terminar: roles, alcance, órdenes, comprobantes, pagos, '
                  'conversión, exportación y concurrencia.')
+d.p('La prueba de robustez (RobustezCorreoTest) envió cada comando, con cada rol y con un visitante, con entradas malas: '
+    'parámetros vacíos o solo con espacios, letras donde va un número, negativos, números enormes, inyección SQL, textos de 5000 '
+    'caracteres, emojis, fechas imposibles, parámetros de más, corchetes y comillas sin cerrar, y siete archivos CSV dañados. '
+    'En 4515 casos ninguna respuesta fue un error interno ni un error SQL sin traducir, nada vacío o mal formado se aceptó y '
+    'las tablas siguieron en pie. Se ejecutó el 17/11/2026 sobre un PostgreSQL 18 desechable creado con sql/esquema.sql y '
+    'sql/referencias.sql (p1/PRUEBAS.md).')
 d.h('Funcionamiento con correos reales', 2)
 d.p('El 17 de noviembre de 2026 el lector se ejecutó en la PC del grupo con el servicio del VPS ya detenido. Al arrancar revisó '
     'las tres conexiones; luego recibió dos comandos enviados al puerto 25 de mail.tecnoweb.org.bo con el remitente de un vendedor '
     'registrado: HELP[] (Éxito) y VERBITACORA["5"], reservado al administrador (Denegado). Ambos quedaron en la tabla log_comandos '
-    'con el rol del remitente.')
+    'con el rol del remitente. Del mismo modo se comprobó un remitente institucional (@ficct.uagrm.edu.bo) con HELP[] y con '
+    'Re: LISTAROFERTA[]: ambas respuestas llegaron a esa cuenta. Una respuesta dirigida a una dirección inexistente de ese '
+    'dominio quedó en el log como REBOTE, con el código 550 5.1.1 que devolvió el servidor del destinatario.')
 CAP = DOC / 'capturas'
 d.figura(CAP / 'servicio-local.png', 'Arranque del lector, revisión de conexiones y dos comandos atendidos',
          'Salida en consola del lector en la PC del grupo (hora de Bolivia), 17 de noviembre de 2026; se ocultó el último octeto de la IP pública.', 16)
@@ -554,6 +566,7 @@ d.tabla('Fallas que el sistema detecta y cómo las informa', ['Falla', 'Señal',
     ('Clave del buzón cambiada o cuenta deshabilitada', 'POP3 -ERR [AUTH]', 'POP3 rechazó el login'),
     ('Buzón bloqueado por otro lector', 'POP3 -ERR [IN-USE]', 'buzón bloqueado por otra sesión'),
     ('Clave de aplicación de Gmail revocada', 'SMTP 535', 'SMTP rechazó el login'),
+    ('Respuesta rechazada por el servidor del destinatario', 'Aviso de rebote en la cuenta de Gmail (IMAP)', 'REBOTE respuesta a <correo> no entregada → <motivo>'),
     ('Conexión cortada por el servidor', 'SocketException', '<host>:<puerto> cortó la conexión'),
 ], anchos=[4.6, 4.2, 7.2], tam=9, nota_txt='Traducción hecha por la clase Diagnostico (p1/src/main/java/bo/uagrm/crm/Diagnostico.java); DiagnosticoTest la comprueba sin red.')
 d.p('La revisión de conexiones (ejecutar.ps1 -Diagnostico) se probó con la configuración real y con cinco copias alteradas: un '

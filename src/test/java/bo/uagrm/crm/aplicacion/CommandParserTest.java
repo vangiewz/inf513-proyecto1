@@ -42,6 +42,15 @@ class CommandParserTest {
   }
 
   @Test
+  void prefijosDeRespuestaDeCualquierCliente() {
+    assertEquals(Comando.VERTABLERO, parse("Re: VERTABLERO[]").getTipo());
+    assertEquals(Comando.VERTABLERO, parse("RV: RE: VERTABLERO[]").getTipo());
+    assertEquals(Comando.VERTABLERO, parse("Fwd:VERTABLERO[]").getTipo());
+    assertTrue(CommandParser.pareceComando("RE: HELP[]"));
+    assertFalse(CommandParser.pareceComando("Re: hola"));
+  }
+
+  @Test
   void opcionalAusenteEsNull() {
     Command c = parse("MARCARPERDIDO[\"7\",\"3\"]");
     assertTrue(c.isValido());
