@@ -46,7 +46,37 @@ public final class DatabaseService {
     T en(Connection c) throws SQLException, E;
   }
 
+  /**
+   * Transacción en curso en este hilo. Mientras existe, los servicios trabajan dentro de ella: así
+   * la operación de negocio, su bitácora y su respuesta en cola se confirman en un solo COMMIT.
+   */
+  private final ThreadLocal<Connection> enCurso = new ThreadLocal<>();
+
+  /**
+   * Conexión nueva o, dentro de una transacción en curso, esa misma conexión (su close() no la
+   * cierra: la cierra quien abrió la transacción).
+   */
   public Connection getConnection() throws SQLException {
+    Connection actual = enCurso.get();
+    return actual != null ? sinCerrar(actual) : abrir();
+  }
+
+  private static Connection sinCerrar(Connection c) {
+    return (Connection)
+        java.lang.reflect.Proxy.newProxyInstance(
+            Connection.class.getClassLoader(),
+            new Class<?>[] {Connection.class},
+            (proxy, m, args) -> {
+              if (m.getName().equals("close")) return null;
+              try {
+                return m.invoke(c, args);
+              } catch (java.lang.reflect.InvocationTargetException e) {
+                throw e.getCause();
+              }
+            });
+  }
+
+  private Connection abrir() throws SQLException {
     java.util.Properties props = new java.util.Properties();
     props.setProperty("user", usuario);
     props.setProperty("password", password);
@@ -68,9 +98,10 @@ public final class DatabaseService {
   public static final List<String> TABLAS =
       List.of(
           "api_tokens", "catalogo_cache", "comisiones", "comprobantes_pago", "configuraciones",
+          "correos_salientes",
           "descuentos", "exportaciones", "inscripciones_comerciales", "interacciones", "intereses",
           "log_comandos", "motivos_perdida", "movimientos_interes", "notificaciones",
-          "orden_pago_descuentos", "ordenes_pago", "pagos", "programas_responsables", "prospectos",
+          "orden_pago_descuentos", "ordenes_pago", "pagos", "programas", "programas_responsables", "prospectos",
           "recordatorios", "roles", "solicitudes_compra", "usuarios");
 
   private static final String VALORES_TABLAS =
@@ -91,9 +122,35 @@ public final class DatabaseService {
                 ? "el esquema "
                     + (esquema == null ? "de currentSchema no existe" : "'" + esquema + "' no tiene ninguna tabla del CRM")
                     + ": revise currentSchema en db.url (debe ser public)"
-                : "faltan tablas en el esquema '" + esquema + "' (¿las borraron?): " + String.join(", ", faltan),
+                : "faltan tablas en el esquema '" + esquema + "' (¿las borraron?): " + String.join(", ", faltan)
+                    + (faltan.equals(List.of("correos_salientes"))
+                        ? " (falta aplicar sql/migraciones/2026-11-19_bandeja_correo.sql)"
+                        : "")
+                    + (faltan.contains("programas")
+                        ? " (falta aplicar sql/migraciones/2026-11-19_normalizar_catalogo.sql)"
+                        : ""),
             "42P01");
       }
+      if (uno(
+              c,
+              rs -> 1,
+              "SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()"
+                  + " AND table_name='log_comandos' AND column_name='message_id'")
+          == null)
+        throw new SQLException(
+            "falta la columna log_comandos.message_id: aplique"
+                + " sql/migraciones/2026-11-19_bandeja_correo.sql",
+            "42703");
+      boolean nombreRepetido = uno(c, rs -> 1,
+          "SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()"
+              + " AND table_name='catalogo_cache' AND column_name='programa_nombre'") != null;
+      Long relacionesPrograma = uno(c, rs -> rs.getLong(1),
+          "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace"
+              + " WHERE n.nspname=current_schema() AND c.contype='f' AND c.conname IN"
+              + " ('catalogo_cache_programa_codigo_fk','programas_responsables_programa_codigo_fk')");
+      if (nombreRepetido || relacionesPrograma != 2L)
+        throw new SQLException("el catálogo no está normalizado: aplique"
+            + " sql/migraciones/2026-11-19_normalizar_catalogo.sql antes de leer el buzón", "55000");
     }
   }
 
@@ -126,21 +183,77 @@ public final class DatabaseService {
 
   /**
    * Ejecuta el trabajo en una transacción: COMMIT si termina bien, ROLLBACK ante cualquier
-   * excepción.
+   * excepción. Si ya hay una transacción en curso en este hilo, el trabajo se une a ella con un
+   * SAVEPOINT: si falla, solo se deshace su parte y la excepción sigue hacia arriba.
    */
   public <T, E extends Exception> T enTransaccion(Trabajo<T, E> trabajo) throws SQLException, E {
-    try (Connection c = getConnection()) {
-      c.setAutoCommit(false);
-      uno(c, rs -> rs.getString(1), "SELECT set_config('crm.canal','correo',true)");
+    Connection actual = enCurso.get();
+    if (actual != null) {
+      java.sql.Savepoint sp = actual.setSavepoint();
       try {
-        T resultado = trabajo.en(c);
-        c.commit();
+        T resultado = trabajo.en(sinCerrar(actual));
+        actual.releaseSavepoint(sp);
         return resultado;
       } catch (Exception e) {
-        c.rollback();
+        try {
+          actual.rollback(sp);
+        } catch (SQLException r) {
+          e.addSuppressed(r);
+        }
         throw e;
       }
     }
+    try (Connection c = abrir()) {
+      c.setAutoCommit(false);
+      uno(c, rs -> rs.getString(1), "SELECT set_config('crm.canal','correo',true)");
+      enCurso.set(c);
+      try {
+        T resultado = trabajo.en(sinCerrar(c));
+        c.commit();
+        return resultado;
+      } catch (Exception e) {
+        try {
+          c.rollback();
+        } catch (SQLException r) {
+          e.addSuppressed(r);
+        }
+        throw e;
+      } finally {
+        enCurso.remove();
+      }
+    }
+  }
+
+  /**
+   * Para el trabajo que debe sobrevivir a una falla parcial dentro de la transacción en curso:
+   * corre en un SAVEPOINT y, si dejó la transacción abortada (sentencia fallida fuera de un
+   * enTransaccion), vuelve a ese punto para que el resto (bitácora, cola) pueda confirmarse.
+   */
+  public <T> T aislado(java.util.function.Supplier<T> trabajo) throws SQLException {
+    Connection c = enCurso.get();
+    if (c == null) return trabajo.get();
+    java.sql.Savepoint sp = c.setSavepoint();
+    T resultado = trabajo.get();
+    try (var ps = c.prepareStatement("SELECT 1")) {
+      ps.execute();
+      c.releaseSavepoint(sp);
+    } catch (SQLException abortada) {
+      c.rollback(sp);
+    }
+    return resultado;
+  }
+
+  /** ¿La falla es de conexión (BD caída, red cortada) y conviene reintentar más tarde? */
+  public static boolean esDeConexion(Throwable e) {
+    for (Throwable t = e; t != null; t = t.getCause()) {
+      if (t instanceof java.io.IOException) return true;
+      if (t instanceof SQLException s && s.getSQLState() != null && s.getSQLState().startsWith("08"))
+        return true;
+      if (t instanceof SQLException s
+          && s.getSQLState() != null
+          && (s.getSQLState().startsWith("57P") || s.getSQLState().equals("53300"))) return true;
+    }
+    return false;
   }
 
   public static <T> List<T> lista(Connection c, Mapeo<T> mapeo, String sql, Object... params)

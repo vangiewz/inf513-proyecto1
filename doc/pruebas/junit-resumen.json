@@ -1,0 +1,150 @@
+{
+  "fecha": "2026-11-19",
+  "origen": "144 casos de suite completa local; después una prueba adicional de parser ejecutada en su clase, sin repetir suite completa",
+  "suites": [
+    {
+      "clase": "CommandParserTest",
+      "casos": 7,
+      "aprobados": 7,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "MatrizAccesoTest",
+      "casos": 51,
+      "aprobados": 51,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "ResponseFormatterTest",
+      "casos": 2,
+      "aprobados": 2,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "AppTest",
+      "casos": 1,
+      "aprobados": 1,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "BandejaCorreoTest",
+      "casos": 8,
+      "aprobados": 8,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "ConfigTest",
+      "casos": 13,
+      "aprobados": 13,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "DiagnosticoTest",
+      "casos": 5,
+      "aprobados": 5,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "CasosAprobadosCorreoTest",
+      "casos": 13,
+      "aprobados": 13,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "CatalogoNormalizadoTest",
+      "casos": 3,
+      "aprobados": 3,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "CorreoServidorFinancieroTest",
+      "casos": 2,
+      "aprobados": 2,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "RobustezCorreoTest",
+      "casos": 1,
+      "aprobados": 1,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "ServidorCompartidoTest",
+      "casos": 10,
+      "aprobados": 10,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "AdjuntoTest",
+      "casos": 8,
+      "aprobados": 8,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "ColaCorreoTest",
+      "casos": 3,
+      "aprobados": 3,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "CorreoTest",
+      "casos": 6,
+      "aprobados": 6,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "Pop3ClientTest",
+      "casos": 6,
+      "aprobados": 6,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "RebotesTest",
+      "casos": 3,
+      "aprobados": 3,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "SmtpSenderTest",
+      "casos": 3,
+      "aprobados": 3,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    }
+  ]
+}

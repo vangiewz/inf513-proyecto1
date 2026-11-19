@@ -73,9 +73,36 @@ public record Correo(
       if (archivos.size() > 1) error = "Adjunte un solo comprobante por correo.";
       else if (!archivos.isEmpty()) archivo = archivos.get(0);
     } catch (Exception e) {
-      error = "No se pudo leer el adjunto; el limite es 5 MB por archivo.";
+      error =
+          e.getMessage() != null && e.getMessage().contains("demasiado grande")
+              ? "El adjunto supera el límite de 5 MB por archivo."
+              : "No se pudo leer el adjunto: el archivo llegó dañado o mal codificado. Vuelva a"
+                  + " adjuntarlo.";
     }
     return new Correo(remitente, asunto, csv, automatico, archivo, error);
+  }
+
+  /**
+   * Identidad del correo para no registrarlo dos veces: su cabecera Message-ID o, si falta o es
+   * inválida, "sha256:" y el resumen del contenido (una relectura del buzón trae los mismos bytes).
+   */
+  public static String idMensaje(byte[] crudo) {
+    try {
+      var h = new jakarta.mail.internet.InternetHeaders(new ByteArrayInputStream(crudo));
+      String id = h.getHeader("Message-ID", null);
+      if (id != null) {
+        id = id.replaceAll("\\s+", "");
+        if (id.matches("<[^<>]{3,250}>")) return id;
+      }
+    } catch (MessagingException ignored) {
+      // sin cabeceras legibles: se usa el resumen
+    }
+    try {
+      byte[] d = java.security.MessageDigest.getInstance("SHA-256").digest(crudo);
+      return "sha256:" + java.util.HexFormat.of().formatHex(d);
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException(e);
+    }
   }
 
   /**

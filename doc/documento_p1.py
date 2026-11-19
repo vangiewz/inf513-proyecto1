@@ -1,30 +1,38 @@
 """Genera el documento PUDS del Proyecto 1 (CRM vía e-mail, Grupo 05 SA) con el formato FICCT/APA.
-Uso: python p1/doc/documento_p1.py  ->  p1/doc/P1-INF513-GRUPO05SA.docx
-Luego: powershell -File tools/word_export.ps1 p1/doc/P1-INF513-GRUPO05SA.docx
+Desde la raíz del repositorio: python doc/documento_p1.py -> doc/P1-INF513-GRUPO05SA.docx
+Luego: powershell -File scripts/exportar_documento.ps1
 Estructura: la del P1 aprobado (Grupo 17 SA) — 12 secciones del Anexo B y Desarrollo por flujos del PUDS.
 Lo que aún no existe (figuras de Enterprise Architect, datos de la empresa) sale en rojo y se lista al final."""
-import csv, json, pathlib, re, sys
+import csv, json, pathlib, re, sys, textwrap
 import xml.etree.ElementTree as ET
 
-RAIZ = pathlib.Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(RAIZ / 'tools'))
+P1 = pathlib.Path(__file__).resolve().parents[1]
+DOC = P1 / 'doc'
+RAIZ = P1.parent
+HERRAMIENTAS = RAIZ / 'tools'
+if not (HERRAMIENTAS / 'doc_ficct.py').is_file():
+    HERRAMIENTAS = DOC / 'lib'
+sys.path.insert(0, str(HERRAMIENTAS))
+import doc_ficct
+if not doc_ficct.LOGO.is_file():
+    doc_ficct.LOGO = DOC / 'recursos' / 'logo-ficct.png'
 from doc_ficct import Informe
 from docx.shared import RGBColor
 
-P1 = RAIZ / 'p1'
-DOC = P1 / 'doc'
 DIA = DOC / 'diagramas'
+CAP = DOC / 'capturas'
 SQL = (P1 / 'sql' / 'esquema.sql').read_text(encoding='utf-8')
 MATRIZ = list(csv.reader((DOC / 'matriz-acceso.tsv').read_text(encoding='utf-8').splitlines(), delimiter='\t'))[1:]
 N_CMD = sum(1 for f in MATRIZ if f[0] != 'General')   # comandos de los CU (sin HELP)
 sys.path.insert(0, str(DOC / 'ea'))
+sys.path.insert(0, str(DOC))
 import ea_p1   # noqa: E402  el modelo de datos se lee igual que para los diagramas
 TABLAS, FKS, PKS, UNICAS = ea_p1.tablas_sql(), ea_p1.fks_sql(), ea_p1.pks_sql(), ea_p1.unicas_sql()
 PENDIENTES = []
 
 # Datos que el grupo aún debe entregar: None = pendiente (se imprime en rojo).
 GITHUB = 'https://github.com/vangiewz/inf513-proyecto1'
-FECHA = '17 de noviembre de 2026'
+FECHA = '19 de noviembre de 2026'
 
 d = Informe()
 
@@ -37,21 +45,31 @@ def rojo(texto):
     return par
 
 
-def fig(archivo, titulo, ancho=16.0, nota=None, horizontal=False, titulos=()):
+def fig(archivo, titulo, ancho=16.0, nota=None, horizontal=None, titulos=()):
     """Figura de EA. horizontal=True: va sola en una página apaisada (diagramas anchos, legibles al imprimir).
+    Sin indicarlo, un diagrama grande va en la orientación en que su letra impresa sale más grande.
     titulos: [(texto, nivel)] que encabezan la página apaisada, para que no queden huérfanos en la página anterior."""
     ruta = DIA / archivo
-    if horizontal and ruta.exists():
+    if ruta.exists():
         import pymupdf
         px = pymupdf.Pixmap(str(ruta))
-        if px.width / px.height < 1.3: horizontal = False; ancho = 16.0   # más alta que ancha: rinde más en vertical
+        w, h = px.width, px.height
+        if w >= 1600 or horizontal is None:   # la orientación en que la letra impresa sale más grande
+            horizontal = w >= 1600 and min(650 / w, 428 / h) > min(468 / w, 588 / h)
+        if not horizontal and w >= 1600: ancho = 16.0
+    horizontal = bool(horizontal)
     if horizontal: d.orientacion(True); ancho = 22.9
     for t, nivel in titulos: d.h(t, nivel)
     if ruta.exists():
         import pymupdf
         px = pymupdf.Pixmap(str(ruta))
-        alto_max = (15.0 if horizontal else 20.5) - 1.2 * len(titulos)   # cm disponibles bajo el rótulo
+        alto_max = (13.2 if horizontal else 20.0) - 1.7 * len(titulos)   # reservar rótulo y títulos en la misma página
+        n_parrafos = len(d.doc.paragraphs)
         d.figura(ruta, titulo, nota, min(ancho, alto_max * px.width / px.height))
+        d.doc.paragraphs[n_parrafos].paragraph_format.keep_with_next = True
+        imagen = d.doc.paragraphs[n_parrafos + 1].paragraph_format
+        imagen.line_spacing = 1
+        imagen.space_before = imagen.space_after = 0
     else:
         d.rotulo('Figura', titulo)
         rojo(f'figura de Enterprise Architect diagramas/{archivo} (lista en P1_CORREO.md § Diagramas)')
@@ -80,12 +98,22 @@ d.revision('Datos para la Revisión', [
     ('Primer comando', 'Enviar un correo a esa dirección con el asunto HELP[]', True),
     ('Cuentas de prueba', 'Administrador, coordinador y vendedores registrados por el grupo; se muestran en la defensa', False),
     ('Repositorio', dato(GITHUB, 'URL de GitHub inf513-proyecto1'), False),
+    ('Acceso público al repositorio', 'Pendiente de verificar: la consulta pública del 19/11/2026 devuelve 404. No se publicó esta revisión durante la auditoría.', False),
     ('Base de datos', 'PostgreSQL 18.6, db.tecnoweb.org.bo:5432, db_grupo05sa, esquema public (compartido con el Proyecto 2)', False),
-    ('Ejecución', 'p1/ejecutar.ps1 en la PC del grupo; revisa el buzón cada 10 segundos y deja cada ciclo y cada falla en p1/logs/crm-mail.0.log', False),
+    ('Estado de la versión', 'La bandeja persistente y el catálogo normalizado se verifican localmente. Sus migraciones y la validación de esta versión en el servidor de la facultad están pendientes. El JAR nuevo no procesa el buzón sin ambas migraciones.', False),
+    ('Ejecución', 'p1/ejecutar.ps1 en la PC del grupo; revisa el buzón cada 10 segundos, guarda cada correo en la base de datos antes de borrarlo del buzón y deja cada ciclo, cada respuesta y cada falla en p1/logs/crm-mail.0.log', False),
     ('Diagnóstico', 'p1/ejecutar.ps1 -Diagnostico revisa DNS, puertos, POP3, SMTP, IMAP de rebotes y la base de datos', False),
 ], 'El remitente se identifica por su correo: el rol lo da la cuenta registrada (el administrador crea las demás con '
    'INSERTARUSUARIO). Un correo no registrado actúa como visitante (consulta la oferta y registra su interés).')
 d.indices()
+# El salto en un párrafo vacío puede ocupar una hoja entera al crecer el índice automático.
+# Solo ajustamos estos encabezados de P1, sin cambiar la herramienta compartida de otros informes.
+for par in d.doc.paragraphs:
+    if par.text in ('ÍNDICE DE FIGURAS', 'ÍNDICE DE TABLAS'):
+        anterior = par._p.getprevious()
+        if anterior is not None and anterior.xpath('.//w:br[@w:type="page"]'):
+            anterior.getparent().remove(anterior)
+        par.paragraph_format.page_break_before = True
 
 # ---------------------------------------------------------------- I
 d.h('I. Introducción', 1)
@@ -99,8 +127,9 @@ d.p('El sistema recibe en el asunto de un correo enviado a grupo05sa@tecnoweb.or
     'o vendedor) pueda usar ese comando, lo ejecuta sobre una base de datos PostgreSQL y le responde con un correo HTML.')
 d.p('El desarrollo siguió el Proceso Unificado de Desarrollo de Software (PUDS) con UML, modelado en Enterprise Architect. '
     'Como resultado se entrega un servicio Java que lee el buzón por POP3 con sockets propios, responde por SMTP, implementa los '
-    f'ocho casos de uso aprobados con {N_CMD} comandos y se ejecuta en un equipo del grupo, donde registra cada ciclo de lectura y '
-    'la causa de cada falla de red, de correo o de base de datos.')
+    f'ocho casos de uso aprobados con {N_CMD} comandos y se ejecuta en un equipo del grupo. Cada correo se guarda en la base de '
+    'datos antes de borrarlo del buzón, se procesa una sola vez y su respuesta se reintenta hasta entregarla, de modo que una '
+    'caída del programa, del correo o de la base de datos no pierde solicitudes ni repite operaciones.')
 
 # ---------------------------------------------------------------- II
 d.h('II. Antecedentes y Justificación', 1)
@@ -249,6 +278,14 @@ d.p('Una transacción agrupa varias operaciones que deben cumplirse todas o ning
     'dos transacciones concurrentes modifiquen el mismo dato (Silberschatz, Korth y Sudarshan, 2014). PostgreSQL implementa '
     'transacciones, restricciones de integridad (claves primarias y foráneas, CHECK, UNIQUE) y la cláusula SELECT ... FOR UPDATE '
     '(The PostgreSQL Global Development Group, 2026).')
+d.h('Entrega confiable de mensajes', 2)
+d.p('Entre dos sistemas que se comunican por mensajes, una caída puede ocurrir después de recibir un mensaje y antes de '
+    'procesarlo, o después de procesarlo y antes de responder. La entrega garantizada guarda cada mensaje en un almacén '
+    'persistente antes de darlo por recibido, y el receptor idempotente reconoce un mensaje repetido por su identificador para no '
+    'procesarlo dos veces (Hohpe y Woolf, 2003). Todo correo lleva en la cabecera Message-ID un identificador único '
+    '(Resnick, 2008). Cuando la operación y el mensaje de salida se guardan en la misma transacción, el envío puede '
+    'reintentarse sin repetir la operación; como la confirmación del envío también puede perderse, el destinatario puede '
+    'recibir la misma respuesta más de una vez, pero nunca se ejecuta dos veces la operación (Kleppmann, 2017).')
 d.h('Seguridad: control de acceso por rol e inyección SQL', 2)
 d.p('El control de acceso basado en roles asigna permisos a roles y roles a usuarios, en lugar de permisos a cada persona '
     '(Sandhu, Coyne, Feinstein y Youman, 1996). La inyección SQL se evita enviando los datos del usuario como parámetros de '
@@ -274,6 +311,34 @@ d.tabla('Casos de uso aprobados', ['ID', 'Caso de uso'], [
     ('CU5', 'Gestión de Pérdida de Prospectos y Clasificación de Motivos'), ('CU6', 'Gestión de Validar Datos y Procesar Conversión a Matrícula'),
     ('CU7', 'Gestión de Bitácora, Interacciones y Recordatorios'), ('CU8', 'Reportes y Estadísticas')],
     anchos=[1.6, 14.4], nota_txt='Títulos tal como los aprobó el docente el 05/10/2026. En CU1 los actores son los roles de RF1.1: administrador, coordinador y vendedor.')
+d.h('Lista de requerimientos', 3)
+d.p('Los requerimientos son los que el grupo publicó en el foro de la materia el 14/09/2026, sobre los cuales el docente aprobó '
+    'los ocho casos de uso el 05/10/2026. La tabla indica el caso de uso que cubre cada uno y cómo se resuelve en este proyecto '
+    'vía correo; lo propio de una interfaz web queda para el Proyecto 2.')
+d.tabla('Requerimientos publicados y caso de uso que los cubre', ['Código', 'Requerimiento', 'CU', 'En el Proyecto 1 (correo)'], [
+    ('RF1.1', 'Acceso con credenciales para tres roles (RBAC)', 'CU1', 'Identidad por la dirección de correo, rol y vigencia en usuarios'),
+    ('RF1.2', 'El vendedor ve su cartera o la bolsa común', 'CU3, CU4', 'Alcance por rol en cada consulta'),
+    ('RF1.3', 'El coordinador ve las versiones de programas a su cargo', 'CU2, CU8', 'ASIGNARCOORDINADOR y alcance por programa'),
+    ('RF2.1', 'Registro manual o masivo (CSV) de prospectos', 'CU2', 'REGISTRARPROSPECTO, IMPORTARPROSPECTOS con .csv adjunto'),
+    ('RF2.2', 'Interés vinculado al catálogo (programa o módulo)', 'CU2', 'Catálogo simulado en catalogo_cache (API del SIS pendiente)'),
+    ('RF2.3', 'Asignación manual o automática Round-Robin', 'CU3', 'ASIGNARPROSPECTO y ASIGNARAUTOMATICO por menor carga'),
+    ('RF3.1', 'Tablero Kanban con los prospectos como tarjetas', 'CU4', 'VERTABLERO responde el tablero en carriles'),
+    ('RF3.2', 'Etapas Nuevo, En Contacto, Seguimiento, Promesa de Pago, Convertido, Perdido', 'CU4', 'Las seis etapas en MOVERTARJETA y VERTABLERO'),
+    ('RF3.3', 'Motivo obligatorio al pasar a Perdido', 'CU5', 'MARCARPERDIDO con motivo clasificado'),
+    ('RF3.4', 'Validar datos antes de la matrícula', 'CU6', 'VALIDARCONVERSION, orden, comprobante y APROBARPAGO'),
+    ('RF4.1', 'Historial cronológico de interacciones', 'CU7', 'VERHISTORIAL'),
+    ('RF4.2', 'Notas manuales', 'CU7', 'REGISTRARINTERACCION de tipo Nota'),
+    ('RF4.3', 'Recordatorios de contacto', 'CU7', 'PROGRAMARRECORDATORIO; el aviso llega por correo'),
+    ('RNF1', 'Interfaz responsive (vendedores desde el celular)', '—', 'La respuesta HTML se lee en la aplicación de correo del celular'),
+    ('RNF2', 'Cliente API del catálogo del Proyecto 2 (SIS)', 'CU2, CU6', 'Simulado: catálogo local y exportación CSV; API pendiente'),
+], anchos=[1.5, 5.8, 1.9, 6.8], tam=9)
+d.h('Modelo de dominio inicial', 3)
+d.p('El modelo de dominio inicial muestra solo las entidades del negocio, sin atributos. Se obtuvo de los sustantivos de los '
+    'requerimientos anteriores: no hubo otra reunión de levantamiento. Cada entidad indica, en sus notas del modelo de Enterprise '
+    'Architect, el requerimiento del que sale. Pagos, comprobantes, descuentos, comisiones, exportaciones y la bitácora '
+    'aparecieron después, al detallar el CU6 y el CU7, y están en el modelo de dominio final (modelo conceptual, en el Diseño).')
+fig('dominio-inicial.png', 'Modelo de dominio inicial', ancho=14,
+    nota='Entidad y requerimiento del que sale: ' + '; '.join(f'{e} ({rf})' for e, rf in ea_p1.DOMINIO_INICIAL.items()) + '.')
 d.h('Priorizar casos de uso', 3)
 PRIO = {'CU1': 'Alta', 'CU2': 'Alta', 'CU3': 'Alta', 'CU4': 'Alta', 'CU5': 'Media', 'CU6': 'Alta', 'CU7': 'Media', 'CU8': 'Baja'}
 d.tabla('Priorización de casos de uso', ['ID', 'Actores involucrados', 'Comandos', 'Prioridad'],
@@ -283,7 +348,7 @@ CU = {
     'CU1': ('Gestión de Usuarios', 'Registrar, listar, modificar y dar de baja a los usuarios del CRM con su rol y la vigencia de su credencial (fecha de inicio y de fin).',
             'Administrador', 'El remitente es un administrador activo y con la credencial vigente.',
             ['El administrador envía INSERTARUSUARIO, MODIFICARUSUARIO, ELIMINARUSUARIO o LISTARUSUARIOS con sus parámetros en el asunto.',
-             'El sistema descarga el correo por POP3 y CommandParser separa el comando y sus parámetros.',
+             'El sistema descarga el correo por POP3, lo guarda en la bitácora (resultado Recibido) antes de borrarlo del buzón y CommandParser separa el comando y sus parámetros.',
              'CommandProcessor identifica al remitente por su correo y AdministradorCommandProcessor comprueba el permiso.',
              'UsuarioService valida nombre, correo, teléfono, rol y vigencia (fecha_fin no anterior a fecha_inicio; por omisión, un año) y ejecuta la operación en una transacción. El usuario se identifica por su correo.',
              'Al dar de baja a un vendedor, sus tarjetas abiertas vuelven a la bolsa común.',
@@ -339,7 +404,7 @@ CU = {
             ['El actor envía REGISTRARINTERACCION, PROGRAMARRECORDATORIO, LISTARRECORDATORIOS, COMPLETARRECORDATORIO, VERHISTORIAL o, si es administrador, VERBITACORA.',
              'SeguimientoService registra la interacción o el recordatorio, o arma el historial cronológico de movimientos, interacciones y recordatorios.',
              'Cada ciclo, el servicio envía por correo los recordatorios vencidos a su responsable.',
-             'Todo correo recibido queda en la bitácora del sistema con su resultado (Éxito, Error, Denegado o Ignorado).'],
+             'Todo correo recibido queda en la bitácora del sistema desde que se descarga (Recibido) y luego con su resultado (Éxito, Error, Denegado, Ignorado o Repetido) y el estado de su respuesta.'],
             'El seguimiento del prospecto queda trazado y los recordatorios llegan a tiempo.',
             'Fecha pasada o con otro formato, tipo de interacción inválido o tarjeta ajena: se responde con el error.'),
     'CU8': ('Reportes y Estadísticas', 'Obtener cifras del embudo, de los vendedores, de las pérdidas y por oferta, según el alcance del rol.',
@@ -350,6 +415,30 @@ CU = {
             'El actor recibe las cifras actuales.',
             'Un vendedor pide un reporte de coordinación: acceso denegado.'),
 }
+# Subflujos (aparte del flujo principal, clase 03) y excepciones de infraestructura: lo que hace el código en cada caso.
+SUB_COMUN = ['S1. Comando no permitido al rol: RolCommandProcessor responde Denegado y sugiere HELP[]; no se toca la base de datos.',
+             'S2. Comando inexistente o parámetro faltante, sobrante o con formato inválido: se responde Error nombrando el parámetro.']
+SUB_REINTENTO = ('S3. El mismo remitente repite el mismo comando de escritura dentro de 30 minutos, o cuando su respuesta aún no '
+                 'salió: no se ejecuta otra vez; el registro queda Repetido y se reenvía la respuesta original.')
+SUB_CU = {
+    'CU1': ['S4. Sin fechas de vigencia: la credencial vale desde hoy y por un año.',
+            'S5. Baja de un vendedor: sus tarjetas abiertas vuelven a la bolsa común.'],
+    'CU2': ['S4. Visitante (correo no registrado): solo LISTAROFERTA y REGISTRARINTERES; su interés entra a la bolsa común.',
+            'S5. IMPORTARPROSPECTOS: cada fila del CSV se valida e informa por separado.'],
+    'CU3': ['S4. ASIGNARAUTOMATICO reparte por menor carga, deja juntos los intereses de un mismo prospecto y avisa por correo a cada vendedor.'],
+    'CU4': ['S4. Las etapas financieras (Promesa de Pago, Convertido) no se mueven a mano: las fija el pago del CU6.'],
+    'CU5': ['S4. Un motivo ya usado no se elimina; se puede cambiar su nombre o su categoría.'],
+    'CU6': ['S4. Pago rechazado: queda en el historial y el vendedor adjunta otro comprobante.',
+            'S5. CONVERTIRPROSPECTO sobre una tarjeta ya inscrita comprueba la inscripción sin duplicarla.'],
+    'CU7': ['S4. Recordatorio vencido: el ciclo lo pone en la cola de salida y lo marca avisado en la misma transacción.'],
+    'CU8': ['S3. El vendedor obtiene REPORTEEMBUDO solo de su cartera.']}
+EXC_INFRA = ['Base de datos caída: antes de leer el buzón, los correos esperan en él; durante el proceso, la transacción se deshace y el '
+             'correo, ya guardado, se procesa al volver la conexión.',
+             'Servidor POP3 caído o sin respuesta: los comandos esperan en el buzón; los ya guardados se procesan igual.',
+             'Gmail no acepta la respuesta: la operación ya quedó confirmada; la respuesta se reintenta a 1, 2, 4… hasta 60 minutos '
+             'y, si la dirección no existe, queda Fallida en la bitácora.',
+             'Cuenta inactiva o credencial fuera de vigencia: Denegado.']
+
 d.h('Detallar casos de uso', 3)
 for cu, (nombre, desc, iniciador, pre, flujo, post, exc) in CU.items():
     d.h(f'{cu}: {nombre}', 3)
@@ -359,7 +448,9 @@ for cu, (nombre, desc, iniciador, pre, flujo, post, exc) in CU.items():
                          for a in actores(cu))
     d.tabla(f'Detalle de {cu}: {nombre}', ['Elemento', 'Descripción'], [
         ('Descripción', desc), ('Actores y comandos', permisos), ('Actor iniciador', iniciador), ('Precondición', pre),
-        ('Flujo principal', '\n'.join(f'{i}. {t}' for i, t in enumerate(flujo, 1))), ('Postcondición', post), ('Excepción', exc),
+        ('Flujo principal', '\n'.join(f'{i}. {t}' for i, t in enumerate(flujo, 1))),
+        ('Subflujos', '\n'.join(SUB_COMUN + ([] if cu == 'CU8' else [SUB_REINTENTO]) + SUB_CU[cu])),
+        ('Postcondición', post), ('Excepción', '\n'.join(['E1. ' + exc] + [f'E{i}. {t}' for i, t in enumerate(EXC_INFRA, 2)])),
     ], anchos=[3.4, 12.6])
 fig('uc-modelo.png', 'Modelo de casos de uso', horizontal=True, titulos=[('Estructurar el modelo de casos de uso', 3)])
 
@@ -390,55 +481,99 @@ d.h('Dependencia de paquetes', 3)
 fig('pkg-dependencias.png', 'Dependencia de paquetes', ancho=13)
 
 d.h('Flujo de Trabajo: Diseño', 2)
-d.h('Diseño físico: despliegue', 3)
+d.h('Arquitectura física: despliegue', 3)
 d.p('El usuario escribe desde su cuenta de correo. El mensaje llega por SMTP al servidor de la facultad (registro MX de '
     'tecnoweb.org.bo: mail.tecnoweb.org.bo, 139.99.68.169), donde Sendmail lo deja en el buzón grupo05sa. El lector corre en la '
     'PC del grupo (Windows 11, Eclipse Temurin JDK 21.0.12): p1/ejecutar.ps1 arranca p1/target/crm-mail.jar con la configuración '
     '.secrets/crm-mail.properties, que no se publica porque lleva las contraseñas. El programa lee el buzón por POP3 (Dovecot, puerto '
-    '110), consulta y actualiza la base db_grupo05sa en PostgreSQL 18.6 (puerto 5432) y responde por smtp.gmail.com (puerto 587 con '
+    f'110), guarda cada correo y consulta y actualiza la base db_grupo05sa en PostgreSQL 18.6 (puerto 5432; {len(TABLAS)} tablas, '
+    'entre ellas la bandeja del correo: log_comandos y correos_salientes) y responde por smtp.gmail.com (puerto 587 con '
     'STARTTLS), porque el SMTP de la facultad rechaza el reenvío a dominios externos con "550 5.7.1 Relaying denied". Si después '
     'el servidor del destinatario rechaza una respuesta, el aviso de rebote vuelve a la cuenta de Gmail del sistema: el lector lo '
-    'lee cada minuto por imap.gmail.com (puerto 993, TLS) y lo registra. Cada ciclo y '
+    'lee cada minuto por imap.gmail.com (puerto 993, TLS) y lo registra. Cada ciclo, cada respuesta y '
     'cada falla quedan en p1/logs/crm-mail.0.log. PostgreSQL acepta la conexión según la IP de origen (pg_hba.conf): si el equipo '
     'cambia de red, el diagnóstico muestra la IP rechazada.')
 fig('despliegue.png', 'Diagrama de despliegue', horizontal=True)
 d.p('En el diagrama, cada servidor es un nodo «device» con sus entornos de ejecución («executionEnvironment»: sistema operativo, '
     'máquina virtual y servicios). Los artefactos llevan su ruta real y su estereotipo («executable» para el .jar, «file» para el '
     'script de arranque, la configuración, el log y el buzón) y contienen los componentes que despliegan: las cuatro capas en el .jar '
-    'y las tablas y la bitácora en la base de datos. Las dependencias entre artefactos muestran quién arranca, lee o escribe a quién, y cada '
+    'y las tablas y la bandeja del correo en la base de datos. Las dependencias entre artefactos muestran quién arranca, lee o escribe a quién, y cada '
     'ruta de comunicación lleva su protocolo y puerto. Google, que no administra el grupo, se modela como «External System».')
-d.h('Diseño lógico: capas', 3)
+d.h('Arquitectura lógica: capas', 3)
 d.tabla('Capas del sistema', ['Capa', 'Paquete Java', 'Clases'], [
-    ('Presentación', 'bo.uagrm.crm.presentacion y bo.uagrm.crm', 'App (bucle del servicio: lee, procesa y responde), Diagnostico (causa probable de cada falla y revisión de conexiones), Pop3Client (lector POP3 con sockets), SmtpSender (emisor SMTP), Rebotes (lector IMAP de los avisos de rebote), Correo (MIME)'),
+    ('Presentación', 'bo.uagrm.crm.presentacion y bo.uagrm.crm', 'App (bucle del servicio: descarga, procesa y envía), Bandeja (bandeja de entrada y de salida en la base de datos), Diagnostico (causa probable de cada falla y revisión de conexiones), Pop3Client (lector POP3 con sockets), SmtpSender (arma y envía las respuestas), Rebotes (lector IMAP de los avisos de rebote), Correo (MIME)'),
     ('Aplicación', 'bo.uagrm.crm.aplicacion', 'CommandParser, Command, Comando, CommandProcessor, RolCommandProcessor y sus cuatro subclases por rol, ResponseFormatter, Respuesta'),
     ('Dominio', 'bo.uagrm.crm.dominio.<cu>', 'Un paquete por caso de uso con su servicio y sus entidades: usuarios, captacion, asignacion, embudo, perdidas, conversion, pagos, seguimiento, reportes'),
-    ('Persistencia', 'bo.uagrm.crm.persistencia', 'DatabaseService: conexión JDBC, consultas parametrizadas y transacciones'),
+    ('Persistencia', 'bo.uagrm.crm.persistencia', 'DatabaseService: conexión JDBC, consultas parametrizadas y transacciones (una transacción en curso se comparte con los servicios que se llaman dentro de ella)'),
 ], anchos=[2.8, 4.6, 8.6])
 fig('capas.png', 'Diagrama de capas', horizontal=True)
+
+d.h('Recepción, proceso y respuesta sin pérdidas ni duplicados', 3)
+d.p('El programa puede cerrarse, y los servidores de correo y de base de datos pueden caer, en cualquier punto del ciclo. Por eso '
+    'cada correo pasa por tres etapas, cada una confirmada en la base de datos antes de la siguiente. (1) Recibir: se descarga y se '
+    'guarda en log_comandos con resultado Recibido, su Message-ID y su contenido; recién entonces recibe su DELE en el POP3. Como '
+    'message_id es único, un correo que el servidor vuelve a entregar no se guarda dos veces. (2) Procesar: en una sola '
+    'transacción se ejecuta el comando, se cierra el registro con su resultado (Éxito, Error, Denegado, Ignorado o Repetido) y '
+    'se encola la respuesta ya armada en correos_salientes; si algo falla antes del COMMIT, no queda nada y el correo sigue '
+    'Recibido. (3) Enviar: cada respuesta en cola se envía por SMTP; si falla, se reintenta a 1, 2, 4, 8, 16, 32 y luego cada 60 '
+    'minutos (hasta 10 intentos), sin volver a ejecutar la operación. Las filas en proceso se bloquean con FOR UPDATE SKIP LOCKED, '
+    'así que un segundo lector abierto por error no procesa ni envía lo mismo.')
+d.p('Además, si el mismo remitente vuelve a enviar el mismo comando de escritura (porque no vio la respuesta) dentro de 30 minutos, '
+    'o mientras su respuesta aún no salió, el comando no se ejecuta otra vez: el registro queda Repetido y se reenvía la respuesta '
+    'original. La única duplicación posible es la de una respuesta cuya confirmación de envío se perdió: el usuario puede recibirla '
+    'dos veces, con el mismo Message-ID, pero la operación se ejecutó una sola vez.')
+d.tabla('Momentos de falla y comportamiento del sistema', ['Momento de la falla', 'Qué hace el sistema', 'Comprobado con'], [
+    ('Base de datos no disponible al empezar el ciclo', 'No abre el buzón; reintenta cada 10, 20, 40 y luego 60 s', 'Prueba de caídas'),
+    ('Cierre del programa después de guardar un correo y antes del QUIT', 'El servidor lo vuelve a entregar; su message_id ya existe y se borra sin repetirlo (YA GUARDADO)', 'BandejaCorreoTest, prueba de caídas'),
+    ('QUIT sin respuesta (el servidor sí borró los mensajes)', 'Los correos ya estaban guardados y se procesan', 'BandejaCorreoTest, prueba de caídas'),
+    ('Cierre del programa o caída de la base de datos durante el proceso', 'ROLLBACK de operación, registro y respuesta; el correo sigue Recibido y se procesa una vez al volver', 'BandejaCorreoTest, prueba de caídas'),
+    ('Cierre después del COMMIT y antes de enviar', 'La respuesta ya está en correos_salientes y sale en el siguiente ciclo', 'Prueba de caídas'),
+    ('Gmail caído, login rechazado o falla temporal', 'Respuesta Pendiente con su próximo intento; la operación no se repite', 'BandejaCorreoTest, prueba de caídas'),
+    ('Gmail recibió la respuesta pero su confirmación se perdió', 'Se reenvía la misma respuesta, con el mismo Message-ID', 'Prueba de caídas'),
+    ('Dirección del destinatario inexistente (550)', 'La respuesta queda Fallida, sin reintentos', 'BandejaCorreoTest'),
+    ('El usuario reenvía el mismo comando', 'Registro Repetido y reenvío de la respuesta original', 'BandejaCorreoTest, prueba de caídas'),
+    ('Dos lectores abiertos a la vez', 'El POP3 bloquea el buzón y la base de datos reparte las filas sin repetirlas', 'BandejaCorreoTest'),
+    ('Rebote posterior del servidor del destinatario', 'La respuesta pasa a Rebotado y el log muestra REBOTE con el motivo', 'Lectura de rebotes por IMAP'),
+], anchos=[4.8, 7.6, 3.6], tam=9)
+
 d.h('Diagramas de secuencia', 3)
-d.p('Todo comando se recibe y se responde igual. Recibir comando muestra el ciclo de App con un fragmento loop cada intervalo '
-    '(10 segundos): comprueba el modelo de la base de datos, consulta el buzón y, en un loop por mensaje, descarga cada correo '
-    '(alt: solo las cabeceras con top() si pasa de 8 MB, o completo con retr()) y lo borra; después procesa cada mensaje leído. '
-    'Registrar y responder muestra la bitácora, el envío por SMTP y, en un fragmento opt, el registro del envío fallido.')
-d.p('Cada caso de uso tiene un solo diagrama. Lo común se dibuja una vez: el comando llega a procesador, que llama a procesar() '
-    'del procesador del rol, y este consulta comandos(). Un fragmento alt separa el comando no permitido al rol (denegado()) del '
-    'resto; dentro de [else], ejecutar() lleva a un segundo alt con un operando por comando del caso de uso, cada uno con el método '
-    'real del servicio y la operación de DatabaseService con la que llega a la base de datos (enTransaccion(), lista(), filas() o '
-    'uno()). Al salir del alt, procesador registra la bitácora y el actor recibe la respuesta HTML.')
+d.p('Lo común a todo comando se dibuja en cuatro diagramas. Recibir y guardar muestra el ciclo de App con un fragmento loop cada '
+    'intervalo (10 segundos): comprueba el modelo de la base de datos, consulta el buzón y, en un loop por mensaje, lo descarga '
+    '(alt: solo las cabeceras con top() si pasa de 8 MB, o completo con retr()), lo identifica (idMensaje), lo guarda con '
+    'Bandeja.guardar() y recién después le da DELE; al final, QUIT. Procesar un correo guardado muestra la transacción de cada '
+    'registro: tomar(), leer(), interpretar(), el opt del comando de escritura con repetido(), el alt del reintento (reenviar() y '
+    'cerrar() como Repetido) y, si no se repite, atender(), cerrar(), preparar() y encolar(), con el COMMIT al final. Enviar la '
+    'cola de salida muestra cada respuesta enviada con enviarPreparado() y el alt entre enviado() y fallo(), que devuelve los '
+    'minutos de espera. Leer rebotes muestra cómo una respuesta rechazada después queda Rebotado.')
+d.p('Cada caso de uso tiene un diagrama. El correo guardado entra por App, que llama a atender() de procesador; este llama a '
+    'procesar() del procesador del rol, que consulta comandos(). Un fragmento alt separa el comando no permitido al rol '
+    '(denegado()) del resto; dentro de [else], ejecutar() lleva a un segundo alt con un operando por comando del caso de uso, '
+    'cada uno con el método real del servicio y la operación de DatabaseService con la que llega a la base de datos '
+    '(enTransaccion(), lista(), filas() o uno()). Al salir del alt, procesador devuelve el resultado (Atendido) a App y el actor '
+    'recibe la respuesta HTML por la cola de salida. Se mantiene un único diagrama de secuencia por caso de uso, '
+    'incluidos todos los comandos del CU6.')
 d.p('Los correos (el comando que llega al buzón y la respuesta HTML) son mensajes asíncronos; las demás llamadas son síncronas, '
     'llevan los parámetros del código y su retorno con el tipo que devuelven. Las líneas de vida usan los estereotipos de robustez '
     '(boundary para los clientes POP3 y SMTP, control para la lógica y entity para DatabaseService) y se nombran con la variable o '
-    'el campo que las referencia en el código (pop, smtp, procesador, parser, usuarios, db). Cuando la lista de parámetros no cabe '
+    'el campo que las referencia en el código (pop, smtp, bandeja, procesador, db). Cuando la lista de parámetros no cabe '
     'en la etiqueta se muestran los primeros y puntos suspensivos; la lista completa de cada comando está en el Anexo A.')
-fig('sd-recibir.png', 'Diagrama de secuencia común: Recibir comando')
-fig('sd-responder.png', 'Diagrama de secuencia común: Registrar y responder')
+fig('sd-recibir.png', 'Diagrama de secuencia común: Recibir y guardar')
+fig('sd-procesar.png', 'Diagrama de secuencia común: Procesar un correo guardado')
+fig('sd-enviar.png', 'Diagrama de secuencia común: Enviar la cola de salida')
 fig('sd-rebotes.png', 'Diagrama de secuencia común: Leer rebotes')
 for cu, v in CU.items():
     fig(f'sd-{cu.lower()}.png', f'Diagrama de secuencia {cu}: {v[0]}')
-for i, (cu, v) in enumerate(CU.items()):
-    fig(f'cls-{cu.lower()}.png', f'Diseño procedimental {cu}: {v[0]}', horizontal=True,
-        titulos=[('Diseño procedimental', 3)] if i == 0 else ())
-fig('clases-datos.png', 'Diagrama de clases del modelo de datos', horizontal=True, titulos=[('Diseño de datos: clases y mapeo', 3)])
+
+d.h('Diseño procedimental', 3)
+d.p('El diseño procedimental muestra las clases que el programador implementa, con sus atributos y operaciones tal como están en '
+    'el código (leídos de p1/src por el generador de los diagramas). El canal de correo tiene una vista global. Cada caso de uso '
+    'tiene un único procedimental completo con el intérprete, el control central, el procesador de sus roles, los servicios, '
+    'las entidades y el acceso a datos. Las clases compartidas se repiten completas en los CU donde intervienen, como en el '
+    'P1 aprobado; no se dividen en figuras de continuación ni se ocultan sus miembros. Las dependencias salen de los campos y de '
+    'los tipos de las firmas reales; RolCommandProcessor es abstracta y los cuatro procesadores de rol la especializan.')
+fig('cls-correo-global.png', 'Diseño procedimental global del canal de correo')
+for cu, v in CU.items():
+    fig(f'cls-{cu.lower()}.png', f'Diseño procedimental {cu}: {v[0]}')
 
 
 def tablas_sql():
@@ -455,31 +590,100 @@ def tablas_sql():
     return out
 
 
-d.p(f'El modelo tiene {len(TABLAS)} tablas en el esquema public de db_grupo05sa, el mismo que usará el Proyecto 2 web, unidas por '
-    f'{len(FKS)} claves foráneas: ninguna tabla queda sin relación y no hay otras tablas en el esquema. En el diagrama, las claves foráneas no se repiten como '
-    'atributo: cada una es una asociación con su multiplicidad, rotulada con el papel cuando no es obvio (vendedor, coordinador, '
-    'emisor, autor, responsable, destinatario, módulo, actualizado por).')
+d.h('Diseño de datos: modelo conceptual', 3)
+d.p('El modelo conceptual es el modelo de dominio final: el inicial (Captura de Requisitos) con las entidades que aparecieron al '
+    'detallar los casos de uso. Cada entidad lleva sus atributos esenciales de negocio, sin tipos de dato, sin claves primarias ni '
+    'foráneas y sin operaciones; los nombres son los de la base de datos para poder cotejarlos uno a uno, y todos los campos de cada '
+    'tabla están en el diseño físico. Las relaciones llevan su multiplicidad y, cuando no es obvio, el papel (vendedor, coordinador, '
+    'autor, responsable). La única relación N a N, entre ordenes_pago y descuentos, une a las dos entidades fuertes, y de la '
+    'relación sale una línea punteada a orden_pago_descuentos, la clase de asociación con lo que la relación guarda: el porcentaje '
+    'y el monto aplicados. El modelo se presenta completo en una única vista global, sin dividirlo por áreas.')
+fig('conceptual-global.png', 'Modelo conceptual global (modelo de dominio final)')
+
+d.h('Diseño de datos: normalización', 3)
+d.p('Las entidades fuertes (usuarios, prospectos, programas, descuentos, motivos_perdida, roles) se identifican por sus claves naturales; '
+    'las débiles dependen de otra: pagos de su orden y comisiones e inscripciones_comerciales de su solicitud de compra (relaciones '
+    '1 a 1 que toman la clave de su dueño), y movimientos, interacciones y recordatorios de su tarjeta (1 a N). La relación N a N es '
+    'la de órdenes y descuentos. Se analizan las formas normales y se distinguen las dependencias transitivas, los valores '
+    'históricos y los importes derivados que se conservan deliberadamente. Se elimina la dependencia transitiva del nombre de programa en el catálogo:')
+d.tabla('Formas normales en el modelo', ['Forma normal', 'Regla', 'Cómo se cumple en el modelo'], [
+    ('1FN', 'Atributos atómicos, sin grupos repetidos', 'Los módulos de una orden no se guardan como lista: GENERARORDEN["7","m1;m2"] crea una fila por módulo en solicitudes_compra; los descuentos aplicados, una fila por descuento en orden_pago_descuentos.'),
+    ('2FN', 'Sin dependencias parciales respecto de las claves candidatas', 'La única PK compuesta es orden_pago_descuentos (nro_orden, descuento_codigo): porcentaje y monto corresponden a ese descuento en esa orden. intereses tiene además la restricción UNIQUE (documento, modulo_codigo), que identifica el interés de una persona en un módulo.'),
+    ('3FN', 'Sin dependencias transitivas no permitidas respecto de las claves candidatas', 'Se separa programas(codigo, nombre): codigo determina nombre. catalogo_cache conserva los módulos y su FK programa_codigo; el nombre actual se obtiene mediante JOIN, sin repetirlo por módulo. Los valores históricos e importes derivados se explican por separado.'),
+], anchos=[1.8, 4.6, 9.6], tam=9)
+d.tabla('Dependencias y valores conservados deliberadamente', ['Columnas', 'Por qué se guardan así'], [
+    ('programas.codigo → nombre; catalogo_cache.codigo → programa_codigo', 'El catálogo local simulado para el futuro intercambio con el SIS del Grupo 06 SA separa programas y módulos. Dos FK vinculan los módulos y sus responsables con programas. La migración conserva códigos, oferta e históricos; su aplicación en producción sigue pendiente.'),
+    ('intereses.programa_nombre, modulo_nombre y precio; solicitudes_compra.programa_nombre, modulo_nombre y precio_acordado; orden_pago_descuentos.porcentaje; log_comandos.rol_registrado', 'Conservan el nombre, precio, descuento o rol de la operación. Se cotejan con su significado histórico: un precio acordado o un rol registrado en una fecha no equivalen al precio o rol actuales. Su almacenamiento no demuestra por sí solo una infracción de 3FN.'),
+    ('ordenes_pago.total y pagos.monto', 'El total (subtotal menos descuento_total) y el monto del pago se guardan para que la orden y el pago emitidos no cambien si se recalculan.'),
+], anchos=[6.0, 10.0], tam=9)
+
+d.h('Diseño de datos: modelo lógico', 3)
+d.p(f'El modelo lógico propuesto tiene {len(TABLAS)} tablas para el esquema public de db_grupo05sa, el mismo que usará el Proyecto 2 web, unidas por '
+    f'{len(FKS)} claves foráneas: ninguna tabla queda sin relación. Las migraciones de bandeja y normalización del catálogo siguen pendientes en el servidor. En el diagrama, la clave '
+    'primaria va primero y las claves foráneas no se repiten como atributo: cada una es una asociación con su multiplicidad, '
+    'rotulada con el papel cuando no es obvio. El modelo se presenta completo en una sola figura global. Una FK que es también '
+    'PK simple, como pagos.nro_orden, limita a uno el registro dependiente: no se representa como una relación 1 a N.')
 d.p('Cada tabla tiene una sola clave, la de su diseño y con su nombre; ninguna lleva un campo id. Las entidades que tienen una '
     'clave natural se identifican por ella: usuarios por el correo (que es también la identidad con la que se envían los comandos), '
     'prospectos por el documento (CI), descuentos por su código, motivos_perdida por su nombre, roles por su nombre, catalogo_cache '
-    'por el código del módulo, configuraciones por su clave y api_tokens por el hash del token. Las que dependen 1 a 1 de otra '
+    'por el código del módulo, programas por su código, configuraciones por su clave y api_tokens por el hash del token. Las que dependen 1 a 1 de otra '
     'toman la clave de su dueño: pagos la de su orden (nro_orden), y comisiones e inscripciones_comerciales la de su solicitud de '
     'compra (nro_solicitud). Las que no tienen clave natural usan un correlativo con el nombre del diseño: nro_tarjeta, nro_orden, '
-    'nro_solicitud, nro_interaccion, nro_movimiento, nro_recordatorio, nro_notificacion, nro_registro, nro_exportacion y '
-    'nro_comprobante. Cada clave foránea lleva el nombre de la clave a la que apunta o el del papel que cumple (vendedor_correo, '
-    'coordinador_correo). La intermedia orden_pago_descuentos tiene como clave las dos claves foráneas (nro_orden y '
+    'nro_solicitud, nro_interaccion, nro_movimiento, nro_recordatorio, nro_notificacion, nro_registro, nro_exportacion, '
+    'nro_comprobante y nro_correo. Cada clave foránea lleva el nombre de la clave a la que apunta o el del papel que cumple '
+    '(vendedor_correo, coordinador_correo). La intermedia orden_pago_descuentos tiene como clave las dos claves foráneas (nro_orden y '
     'descuento_codigo) y guarda el porcentaje y el monto aplicados. La credencial de cada usuario tiene vigencia: fecha_inicio y '
-    'fecha_fin, con la restricción fecha_fin >= fecha_inicio. Las reglas del negocio son restricciones CHECK y UNIQUE (script '
-    'completo en el Anexo B).')
+    'fecha_fin, con la restricción fecha_fin >= fecha_inicio. log_comandos.message_id (la cabecera Message-ID del correo) es '
+    'única para no registrar dos veces el mismo correo, y correos_salientes debe tener al menos uno de sus dos orígenes: el '
+    'registro que responde o el recordatorio que avisa.')
+fig('datos-global.png', 'Modelo lógico global de datos')
+
+d.h('Diseño de datos: modelo físico', 3)
+d.p('El modelo físico es el de PostgreSQL 18: cada tabla con sus columnas, tipos, claves y nulos (tablas siguientes) y, en el '
+    'script del Anexo B, sus secuencias, valores por omisión, restricciones CHECK y UNIQUE, índices y disparadores. La bandeja del '
+    'correo (columnas message_id, contenido, bytes y procesado_en de log_comandos, y la tabla correos_salientes) se agrega a la '
+    'base vigente con la migración sql/migraciones/2026-11-19_bandeja_correo.sql, que se aplica con el lector detenido y después '
+    'de un respaldo; sin ella, el lector informa la migración que falta y no retira mensajes del buzón.')
 for nombre, cols in tablas_sql():
     d.tabla(f'Mapeo de la tabla {nombre}', ['Columna', 'Tipo', 'Clave', 'Nulo'], cols, anchos=[4.4, 4.0, 5.2, 2.4], tam=9)
+
+d.h('Diseño de pantallas: interacción por correo', 3)
+d.p('En un sistema vía correo las pantallas son los comandos y sus respuestas: el usuario escribe el comando en el asunto de un '
+    'correo dirigido a grupo05sa@tecnoweb.org.bo y recibe otro correo con la respuesta en HTML. Toda respuesta tiene la misma '
+    'estructura: una barra de color según el resultado (verde #1E6B3A para éxito y listados, rojo #A12A1F para error, ámbar '
+    '#8A5300 para denegado), el título (que es también el asunto de la respuesta), el mensaje, una tabla cuando el comando '
+    'devuelve filas y un pie con el comando recibido. HELP[] cumple el papel del menú: muestra solo los comandos del rol del '
+    'remitente, tomados de la matriz de acceso.')
+d.p('Las pantallas siguen una venta completa sobre datos de demostración: una visitante registra su interés y un vendedor '
+    'registra prospectos, que entran a la bolsa común; el coordinador del programa los asigna; cada vendedor mueve sus tarjetas '
+    'por el tablero, registra llamadas y reuniones y genera la orden de pago; el coordinador aprueba el comprobante y la '
+    'tarjeta se convierte en inscripción comercial; otra tarjeta se cierra como perdida con su motivo. Hay al menos una '
+    'pantalla por caso de uso, además del menú y de las respuestas de error y de comando denegado.')
+from pantallas import PANTALLAS
+d.tabla('Pantallas de interacción por correo', ['CU', 'Asunto enviado', 'Rol', 'Pantalla de respuesta'],
+        [(cu, asunto if len(asunto) <= 40 else asunto[:asunto.index('[') + 1] + '…]', rol.split(',')[0].capitalize(),
+          (lambda t: t[0].upper() + t[1:])(titulo.split(': ', 1)[1]))
+         for _, cu, titulo, _, rol, asunto, _ in PANTALLAS], anchos=[1.8, 6.2, 2.6, 5.4], tam=9,
+        nota_txt='Los asuntos largos se abrevian; el asunto completo aparece en cada figura.')
+NOTA_PANT = ('Respuesta producida el 18/11/2026 por el procesador y el formateador que atienden el buzón (crm-mail.jar --probar) '
+             'sobre los datos de demostración de db_grupo05sa; arriba, el correo que la origina.')
+for nombre, cu, titulo, *_ in PANTALLAS:
+    titulo = f'Pantalla {titulo}' if cu in ('Menú', 'Error', 'Denegado') else f'Pantalla {cu}, {titulo}'
+    ruta = CAP / nombre
+    if ruta.exists():
+        import pymupdf
+        px = pymupdf.Pixmap(str(ruta))
+        d.figura(ruta, titulo, NOTA_PANT, min(14.0, 19.0 * px.width / px.height))
+    else:
+        d.rotulo('Figura', titulo); rojo(f'pantalla capturas/{nombre} (python p1/doc/pantallas.py)')
 
 fig('componentes.png', 'Diagrama de componentes', horizontal=True,
     titulos=[('Flujo de Trabajo: Implementación', 2), ('Implementación de la arquitectura', 3)])
 d.p('El subsistema agrupa las cuatro capas como componentes contenedores, y el artefacto crm-mail.jar lo manifiesta («manifest»). '
-    'Las dependencias internas llevan la operación que se invoca; Diagnostico revisa el lector, el emisor y el lector de rebotes, y UsuarioService usa '
-    'jBCrypt para guardar la clave web del usuario como hash. Hacia afuera, cada componente expone una interfaz requerida '
-    '(semicírculo) que se une por un conector de ensamblaje con la interfaz provista (círculo) de quien la implementa: el lector '
+    'Las dependencias se muestran entre capas y componentes, sin repetir los métodos de los procedimentales. App guarda y toma los correos y encola las respuestas con '
+    'Bandeja, que los persiste con DatabaseService; Diagnostico revisa el lector, el emisor y el lector de rebotes, y UsuarioService usa '
+    'jBCrypt para guardar la clave web del usuario como hash. Hacia afuera, los ensamblajes muestran una sola pareja de interfaz requerida '
+    '(semicírculo) y provista (círculo), con la API o protocolo de la conexión: el lector '
     'de correo con el POP3 de Dovecot (puerto 110), el emisor SMTP con la API Jakarta Mail de Angus Mail y esta con el SMTP de '
     'Gmail (587) y con su IMAP (993) para leer los rebotes, y DatabaseService con JDBC de PostgreSQL JDBC y este con el protocolo '
     'de PostgreSQL 18.6 (puerto 5432).')
@@ -509,7 +713,9 @@ d.tabla('Herramientas y versiones', ['Herramienta', 'Versión', 'Uso'], [
     ('PostgreSQL JDBC', '42.7.13', 'Conexión a la base de datos'),
     ('jBCrypt', '0.4', 'Hash de la clave web al registrar un usuario'),
     ('PostgreSQL', '18.6', 'Base de datos de la facultad'),
-    ('JUnit Jupiter', '5.10.5', 'Pruebas unitarias'),
+    ('JUnit Jupiter', '5.10.5', 'Pruebas unitarias y de integración'),
+    ('PostgreSQL (QA local)', '18.4', 'Base desechable para las pruebas de integración y de caídas'),
+    ('Python', '3.12.9', 'Prueba de caídas del lector (scripts/prueba_caidas.py)'),
     ('Enterprise Architect', '15.0.0.1514', 'Herramienta CASE (modelado UML)'),
     ('Visual Studio Code', '1.139.1', 'Editor'),
     ('Git / GitHub', '2.53.0', 'Control de versiones'),
@@ -517,50 +723,116 @@ d.tabla('Herramientas y versiones', ['Herramienta', 'Versión', 'Uso'], [
 
 # ---------------------------------------------------------------- VIII
 d.h('VIII. Resultados', 1)
+auditoria = json.loads((DOC / 'pruebas' / 'modelos-globales.json').read_text(encoding='utf-8'))
+d.tabla('Cotejo de los modelos globales con PostgreSQL desechable', ['Comprobación', 'Resultado'], [
+    ('Tablas del esquema y de cada vista global', str(auditoria['tablas'])),
+    ('Columnas del esquema físico', str(auditoria['columnas'])),
+    ('Atributos del lógico (las FK restantes se representan como asociaciones)', str(len(auditoria['atributos_logicos']))),
+    ('Claves foráneas, con multiplicidad según PK, UNIQUE y nulos', str(auditoria['claves_foraneas'])),
+    ('Comprobaciones aprobadas / ejecutadas', f"{sum(c['aprobada'] for c in auditoria['comprobaciones'])} / {len(auditoria['comprobaciones'])}"),
+], anchos=[12, 4], nota_txt='scripts/auditar_modelos.py instala sql/esquema.sql en un PostgreSQL 18 desechable, '
+    'compara sus metadatos con el modelo EA real y elimina el clúster al terminar. No usa ni modifica la base de producción. '
+    'Evidencia: doc/pruebas/modelos-globales.json, 19/11/2026.')
 junit = []
 for x in sorted((P1 / 'target' / 'surefire-reports').glob('TEST-*.xml')):
     r = ET.parse(x).getroot()
-    if int(r.get('skipped')) == int(r.get('tests')): continue   # integración: va en la tabla siguiente
-    junit.append((r.get('name').split('.')[-1], r.get('tests'), str(int(r.get('tests')) - int(r.get('failures')) - int(r.get('errors')))))
+    junit.append((r.get('name').split('.')[-1], r.get('tests'), str(int(r.get('tests')) - int(r.get('failures')) - int(r.get('errors')) - int(r.get('skipped', '0'))),
+                  r.get('skipped')))
+resumen_guardado = False
+if not junit and (DOC / 'pruebas' / 'junit-resumen.json').is_file():
+    resumen_guardado = True
+    resumen = json.loads((DOC / 'pruebas' / 'junit-resumen.json').read_text(encoding='utf-8'))
+    junit = [(x['clase'], str(x['casos']), str(x['aprobados']), str(x['omitidos'])) for x in resumen['suites']]
 if junit:
-    d.tabla('Pruebas unitarias (JUnit)', ['Clase de prueba', 'Casos', 'Aprobados'], junit, anchos=[8, 3, 3])
+    d.tabla('Pruebas automáticas (JUnit) de la versión entregada', ['Clase de prueba', 'Casos', 'Aprobados', 'Omitidos'], junit,
+            anchos=[7, 3, 3, 3], nota_txt='mvn test del 19/11/2026. Las clases CasosAprobadosCorreoTest, RobustezCorreoTest, '
+            'BandejaCorreoTest, CatalogoNormalizadoTest, ServidorCompartidoTest y CorreoServidorFinancieroTest corrieron contra un PostgreSQL 18.4 desechable '
+            'creado con sql/esquema.sql y sql/referencias.sql (p1/PRUEBAS.md), que se eliminó al terminar. La corrida completa aprobó 144 casos; después se añadió y ejecutó un caso de parser para espacios, UTF-8 y comillas escapadas, sin repetir la suite completa.')
+    if resumen_guardado:
+        d.p('Esta regeneración utiliza el resumen conservado en doc/pruebas/junit-resumen.json, no una nueva ejecución '
+            'de pruebas en esta máquina. Para revalidar los cambios se deben ejecutar las suites con su entorno de QA.')
 else:
-    rojo('ejecutar mvn package para generar target/surefire-reports')
+    rojo('ejecutar mvn test para generar target/surefire-reports')
+d.tabla('Cotejo con el enunciado de presentación', ['Requisito', 'Evidencia y estado'], [
+    ('Subject, parser, tipos y comillas', 'Comandos del CRM; CommandParserTest, CorreoTest y RobustezCorreoTest. Comillas literales duplicadas dentro del parámetro.'),
+    ('PostgreSQL y sentencias preparadas', 'Servicios JDBC y DatabaseService; suites locales contra PostgreSQL desechable.'),
+    ('Transacciones, respuestas y logs', 'Bandeja persistente, correo de resultado, logs rotativos. Ante BD caída antes de leer, se conserva el correo y se difiere; no hay respuesta inmediata de error en ese caso.'),
+    ('Despliegue operativo', 'Lector periódico en la PC del grupo. Migraciones de bandeja y catálogo y validación en el servidor siguen pendientes.'),
+    ('README y GitHub público', 'README incluye arquitectura, instalación, BD y flujo del parser. El enlace público devolvió 404 al revisar; falta comprobar acceso y publicar la revisión.'),
+    ('PUDS, ZIP e impresión', 'Documento y UML en EA; paquete 2026-2_INF513-P1_grupo05sa.zip. Subida al aula e impresión pendientes del grupo; verificar fecha establecida en el aula.'),
+], anchos=[4.6, 11.4], tam=9, nota_txt='Cotejo completo y límites en p1/AUDITORIA_ENUNCIADO.md, según el texto facilitado por el usuario el 19/11/2026.')
 integ = json.loads((DOC / 'pruebas' / 'integracion-servidor.json').read_text(encoding='utf-8'))
-d.tabla('Pruebas de integración contra el PostgreSQL de la facultad', ['Clase de prueba', 'Casos', 'Aprobados'],
+d.tabla('Pruebas de integración contra el PostgreSQL de la facultad (versión del 17/11/2026)', ['Clase de prueba', 'Casos', 'Aprobados'],
         [(x['suite'], str(x['casos']), str(x['aprobados'])) for x in integ['suites']], anchos=[8, 3, 3],
-        nota_txt=f"Ejecutadas el 17/11/2026 con {integ['comando']} sobre un esquema temporal (crm_qa_correo) creado con "
-                 'sql/esquema.sql y sql/referencias.sql y eliminado al terminar: roles, alcance, órdenes, comprobantes, pagos, '
-                 'conversión, exportación y concurrencia.')
+        nota_txt=f"Ejecutadas el 17/11/2026, con la versión anterior a la bandeja, con {integ['comando']} sobre un esquema temporal "
+                 '(crm_qa_correo) creado con sql/esquema.sql y sql/referencias.sql y eliminado al terminar. La versión entregada se '
+                 'probará de nuevo contra ese servidor después de aplicar las migraciones de bandeja y catálogo.')
 d.p('La prueba de robustez (RobustezCorreoTest) envió cada comando, con cada rol y con un visitante, con entradas malas: '
     'parámetros vacíos o solo con espacios, letras donde va un número, negativos, números enormes, inyección SQL, textos de 5000 '
     'caracteres, emojis, fechas imposibles, parámetros de más, corchetes y comillas sin cerrar, y siete archivos CSV dañados. '
     'En 4515 casos ninguna respuesta fue un error interno ni un error SQL sin traducir, nada vacío o mal formado se aceptó y '
-    'las tablas siguieron en pie. Se ejecutó el 17/11/2026 sobre un PostgreSQL 18 desechable creado con sql/esquema.sql y '
-    'sql/referencias.sql (p1/PRUEBAS.md).')
+    'las tablas siguieron en pie. Se ejecutó de nuevo el 19/11/2026, con la versión entregada, sobre un PostgreSQL 18 desechable '
+    'creado con sql/esquema.sql y sql/referencias.sql (p1/PRUEBAS.md).')
+d.h('Prueba de caídas', 2)
+catalogo_qa = json.loads((DOC / 'pruebas' / 'catalogo-normalizado.json').read_text(encoding='utf-8'))
+d.p('La normalización del catálogo se comprobó en PostgreSQL local desechable: migrar conserva cada fila y valor del modelo '
+    'anterior, la reversión los restituye y los nombres contradictorios se rechazan con rollback. La instalación nueva y la '
+    'migración producen los mismos datos de referencia. CatalogoNormalizadoTest verifica además las FK y que renombrar un '
+    'programa actualiza la oferta sin alterar el nombre histórico de un interés. Evidencia: doc/pruebas/catalogo-normalizado.json. '
+    'P2 debe adaptar sus consultas a la columna retirada antes de usar el esquema normalizado; la web no se modificó en esta tarea.')
+caidas = json.loads((DOC / 'pruebas' / 'caidas.json').read_text(encoding='utf-8'))
+d.p('La prueba de caídas (p1/scripts/prueba_caidas.py) ejecuta el lector real, crm-mail.jar, contra un servidor POP3 y uno SMTP '
+    'de prueba y una base PostgreSQL desechable, todos en el mismo equipo. Deposita correos de a poco y corta el programa sin '
+    'cierre ordenado en momentos al azar, mientras el POP3 a veces pierde la respuesta del QUIT o no aplica los DELE, el SMTP a veces '
+    'está caído o recibe la respuesta y corta antes de confirmarla, y PostgreSQL se apaga de golpe. Al final deja correr el lector '
+    'hasta vaciar todo y comprueba que cada comando se haya ejecutado una sola vez y que cada respuesta haya llegado.')
+q, sm = caidas['pop3_quit'], caidas['smtp_conexiones']
+d.tabla('Resultado de la prueba de caídas', ['Medida', 'Valor'], [
+    ('Cierres forzados del lector (sin cierre ordenado)', str(caidas['cortes_forzados'])),
+    ('Caídas de PostgreSQL (pg_ctl stop -m immediate)', str(caidas['caidas_de_la_bd'])),
+    ('QUIT con respuesta perdida / QUIT sin aplicar los DELE', f"{q['perder_respuesta']} / {q['sin_aplicar']}"),
+    ('Conexiones SMTP caídas / entregas inciertas', f"{sm['caido']} / {sm['incierto']}"),
+    ('Correos depositados (30 comandos distintos, 3 reentregas y 2 reenvíos del usuario)', str(caidas['correos_depositados'])),
+    ('Veces que se ejecutó cada comando', ', '.join(map(str, caidas['ejecuciones_por_comando']))),
+    ('Comandos perdidos / duplicados', f"{len(caidas['comandos_perdidos'])} / {len(caidas['comandos_duplicados'])}"),
+    ('Respuestas recibidas / distintas (Message-ID)', f"{caidas['respuestas_recibidas_por_smtp']} / {caidas['message_id_distintos']}"),
+    ('Comandos sin respuesta recibida', str(len(caidas['comandos_sin_respuesta_recibida']))),
+    ('Quedan en el buzón / sin procesar / respuestas pendientes', f"{caidas['quedan_en_buzon']} / {caidas['quedan_recibidos']} / {caidas['quedan_pendientes']}"),
+], anchos=[11.0, 5.0], tam=9, nota_txt=f"Ejecución del {caidas['fecha']} con semilla {caidas['semilla']}: "
+   "python -I scripts/prueba_caidas.py --db <base desechable> --cortes 60 --pgdata <clúster desechable>. Las respuestas repetidas son "
+   "reenvíos de entregas inciertas y del reintento del usuario, con el mismo Message-ID que la original.")
+d.p('El extracto siguiente, del log de esa ejecución, muestra cómo se distingue cada etapa: RECIBIDO (guardado en la base de datos '
+    'antes de borrarlo del buzón), YA GUARDADO (el servidor lo volvió a entregar), CONFIRMADO en BD con la respuesta en cola, '
+    'REPETIDO (reintento del usuario), PENDIENTE con el próximo intento, ENVIADO, y la falla de cada servidor con su causa y su '
+    'recuperación.')
+d.bloque('\n'.join(textwrap.shorten(linea, width=145, placeholder=' […]')
+                   for linea in (DOC / 'pruebas' / 'caidas-log.txt').read_text(encoding='utf-8').strip().splitlines()),
+         'Líneas representativas de logs/crm-mail.0.log en la prueba de caídas (abreviadas con […], no consecutivas; hora de Bolivia)')
 d.h('Funcionamiento con correos reales', 2)
-d.p('El 17 de noviembre de 2026 el lector se ejecutó en la PC del grupo con el servicio del VPS ya detenido. Al arrancar revisó '
-    'las tres conexiones; luego recibió dos comandos enviados al puerto 25 de mail.tecnoweb.org.bo con el remitente de un vendedor '
+d.p('El 18 de noviembre de 2026, con la versión anterior a la bandeja persistente, el lector se ejecutó en la PC del grupo con el servicio del VPS ya detenido. Al arrancar revisó '
+    'las cuatro conexiones (POP3, SMTP, IMAP de rebotes y base de datos); luego recibió dos comandos enviados al puerto 25 de mail.tecnoweb.org.bo con el remitente de un vendedor '
     'registrado: HELP[] (Éxito) y VERBITACORA["5"], reservado al administrador (Denegado). Ambos quedaron en la tabla log_comandos '
     'con el rol del remitente. Del mismo modo se comprobó un remitente institucional (@ficct.uagrm.edu.bo) con HELP[] y con '
     'Re: LISTAROFERTA[]: ambas respuestas llegaron a esa cuenta. Una respuesta dirigida a una dirección inexistente de ese '
     'dominio quedó en el log como REBOTE, con el código 550 5.1.1 que devolvió el servidor del destinatario.')
-CAP = DOC / 'capturas'
 d.figura(CAP / 'servicio-local.png', 'Arranque del lector, revisión de conexiones y dos comandos atendidos',
-         'Salida en consola del lector en la PC del grupo (hora de Bolivia), 17 de noviembre de 2026; se ocultó el último octeto de la IP pública.', 16)
+         'Salida en consola del lector en la PC del grupo (hora de Bolivia), 18 de noviembre de 2026, versión anterior a la bandeja '
+         '(su log aún no distinguía la respuesta en cola de la enviada); se ocultó el último octeto de la IP pública.', 16)
 for nombre, titulo in [('gmail-help.png', 'Respuesta a HELP[]: comandos permitidos al rol del remitente'),
                        ('gmail-denegado.png', 'Respuesta a VERBITACORA["5"] enviado por un vendedor: comando denegado por rol')]:
     if (CAP / nombre).exists():
         d.figura(CAP / nombre, titulo, 'Correo de respuesta recibido en la cuenta Gmail del sistema (alias +vend1 del vendedor de '
-                 'prueba), leído por IMAP y mostrado en Chrome con su HTML original, 17 de noviembre de 2026.', 12)
+                 'prueba), leído por IMAP y mostrado en Chrome con su HTML original, 18 de noviembre de 2026.', 12)
     else:
         d.rotulo('Figura', titulo); rojo(f'captura de Gmail capturas/{nombre}')
 d.h('Diagnóstico de fallas', 2)
 d.p('El docente puede deshabilitar un servicio o cambiar una configuración durante la defensa; el sistema debe decir qué pasó. '
     'Cada ciclo deja una línea con la latencia de la base de datos y del POP3. Cuando una etapa falla, el log nombra la etapa, el '
-    'destino (host y puerto) y la causa probable; mientras la falla sigue, una línea corta por ciclo, y al volver, RECUPERADO con '
-    'cuántos ciclos y cuánto tiempo duró. Si la base de datos no está disponible, el ciclo no retira mensajes del buzón: se leen '
-    'en el siguiente. También queda en el log un cambio de DNS de los servidores de la facultad.')
+    'destino (host y puerto) y la causa probable; mientras la falla sigue, una línea corta por ciclo con el próximo intento (la '
+    'espera crece de 10 a 60 segundos para no insistir contra un servidor saturado), y al volver, RECUPERADO con cuántos ciclos y '
+    'cuánto tiempo duró. Si la base de datos no está disponible, el ciclo no retira mensajes del buzón: se leen en el siguiente. '
+    'También queda en el log un cambio de DNS de los servidores de la facultad, y al arrancar, lo que quedó pendiente de una '
+    'ejecución anterior (correos guardados sin procesar y respuestas en cola).')
 d.tabla('Fallas que el sistema detecta y cómo las informa', ['Falla', 'Señal', 'Mensaje en el log'], [
     ('DNS caído o nombre inexistente', 'UnknownHostException', 'DNS: no se resuelve <host> (sin Internet o DNS caído)'),
     ('Servicio detenido o puerto cerrado', 'ConnectException', 'conexión rechazada en <host>:<puerto>'),
@@ -574,6 +846,11 @@ d.tabla('Fallas que el sistema detecta y cómo las informa', ['Falla', 'Señal',
     ('Clave de aplicación de Gmail revocada', 'SMTP 535', 'SMTP rechazó el login'),
     ('Respuesta rechazada por el servidor del destinatario', 'Aviso de rebote en la cuenta de Gmail (IMAP)', 'REBOTE respuesta a <correo> no entregada → <motivo>'),
     ('Conexión cortada por el servidor', 'SocketException', '<host>:<puerto> cortó la conexión'),
+    ('Respuesta no enviada (Gmail caído o rechazo temporal)', 'MessagingException', 'PENDIENTE correo #k a <correo> … próximo intento en N min'),
+    ('Respuesta imposible de entregar', 'SMTP 550 o 10 intentos', 'FALLIDO correo #k … La operación ya estaba confirmada; no se repite'),
+    ('El servidor entrega de nuevo un correo ya guardado', 'message_id repetido', 'YA GUARDADO <message-id>: se borra del buzón sin repetirlo'),
+    ('El usuario repite un comando de escritura', 'Mismo remitente y asunto', 'REPETIDO registro #n = registro #m'),
+    ('Falta la migración de la bandeja', 'Columna o tabla ausente', 'falta la columna log_comandos.message_id: aplique …'),
 ], anchos=[4.6, 4.2, 7.2], tam=9, nota_txt='Traducción hecha por la clase Diagnostico (p1/src/main/java/bo/uagrm/crm/Diagnostico.java); DiagnosticoTest la comprueba sin red.')
 d.p('La revisión de conexiones (ejecutar.ps1 -Diagnostico) se probó con la configuración real y con cinco copias alteradas: un '
     'host inexistente, el puerto 5433 en lugar del 5432, la contraseña del buzón, la contraseña de aplicación de Gmail y el esquema '
@@ -592,19 +869,22 @@ CONC = [f'Se identificaron cuatro actores y se detallaron los ocho casos de uso 
         'por rol se definió en el código y de ahí se generó el anexo de comandos, de modo que el documento y el sistema coinciden.',
         'El análisis agrupó los casos de uso en cuatro paquetes y mostró, en los diagramas de colaboración, que todo comando pasa '
         'por el mismo control central antes de llegar a la entidad que lo resuelve.',
-        f'La arquitectura en cuatro capas, el modelo relacional de {len(TABLAS)} tablas compartido con el Proyecto 2, todas unidas por '
-        'claves foráneas y con su clave de diseño, y el despliegue sobre los servidores reales de la facultad, Gmail y la PC del grupo '
-        'quedaron diseñados con un único valor verificado por cada nodo y puerto.',
+        f'La arquitectura en cuatro capas, el modelo de datos conceptual, su análisis de normalización y el diseño lógico y físico ({len(TABLAS)} tablas '
+        'compartidas con el Proyecto 2, todas unidas por claves foráneas y con su clave de diseño) y el despliegue sobre los servidores '
+        'reales de la facultad, Gmail y la PC del grupo quedaron diseñados con un único valor verificado por cada nodo y puerto.',
         'Se implementó el lector POP3 con sockets propios, el emisor SMTP, el intérprete de comandos y un servicio por caso de uso; '
-        'toda consulta usa parámetros enlazados y toda operación compuesta, una transacción con bloqueo de fila.',
-        'El lector se ejecuta en la PC del grupo, respondió correos reales y diagnostica las fallas de DNS, red, correo y base de '
-        'datos con su causa; las pruebas automáticas comprueban el intérprete, la matriz de acceso, el diagnóstico y, contra el '
-        'PostgreSQL de la facultad, los ocho casos de uso.']
+        'toda consulta usa parámetros enlazados, y cada correo se guarda antes de borrarlo del buzón y se procesa en una sola '
+        'transacción con su respuesta en cola, de modo que una caída no pierde solicitudes ni repite operaciones.',
+        'El lector se ejecuta en la PC del grupo y diagnostica las fallas de DNS, red, correo y base de datos con su causa; las pruebas '
+        'automáticas comprueban el intérprete, la matriz de acceso, los ocho casos de uso y la bandeja, y la prueba de caídas, con '
+        'cierres forzados y caídas de los tres servidores, terminó sin solicitudes perdidas ni operaciones repetidas.']
 d.lista(CONC, numerada=True)
 
 # ---------------------------------------------------------------- X
 d.h('X. Recomendaciones', 1)
 d.lista([
+    'Aplicar las migraciones de bandeja y catálogo (sql/migraciones/2026-11-19_bandeja_correo.sql y 2026-11-19_normalizar_catalogo.sql) en db_grupo05sa con el lector detenido y '
+    'un respaldo previo, y repetir allí las pruebas de integración y una prueba con correos reales antes de la defensa.',
     'Verificar la autenticidad del remitente. Hoy el usuario se identifica por la cabecera From, y el servidor de la facultad '
     'acepta en el puerto 25 correo local con un From arbitrario. Se recomienda que el servidor de correo de la facultad '
     'compruebe SPF (Kitterman, 2014) y DKIM (Crocker, Hansen y Kucherawy, 2011) y añada el resultado en la cabecera '
@@ -628,15 +908,18 @@ d.referencias([
     'Freed, N., & Borenstein, N. (1996). Multipurpose Internet Mail Extensions (MIME) part one: Format of Internet message bodies (RFC 2045). https://www.rfc-editor.org/rfc/rfc2045',
     'Gamma, E., Helm, R., Johnson, R., & Vlissides, J. (2003). Patrones de diseño: elementos de software orientado a objetos reutilizable. Madrid: Pearson Addison-Wesley.',
     'Hoffman, P. (2002). SMTP service extension for secure SMTP over Transport Layer Security (RFC 3207). https://www.rfc-editor.org/rfc/rfc3207',
+    'Hohpe, G., & Woolf, B. (2003). Enterprise integration patterns: designing, building, and deploying messaging solutions. Boston: Addison-Wesley.',
     'Jacobson, I., Booch, G., & Rumbaugh, J. (2000). El proceso unificado de desarrollo de software. Madrid: Addison-Wesley.',
     'Kitterman, S. (2014). Sender Policy Framework (SPF) for authorizing use of domains in email, version 1 (RFC 7208). https://www.rfc-editor.org/rfc/rfc7208',
     'Klensin, J. (2008). Simple Mail Transfer Protocol (RFC 5321). https://www.rfc-editor.org/rfc/rfc5321',
+    "Kleppmann, M. (2017). Designing data-intensive applications. Sebastopol: O'Reilly Media.",
     'Kotler, P., & Keller, K. L. (2016). Dirección de marketing (15.ª ed.). México: Pearson.',
     'Kurose, J. F., & Ross, K. W. (2017). Redes de computadoras: un enfoque descendente (7.ª ed.). Madrid: Pearson.',
     'Moore, K. (2004). Recommendations for automatic responses to electronic mail (RFC 3834). https://www.rfc-editor.org/rfc/rfc3834',
     'Myers, J., & Rose, M. (1996). Post Office Protocol - version 3 (RFC 1939). https://www.rfc-editor.org/rfc/rfc1939',
     'OWASP Foundation. (s.f.). SQL injection prevention cheat sheet. https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html',
     'Pressman, R. S. (2010). Ingeniería del software: un enfoque práctico (7.ª ed.). México: McGraw-Hill.',
+    'Resnick, P. (2008). Internet message format (RFC 5322). https://www.rfc-editor.org/rfc/rfc5322',
     'Sandhu, R. S., Coyne, E. J., Feinstein, H. L., & Youman, C. E. (1996). Role-based access control models. Computer, 29(2), 38-47. https://doi.org/10.1109/2.485845',
     'Silberschatz, A., Korth, H. F., & Sudarshan, S. (2014). Fundamentos de bases de datos (6.ª ed.). Madrid: McGraw-Hill.',
     'Tanenbaum, A. S., & Wetherall, D. J. (2012). Redes de computadoras (5.ª ed.). México: Pearson.',
@@ -656,9 +939,23 @@ d.h('Anexo B. Script de la base de datos', 2)
 # El volcado sin comentarios, sin SET de pg_dump y sin líneas en blanco repetidas: la misma estructura, más corta.
 script = '\n'.join(l for l in SQL.splitlines() if not l.startswith(('--', 'SET ', 'SELECT pg_catalog', '\\restrict', '\\unrestrict')))
 d.bloque(re.sub(r'\n{3,}', '\n\n', script).strip(), 'sql/esquema.sql')
+d.bloque((P1 / 'sql' / 'migraciones' / '2026-11-19_bandeja_correo.sql').read_text(encoding='utf-8').strip(),
+         'sql/migraciones/2026-11-19_bandeja_correo.sql (bandeja del correo sobre la base vigente)')
+d.bloque((P1 / 'sql' / 'migraciones' / '2026-11-19_normalizar_catalogo.sql').read_text(encoding='utf-8').strip(),
+         'sql/migraciones/2026-11-19_normalizar_catalogo.sql (programas y módulos sin repetición del nombre)')
+d.p('Las dos migraciones siguen pendientes en producción. Detener el lector y verificar el respaldo antes de aplicarlas '
+    'con psql -X -v ON_ERROR_STOP=1 --single-transaction. Las reversiones se conservan en sql/migraciones/; el instalador '
+    'esquema.sql se reserva para bases nuevas. Al revertir también se debe restaurar el JAR correspondiente.')
 d.h('Anexo C. Ejecución y configuración', 2)
 d.bloque((P1 / 'ejecutar.ps1').read_text(encoding='utf-8'), 'ejecutar.ps1')
 d.bloque((P1 / 'crm-mail.properties.example').read_text(encoding='utf-8'), 'crm-mail.properties.example (las contraseñas reales no se publican)')
+
+d.h('Anexo D. Láminas UML completas para revisión', 2)
+d.p('El informe conserva el formato carta del manual FICCT. Los modelos globales y los procedimentales completos contienen '
+    'muchos atributos y operaciones, por lo que su reproducción en carta reduce la letra. El archivo complementario '
+    'P1-LAMINAS-UML-GRUPO05SA.pdf reproduce los mismos diagramas vectoriales a escala ampliada, con una sola lámina por figura '
+    'y sin dividir casos de uso ni modelos por áreas. Sirve para lectura con zoom o impresión en hoja ampliada; no reemplaza '
+    'este informe. Se genera desde el PDF final con scripts/laminas_uml.py y conserva la referencia a su figura y página.')
 
 d.guardar(DOC / 'P1-INF513-GRUPO05SA.docx')
 print(f'pendientes: {len(PENDIENTES)}')

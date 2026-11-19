@@ -28,6 +28,14 @@ class CommandParserTest {
   }
 
   @Test
+  void espaciosUtf8YComillasEscapadasDentroDelParametro() {
+    Command c = parse("  REGISTRARINTERACCION  [ \"7\" , \"Nota\" , \"Pidió el curso \"\"Web\"\"\" ]  ");
+    assertTrue(c.isValido());
+    assertEquals("Pidió el curso \"Web\"", c.getParam(2));
+    assertEquals(3, c.cantidad());
+  }
+
+  @Test
   void sinParametrosYAsterisco() {
     assertEquals(0, parse("VERTABLERO[]").cantidad());
     assertEquals(0, parse("LISTAROFERTA[\"*\"]").cantidad());

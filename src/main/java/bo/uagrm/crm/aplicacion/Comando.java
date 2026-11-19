@@ -36,7 +36,7 @@ public enum Comando {
   LISTAROFERTA(
       "CU2",
       "",
-      "Lista el catalogo simulado del CRM; API SIS pendiente",
+      "Lista el catálogo simulado del CRM; API SIS pendiente",
       "LISTAROFERTA[]"),
   REGISTRARINTERES(
       "CU2",
@@ -95,7 +95,7 @@ public enum Comando {
   MOVERTARJETA(
       "CU4",
       "nro_tarjeta,estado",
-      "Mueve a Nuevo, Contactado o Interesado; el pago determina las etapas financieras",
+      "Mueve a Nuevo, En Contacto o Seguimiento; el pago determina las etapas financieras",
       "MOVERTARJETA[\"7\",\"En Contacto\"]"),
 
   LISTARMOTIVOS("CU5", "", "Lista los motivos de pérdida y su categoría", "LISTARMOTIVOS[]"),
@@ -128,30 +128,30 @@ public enum Comando {
   CONVERTIRPROSPECTO(
       "CU6",
       "nro_tarjeta",
-      "Comprueba la inscripcion confirmada mediante pago aprobado por APROBARPAGO",
+      "Comprueba la inscripción confirmada mediante pago aprobado por APROBARPAGO",
       "CONVERTIRPROSPECTO[\"7\"]"),
   LISTARMATRICULAS(
       "CU6",
       "",
-      "Lista inscripciones comerciales confirmadas; el envio al SIS es independiente",
+      "Lista inscripciones comerciales confirmadas; el envío al SIS es independiente",
       "LISTARMATRICULAS[]"),
 
   GENERARORDEN(
       "CU6",
       "nro_tarjeta,codigos_modulos?,codigos_descuentos?",
-      "Genera una orden y referencia de pago demostrativa; codigos multiples separados por punto y"
+      "Genera una orden y referencia de pago demostrativa; códigos múltiples separados por punto y"
           + " coma",
       "GENERARORDEN[\"7\",\"desarrollo-web-m1;desarrollo-web-m2\"]"),
   LISTARORDENES(
-      "CU6", "estado_pago?", "Lista las ordenes y pagos de su alcance", "LISTARORDENES[]"),
-  VERORDEN("CU6", "nro_orden", "Consulta la orden y sus modulos", "VERORDEN[\"1\"]"),
+      "CU6", "estado_pago?", "Lista las órdenes y pagos de su alcance", "LISTARORDENES[]"),
+  VERORDEN("CU6", "nro_orden", "Consulta la orden y sus módulos", "VERORDEN[\"1\"]"),
   LISTARDESCUENTOS("CU6", "", "Lista los descuentos activos para una orden", "LISTARDESCUENTOS[]"),
   LISTARPAGOS(
       "CU6", "estado?", "Consulta pagos dentro de su alcance", "LISTARPAGOS[\"En revision\"]"),
   REGISTRARCOMPROBANTE(
       "CU6",
       "nro_orden,observacion?",
-      "Adjunta un unico comprobante PNG, JPEG, GIF, WebP o PDF (hasta 5 MB)",
+      "Adjunta un único comprobante PNG, JPEG, GIF, WebP o PDF (hasta 5 MB)",
       "REGISTRARCOMPROBANTE[\"1\",\"Deposito realizado\"] con recibo.pdf adjunto"),
   VERCOMPROBANTE(
       "CU6",
@@ -171,12 +171,12 @@ public enum Comando {
   EXPORTARMATRICULAS(
       "CU6",
       "nro_solicitud?",
-      "Prepara un CSV adjunto para el SIS; la API del Grupo 06 aun no esta disponible",
+      "Prepara un CSV adjunto para el SIS; la API del Grupo 06 aún no está disponible",
       "EXPORTARMATRICULAS[]"),
   LISTAREXPORTACIONES(
       "CU6",
       "",
-      "Consulta las preparaciones y constancias del intercambio academico",
+      "Consulta las preparaciones y constancias del intercambio académico",
       "LISTAREXPORTACIONES[]"),
   VEREXPORTACION(
       "CU6",
@@ -233,6 +233,23 @@ public enum Comando {
     this.parametros = parametros.isEmpty() ? new String[0] : parametros.split(",");
     this.descripcion = descripcion;
     this.ejemplo = ejemplo;
+  }
+
+  /**
+   * Comandos que modifican datos sin adjunto: si el mismo remitente repite el mismo asunto, se
+   * trata como reintento y no se vuelve a ejecutar (ver Bandeja.repetido). Los que llevan adjunto
+   * (IMPORTARPROSPECTOS, REGISTRARCOMPROBANTE) se protegen por clave o por estado en su servicio.
+   */
+  public boolean escritura() {
+    return switch (this) {
+      case INSERTARUSUARIO, MODIFICARUSUARIO, ELIMINARUSUARIO, REGISTRARINTERES,
+          REGISTRARPROSPECTO, MODIFICARPROSPECTO, ELIMINARPROSPECTO, ASIGNARCOORDINADOR,
+          ASIGNARPROSPECTO, ASIGNARAUTOMATICO, MOVERTARJETA, INSERTARMOTIVO, MODIFICARMOTIVO,
+          ELIMINARMOTIVO, MARCARPERDIDO, CONVERTIRPROSPECTO, GENERARORDEN, APROBARPAGO,
+          RECHAZARPAGO, EXPORTARMATRICULAS, REGISTRARRESULTADOSIS, REGISTRARINTERACCION,
+          PROGRAMARRECORDATORIO, COMPLETARRECORDATORIO -> true;
+      default -> false;
+    };
   }
 
   public int minimos() {

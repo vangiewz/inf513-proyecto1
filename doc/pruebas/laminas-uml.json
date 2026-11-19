@@ -1,0 +1,336 @@
+{
+  "fecha": "2026-11-19",
+  "laminas": [
+    {
+      "figura": 3,
+      "titulo": "Modelo de dominio inicial ",
+      "pagina_puds": 31,
+      "pagina_lamina": 1,
+      "menor_letra_puds_pt": 5.09,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 222,
+      "alto_mm": 194
+    },
+    {
+      "figura": 12,
+      "titulo": "Modelo de casos de uso ",
+      "pagina_puds": 45,
+      "pagina_lamina": 2,
+      "menor_letra_puds_pt": 3.74,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 386,
+      "alto_mm": 280
+    },
+    {
+      "figura": 22,
+      "titulo": "Diagrama de colaboración CU1: Gestión de Usuarios ",
+      "pagina_puds": 52,
+      "pagina_lamina": 3,
+      "menor_letra_puds_pt": 4.92,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 391,
+      "alto_mm": 117
+    },
+    {
+      "figura": 23,
+      "titulo": "Diagrama de colaboración CU2: Gestión de Captar, Consumir Oferta ",
+      "pagina_puds": 53,
+      "pagina_lamina": 4,
+      "menor_letra_puds_pt": 4.89,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 393,
+      "alto_mm": 214
+    },
+    {
+      "figura": 24,
+      "titulo": "Diagrama de colaboración CU3: Gestión de Asignar Prospectos ",
+      "pagina_puds": 54,
+      "pagina_lamina": 5,
+      "menor_letra_puds_pt": 4.91,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 391,
+      "alto_mm": 75
+    },
+    {
+      "figura": 25,
+      "titulo": "Diagrama de colaboración CU4: Gestión de Embudo de Ventas en Tablero Kanban ",
+      "pagina_puds": 55,
+      "pagina_lamina": 6,
+      "menor_letra_puds_pt": 4.92,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 391,
+      "alto_mm": 71
+    },
+    {
+      "figura": 26,
+      "titulo": "Diagrama de colaboración CU5: Gestión de Pérdida de Prospectos y Clasificación de Motivos ",
+      "pagina_puds": 56,
+      "pagina_lamina": 7,
+      "menor_letra_puds_pt": 4.92,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 391,
+      "alto_mm": 117
+    },
+    {
+      "figura": 27,
+      "titulo": "Diagrama de colaboración CU6: Gestión de Validar Datos y Procesar Conversión a Matrícula ",
+      "pagina_puds": 57,
+      "pagina_lamina": 8,
+      "menor_letra_puds_pt": 4.04,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 391,
+      "alto_mm": 295
+    },
+    {
+      "figura": 28,
+      "titulo": "Diagrama de colaboración CU7: Gestión de Bitácora, Interacciones y Recordatorios ",
+      "pagina_puds": 58,
+      "pagina_lamina": 9,
+      "menor_letra_puds_pt": 4.91,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 391,
+      "alto_mm": 131
+    },
+    {
+      "figura": 29,
+      "titulo": "Diagrama de colaboración CU8: Reportes y Estadísticas ",
+      "pagina_puds": 59,
+      "pagina_lamina": 10,
+      "menor_letra_puds_pt": 4.92,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 391,
+      "alto_mm": 117
+    },
+    {
+      "figura": 30,
+      "titulo": "Dependencia de paquetes ",
+      "pagina_puds": 61,
+      "pagina_lamina": 11,
+      "menor_letra_puds_pt": 7.94,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 248,
+      "alto_mm": 165
+    },
+    {
+      "figura": 31,
+      "titulo": "Diagrama de despliegue ",
+      "pagina_puds": 63,
+      "pagina_lamina": 12,
+      "menor_letra_puds_pt": 4.79,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 360,
+      "alto_mm": 254
+    },
+    {
+      "figura": 32,
+      "titulo": "Diagrama de capas ",
+      "pagina_puds": 65,
+      "pagina_lamina": 13,
+      "menor_letra_puds_pt": 4.45,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 389,
+      "alto_mm": 271
+    },
+    {
+      "figura": 37,
+      "titulo": "Diagrama de secuencia CU1: Gestión de Usuarios ",
+      "pagina_puds": 73,
+      "pagina_lamina": 14,
+      "menor_letra_puds_pt": 4.22,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 389,
+      "alto_mm": 282
+    },
+    {
+      "figura": 38,
+      "titulo": "Diagrama de secuencia CU2: Gestión de Captar, Consumir Oferta ",
+      "pagina_puds": 74,
+      "pagina_lamina": 15,
+      "menor_letra_puds_pt": 3.11,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 441,
+      "alto_mm": 373
+    },
+    {
+      "figura": 39,
+      "titulo": "Diagrama de secuencia CU3: Gestión de Asignar Prospectos ",
+      "pagina_puds": 75,
+      "pagina_lamina": 16,
+      "menor_letra_puds_pt": 4.57,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 386,
+      "alto_mm": 262
+    },
+    {
+      "figura": 40,
+      "titulo": "Diagrama de secuencia CU4: Gestión de Embudo de Ventas en Tablero Kanban ",
+      "pagina_puds": 76,
+      "pagina_lamina": 17,
+      "menor_letra_puds_pt": 4.99,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 382,
+      "alto_mm": 242
+    },
+    {
+      "figura": 41,
+      "titulo": "Diagrama de secuencia CU5: Gestión de Pérdida de Prospectos y Clasificación de Motivos ",
+      "pagina_puds": 77,
+      "pagina_lamina": 18,
+      "menor_letra_puds_pt": 3.91,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 384,
+      "alto_mm": 302
+    },
+    {
+      "figura": 42,
+      "titulo": "Diagrama de secuencia CU6: Gestión de Validar Datos y Procesar Conversión a ",
+      "pagina_puds": 78,
+      "pagina_lamina": 19,
+      "menor_letra_puds_pt": 2.82,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 473,
+      "alto_mm": 561
+    },
+    {
+      "figura": 43,
+      "titulo": "Diagrama de secuencia CU7: Gestión de Bitácora, Interacciones y Recordatorios ",
+      "pagina_puds": 79,
+      "pagina_lamina": 20,
+      "menor_letra_puds_pt": 3.65,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 392,
+      "alto_mm": 322
+    },
+    {
+      "figura": 44,
+      "titulo": "Diagrama de secuencia CU8: Reportes y Estadísticas ",
+      "pagina_puds": 80,
+      "pagina_lamina": 21,
+      "menor_letra_puds_pt": 3.91,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 381,
+      "alto_mm": 302
+    },
+    {
+      "figura": 45,
+      "titulo": "Diseño procedimental global del canal de correo ",
+      "pagina_puds": 82,
+      "pagina_lamina": 22,
+      "menor_letra_puds_pt": 3.36,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 465,
+      "alto_mm": 348
+    },
+    {
+      "figura": 46,
+      "titulo": "Diseño procedimental CU1: Gestión de Usuarios ",
+      "pagina_puds": 83,
+      "pagina_lamina": 23,
+      "menor_letra_puds_pt": 3.14,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 542,
+      "alto_mm": 371
+    },
+    {
+      "figura": 47,
+      "titulo": "Diseño procedimental CU2: Gestión de Captar, Consumir Oferta ",
+      "pagina_puds": 84,
+      "pagina_lamina": 24,
+      "menor_letra_puds_pt": 2.06,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 735,
+      "alto_mm": 549
+    },
+    {
+      "figura": 48,
+      "titulo": "Diseño procedimental CU3: Gestión de Asignar Prospectos ",
+      "pagina_puds": 85,
+      "pagina_lamina": 25,
+      "menor_letra_puds_pt": 2.85,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 467,
+      "alto_mm": 534
+    },
+    {
+      "figura": 49,
+      "titulo": "Diseño procedimental CU4: Gestión de Embudo de Ventas en Tablero Kanban ",
+      "pagina_puds": 86,
+      "pagina_lamina": 26,
+      "menor_letra_puds_pt": 2.5,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 609,
+      "alto_mm": 458
+    },
+    {
+      "figura": 50,
+      "titulo": "Diseño procedimental CU5: Gestión de Pérdida de Prospectos y Clasificación de Motivos ",
+      "pagina_puds": 87,
+      "pagina_lamina": 27,
+      "menor_letra_puds_pt": 2.31,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 595,
+      "alto_mm": 492
+    },
+    {
+      "figura": 51,
+      "titulo": "Diseño procedimental CU6: Gestión de Validar Datos y Procesar Conversión a Matrícula ",
+      "pagina_puds": 88,
+      "pagina_lamina": 28,
+      "menor_letra_puds_pt": 1.86,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 727,
+      "alto_mm": 605
+    },
+    {
+      "figura": 52,
+      "titulo": "Diseño procedimental CU7: Gestión de Bitácora, Interacciones y Recordatorios ",
+      "pagina_puds": 89,
+      "pagina_lamina": 29,
+      "menor_letra_puds_pt": 2.31,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 738,
+      "alto_mm": 492
+    },
+    {
+      "figura": 53,
+      "titulo": "Diseño procedimental CU8: Reportes y Estadísticas ",
+      "pagina_puds": 90,
+      "pagina_lamina": 30,
+      "menor_letra_puds_pt": 2.84,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 548,
+      "alto_mm": 406
+    },
+    {
+      "figura": 54,
+      "titulo": "Modelo conceptual global (modelo de dominio final) ",
+      "pagina_puds": 92,
+      "pagina_lamina": 31,
+      "menor_letra_puds_pt": 3.78,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 378,
+      "alto_mm": 313
+    },
+    {
+      "figura": 55,
+      "titulo": "Modelo lógico global de datos ",
+      "pagina_puds": 96,
+      "pagina_lamina": 32,
+      "menor_letra_puds_pt": 3.05,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 561,
+      "alto_mm": 381
+    },
+    {
+      "figura": 73,
+      "titulo": "Diagrama de componentes ",
+      "pagina_puds": 117,
+      "pagina_lamina": 33,
+      "menor_letra_puds_pt": 3.08,
+      "menor_letra_lamina_pt": 8.0,
+      "ancho_mm": 508,
+      "alto_mm": 289
+    }
+  ],
+  "nota": "Una lámina por figura, formato ampliado complementario. Informe principal en carta."
+}

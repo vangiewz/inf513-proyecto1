@@ -21,8 +21,8 @@ public record Oferta(
     String anuncioId,
     String descripcion) {
   public static final String SQL =
-      "SELECT o.*,pr.coordinador_correo,u.nombre || ' ' || u.apellido AS coordinador FROM"
-          + " catalogo_cache o LEFT JOIN programas_responsables pr ON"
+      "SELECT o.*,pg.nombre AS programa_nombre,pr.coordinador_correo,u.nombre || ' ' || u.apellido AS coordinador FROM"
+          + " catalogo_cache o JOIN programas pg ON pg.codigo=o.programa_codigo LEFT JOIN programas_responsables pr ON"
           + " pr.programa_codigo=o.programa_codigo LEFT JOIN usuarios u ON"
           + " u.correo=pr.coordinador_correo";
   public static final String[] COLUMNAS = {
@@ -32,7 +32,7 @@ public record Oferta(
     "Precio (Bs)",
     "Estado",
     "Programa",
-    "Codigo programa",
+    "Código programa",
     "Coordinador"
   };
 

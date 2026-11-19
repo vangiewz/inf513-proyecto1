@@ -38,15 +38,16 @@ try:
     result = psql(b"SELECT (SELECT count(*) FROM public.usuarios),"
                   b"(SELECT count(*) FROM public.prospectos),"
                   b"(SELECT count(*) FROM public.catalogo_cache),"
+                  b"(SELECT count(*) FROM public.programas),"
                   b"(SELECT count(*) FROM public.roles),"
                   b"(SELECT count(*) FROM public.motivos_perdida),"
                   b"(SELECT count(*) FROM public.descuentos),"
                   b"(SELECT valor FROM public.configuraciones WHERE clave='comision_porcentaje');")
-    assert result.stdout.decode().strip() == '0|0|25|3|10|3|2', result.stdout.decode()
+    assert result.stdout.decode().strip() == '0|0|25|5|3|10|3|2', result.stdout.decode()
     repeated = psql(schema, check=False)
     assert repeated.returncode != 0 and b'public contiene objetos' in repeated.stderr
     print('SQL OK: instalacion completa, referencias repetibles y rechazo sobre esquema ocupado.')
-    print('Sin usuarios ni prospectos; 25 ofertas simuladas, 3 roles, 10 motivos y 3 descuentos.')
+    print('Sin usuarios ni prospectos; 25 módulos, 5 programas, 3 roles, 10 motivos y 3 descuentos.')
 finally:
     docker('rm', '-f', NAME)
     print('Contenedor QA eliminado.')

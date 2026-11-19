@@ -25,7 +25,7 @@ public final class SeguimientoService {
       List.of("Llamada", "WhatsApp", "Correo electronico", "Reunion", "Nota comercial");
   public static final String[] COLUMNAS_HISTORIAL = {"Fecha", "Tipo", "Detalle", "Usuario"};
   public static final String[] COLUMNAS_BITACORA = {
-    "Fecha", "Remitente", "Rol", "Comando", "Resultado", "Detalle"
+    "Fecha", "Remitente", "Rol", "Comando", "Resultado", "Respuesta", "Detalle"
   };
   private static final List<DateTimeFormatter> FORMATOS =
       List.of(
@@ -208,14 +208,19 @@ ORDER BY h.fecha""",
       return filas(
           c,
           """
-SELECT l.fecha, l.remitente, COALESCE(l.rol_registrado,u.rol, 'público'), l.asunto, l.resultado, COALESCE(l.detalle, '')
+SELECT l.fecha, l.remitente, COALESCE(l.rol_registrado,u.rol, 'público'), l.asunto, l.resultado,
+       COALESCE((SELECT s.estado FROM correos_salientes s WHERE s.nro_registro = l.nro_registro
+                 ORDER BY s.nro_correo DESC LIMIT 1), '—'), COALESCE(l.detalle, '')
 FROM log_comandos l LEFT JOIN usuarios u ON u.correo = l.usuario_correo
 ORDER BY l.nro_registro DESC LIMIT ?""",
           Math.min(cantidad, 200));
     }
   }
 
-  /** Recordatorios que ya vencieron y aún no se avisaron por correo. */
+  /**
+   * Recordatorios que ya vencieron y aún no se avisaron por correo. Dentro de una transacción
+   * quedan bloqueados hasta marcarlos (otra instancia del lector los salta).
+   */
   public List<Recordatorio> vencidos() throws SQLException {
     try (Connection c = db.getConnection()) {
       return lista(
@@ -227,7 +232,7 @@ ORDER BY l.nro_registro DESC LIMIT ?""",
               + " now() AND (u.rol <> 'coordinador' OR EXISTS (SELECT 1 FROM catalogo_cache ac JOIN"
               + " programas_responsables pr ON pr.programa_codigo=ac.programa_codigo WHERE"
               + " ac.codigo=i.modulo_codigo AND pr.coordinador_correo=u.correo)) ORDER BY"
-              + " r.fecha_programada");
+              + " r.fecha_programada FOR UPDATE OF r SKIP LOCKED");
     }
   }
 

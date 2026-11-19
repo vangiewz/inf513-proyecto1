@@ -1,0 +1,42 @@
+{
+  "fecha": "2026-11-19",
+  "entorno": "PostgreSQL efímero en 127.0.0.1; no producción",
+  "migracion_sha256": "42a9392b92aead4d9df69e777244d44d5e122116c40a042d1a9669e6fa6700d2",
+  "comprobaciones": [
+    {
+      "comprobacion": "Migración conserva cada fila y cada valor del modelo anterior",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Cinco programas y veinticinco módulos",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Reaplicar se rechaza sin modificar datos",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Reversión restituye íntegros los datos originales",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Nombres contradictorios rechazan migración y hacen rollback",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Instalación nueva y migración preservan los mismos datos de referencia",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Suite completa sin fallas, errores u omisiones",
+      "aprobada": true
+    }
+  ],
+  "junit": {
+    "tests": 144,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "aprobado": true
+}

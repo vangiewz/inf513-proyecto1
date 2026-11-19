@@ -192,7 +192,7 @@ public abstract class RolCommandProcessor {
         }
         yield fmt.successTable(
             "Listando la oferta académica",
-            "Catalogo simulado compartido con web (API SIS pendiente). "
+            "Catálogo simulado compartido con web (API SIS pendiente). "
                 + (u == null
                     ? "Para inscribirse envíe"
                           + " REGISTRARINTERES[\"codigo_oferta\",\"documento\",\"nombre\",\"apellido\",\"telefono\"]."
@@ -219,7 +219,7 @@ public abstract class RolCommandProcessor {
                 + a.tarjeta().prospecto().nombre()
                 + ". Registramos "
                 + a.interesesCreados()
-                + " interes(es). Primera oferta: "
+                + " interés(es). Primera oferta: "
                 + a.tarjeta().ofertaNombre()
                 + ". Un asesor le contactará al "
                 + a.tarjeta().prospecto().telefono()
@@ -245,7 +245,7 @@ public abstract class RolCommandProcessor {
                     : "El prospecto ya existía: se agregó su nuevo interés.")
                 + " "
                 + a.interesesCreados()
-                + " interes(es) creados. Tarjeta #"
+                + " interés(es) creados. Tarjeta #"
                 + a.tarjeta().nro()
                 + " en Nuevo, "
                 + (a.tarjeta().vendedorCorreo() == null
@@ -359,7 +359,7 @@ public abstract class RolCommandProcessor {
         yield fmt.successTable(
                 "Éxito: distribución equitativa",
                 l.size()
-                    + " prospectos(s) repartidos en turno rotativo. Cada vendedor recibió un"
+                    + " prospecto(s) repartidos en turno rotativo. Cada vendedor recibió un"
                     + " aviso.",
                 new String[] {"Tarjeta", "Prospecto", "Oferta", "Vendedor"},
                 f)
@@ -372,7 +372,7 @@ public abstract class RolCommandProcessor {
         Interes t = embudo.mover(u, nro(c, 0), c.getParam(1));
         yield fmt.successTable(
             "Éxito: tarjeta movida",
-            "La tarjeta #" + t.nro() + " está ahora en " + t.estado() + ".",
+            "La tarjeta #" + t.nro() + " pasó a la etapa " + EmbudoService.etapaCorreo(t.estado()) + ".",
             Interes.COLUMNAS,
             List.<String[]>of(t.fila()));
       }
@@ -429,14 +429,14 @@ public abstract class RolCommandProcessor {
             "Orden de pago generada",
             "Referencia demostrativa. Registre el comprobante con REGISTRARCOMPROBANTE[\""
                 + o.nro()
-                + "\"]. No se ejecuto un cobro bancario.",
+                + "\"]. No se ejecutó un cobro bancario.",
             bo.uagrm.crm.dominio.pagos.PagoService.Orden.COLUMNAS,
             List.<String[]>of(o.fila()));
       }
       case LISTARORDENES, LISTARPAGOS -> {
         var l = pagos.listar(u, c.getParam(0));
         yield fmt.successTable(
-            "Ordenes y pagos",
+            "Órdenes y pagos",
             l.size() + " registro(s) dentro de su alcance.",
             bo.uagrm.crm.dominio.pagos.PagoService.Orden.COLUMNAS,
             filas(l, bo.uagrm.crm.dominio.pagos.PagoService.Orden::fila));
@@ -452,20 +452,20 @@ public abstract class RolCommandProcessor {
                 List.<String[]>of(o.fila())),
             new Tabla(
                 "Modulos",
-                new String[] {"Codigo", "Programa", "Modulo", "Precio (Bs)", "Estado"},
+                new String[] {"Código", "Programa", "Módulo", "Precio (Bs)", "Estado"},
                 pagos.items(u, o.nro())));
       }
       case LISTARDESCUENTOS ->
           fmt.successTable(
               "Descuentos activos",
               "Use sus codigos al generar una orden.",
-              new String[] {"Codigo", "Descuento", "Porcentaje"},
+              new String[] {"Código", "Descuento", "Porcentaje"},
               pagos.descuentos());
       case REGISTRARCOMPROBANTE -> {
         if (c.getErrorArchivo() != null) throw new CrmException(c.getErrorArchivo());
         var o = pagos.registrarComprobante(u, nro(c, 0), c.getArchivo(), c.getParam(1));
         yield fmt.successTable(
-            "Comprobante en revision",
+            "Comprobante en revisión",
             "El coordinador responsable debe revisar el adjunto con VERCOMPROBANTE y aprobarlo o"
                 + " rechazarlo.",
             bo.uagrm.crm.dominio.pagos.PagoService.Orden.COLUMNAS,
@@ -486,9 +486,9 @@ public abstract class RolCommandProcessor {
       case APROBARPAGO -> {
         var o = pagos.aprobar(u, nro(c, 0), c.getParam(1));
         yield fmt.successTable(
-            "Pago aprobado e inscripcion confirmada",
+            "Pago aprobado e inscripción confirmada",
             "Se validaron los datos y registraron las inscripciones y comisiones sin abrir web. El"
-                + " envio al SIS es un paso independiente.",
+                + " envío al SIS es un paso independiente.",
             bo.uagrm.crm.dominio.pagos.PagoService.Orden.COLUMNAS,
             List.<String[]>of(o.fila()));
       }
@@ -503,10 +503,10 @@ public abstract class RolCommandProcessor {
       case EXPORTARMATRICULAS -> {
         var e = exportaciones.preparar(u, c.getParam(0) == null ? null : nro(c, 0));
         yield fmt.successTable(
-                "Intercambio academico preparado",
+                "Intercambio académico preparado",
                 e.filas().isEmpty()
                     ? "No hay inscripciones pendientes."
-                    : "CSV adjunto preparado. La API del Grupo 06 aun no esta disponible; no se"
+                    : "CSV adjunto preparado. La API del Grupo 06 aún no está disponible; no se"
                         + " afirma una recepcion automatica.",
                 bo.uagrm.crm.dominio.conversion.ExportacionService.COLUMNAS,
                 e.filas())
@@ -514,7 +514,7 @@ public abstract class RolCommandProcessor {
       }
       case LISTAREXPORTACIONES ->
           fmt.successTable(
-              "Intercambio academico",
+              "Intercambio académico",
               "Estados y constancias de las preparaciones.",
               bo.uagrm.crm.dominio.conversion.ExportacionService.COLUMNAS,
               exportaciones.listar(u));
@@ -541,7 +541,7 @@ public abstract class RolCommandProcessor {
         yield fmt.successTable(
             "Validación de la tarjeta #" + nro,
             faltan == 0
-                ? "Requisitos completos: consulte la inscripcion con CONVERTIRPROSPECTO[\""
+                ? "Requisitos completos: consulte la inscripción con CONVERTIRPROSPECTO[\""
                     + nro
                     + "\"]."
                 : "Faltan " + faltan + " requisito(s) para la matrícula.",
@@ -551,14 +551,15 @@ public abstract class RolCommandProcessor {
       case CONVERTIRPROSPECTO -> {
         Matricula m = conversion.convertir(u, nro(c, 0));
         yield fmt.successTable(
-            "Inscripcion comercial confirmada",
-            "Inscripcion comercial #"
+            "Inscripción comercial confirmada",
+            "Inscripción comercial #"
                 + m.nro()
                 + " por Bs "
                 + DatabaseService.texto(m.monto())
-                + " confirmada como "
+                + ", estado "
                 + m.estado()
-                + ". La exportacion al SIS se gestiona por separado en web.",
+                + ". La exportación al SIS se prepara aparte con EXPORTARMATRICULAS (administración o"
+                + " coordinación).",
             Matricula.COLUMNAS,
             List.<String[]>of(m.fila()));
       }
@@ -582,7 +583,7 @@ public abstract class RolCommandProcessor {
         Recordatorio r =
             seguimiento.programarRecordatorio(u, nro(c, 0), c.getParam(1), c.getParam(2));
         yield fmt.success(
-            "Éxito: recordatorios programado",
+            "Éxito: recordatorio programado",
             "Recordatorio "
                 + r.nro()
                 + " para el "
@@ -602,8 +603,8 @@ public abstract class RolCommandProcessor {
       case COMPLETARRECORDATORIO -> {
         Recordatorio r = seguimiento.completarRecordatorio(u, nro(c, 0), c.getParam(1));
         yield fmt.success(
-            "Éxito: recordatorios realizado",
-            "El recordatorios " + r.nro() + " (" + r.descripcion() + ") quedó como Realizado.");
+            "Éxito: recordatorio realizado",
+            "El recordatorio " + r.nro() + " (" + r.descripcion() + ") quedó como Realizado.");
       }
       case VERHISTORIAL -> {
         Historial h = seguimiento.historial(u, nro(c, 0));
@@ -614,11 +615,11 @@ public abstract class RolCommandProcessor {
                 + " · "
                 + t.ofertaNombre()
                 + " · "
-                + t.estado()
+                + EmbudoService.etapaCorreo(t.estado())
                 + " · "
                 + t.nombreVendedor(),
             SeguimientoService.COLUMNAS_HISTORIAL,
-            h.eventos());
+            h.eventos().stream().map(RolCommandProcessor::conEtapasCorreo).toList());
       }
       case VERBITACORA -> {
         int n = c.getParam(0) == null ? 30 : Valida.entero(c.getParam(0), "cantidad");
@@ -640,11 +641,11 @@ public abstract class RolCommandProcessor {
                 ? "Aún no hay tarjetas cerradas."
                 : "Tasa de conversión de las tarjetas cerradas: "
                     + Math.round(100.0 * conv / (conv + perd))
-                    + " % ("
+                    + " % (convertidas: "
                     + conv
-                    + " convertidas, "
+                    + "; perdidas: "
                     + perd
-                    + " perdidas).",
+                    + ").",
             ReporteService.COLUMNAS_EMBUDO,
             l);
       }
@@ -754,9 +755,20 @@ public abstract class RolCommandProcessor {
                             + v.nombre()
                             + ". Se le asignaron "
                             + f.size()
-                            + " prospectos(s). Revise su tablero con VERTABLERO[].",
+                            + " prospecto(s). Revise su tablero con VERTABLERO[].",
                         new Tabla(null, Interes.COLUMNAS, f)))));
     return out;
+  }
+
+  /** Movimientos del historial con las etapas del tablero; el detalle financiero (Pago enviado, En revisión) se conserva. */
+  private static String[] conEtapasCorreo(String[] e) {
+    if (!"Movimiento".equals(e[1])) return e;
+    String[] r = e.clone();
+    r[2] =
+        r[2].replace("Contactado", "En Contacto")
+            .replace("Interesado", "Seguimiento")
+            .replace("En revision", "En revisión");
+    return r;
   }
 
   private static int nro(Command c, int i) throws CrmException {

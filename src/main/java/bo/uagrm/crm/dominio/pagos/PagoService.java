@@ -28,7 +28,7 @@ public final class PagoService {
       String estadoPago,
       String fecha) {
     public static final String[] COLUMNAS = {
-      "Orden", "Tarjeta", "Prospecto", "Total (Bs)", "Estado del pago", "Codigo de referencia"
+      "Orden", "Tarjeta", "Prospecto", "Total (Bs)", "Estado del pago", "Código de referencia"
     };
 
     public String[] fila() {
@@ -100,7 +100,7 @@ public final class PagoService {
       throws SQLException, CrmException {
     if (revisar && u.rol() == Rol.VENDEDOR)
       throw new CrmException(
-          "Solo administracion o el coordinador responsable pueden revisar pagos.");
+          "Solo administración o el coordinador responsable pueden revisar pagos.");
     uno(c, r -> 1, "SELECT pg_advisory_xact_lock(51305)");
     if (uno(
             c,
@@ -169,7 +169,7 @@ public final class PagoService {
           actor(c, u, false);
           Interes t = EmbudoService.tarjeta(c, u, tarjeta, true);
           if (t.cerrada())
-            throw new CrmException("No se generan ordenes sobre intereses cerrados.");
+            throw new CrmException("No se generan órdenes sobre intereses cerrados.");
           if (t.vendedorCorreo() == null
               || uno(
                       c,
@@ -180,22 +180,22 @@ public final class PagoService {
                   == null) throw new CrmException("Asigne primero un vendedor activo.");
           Oferta base = uno(c, Oferta::de, Oferta.SQL + " WHERE o.codigo=?", t.ofertaCodigo());
           if (base == null)
-            throw new CrmException("La oferta no esta en el catalogo sincronizado.");
+            throw new CrmException("La oferta no está en el catálogo sincronizado.");
           List<String> seleccion = separar(codigos == null ? t.ofertaCodigo() : codigos);
           if (!seleccion.contains(t.ofertaCodigo()))
             throw new CrmException(
-                "La orden debe incluir el modulo de la tarjeta; seleccione otra tarjeta para vender"
-                    + " otro modulo.");
+                "La orden debe incluir el módulo de la tarjeta; seleccione otra tarjeta para vender"
+                    + " otro módulo.");
           List<Oferta> ofertas = new ArrayList<>();
           for (String codigo : seleccion) {
             Oferta f = uno(c, Oferta::de, Oferta.SQL + " WHERE o.codigo=?", codigo);
             if (f == null || !f.abierta())
-              throw new CrmException("Hay un modulo inexistente o cerrado: " + codigo);
+              throw new CrmException("Hay un módulo inexistente o cerrado: " + codigo);
             if (!f.programaCodigo().equals(base.programaCodigo()))
               throw new CrmException(
-                  "Los modulos de una orden deben corresponder al programa de la tarjeta.");
+                  "Los módulos de una orden deben corresponder al programa de la tarjeta.");
             if (u.rol() == Rol.COORDINADOR && !Objects.equals(f.coordinadorCorreo(), u.correo()))
-              throw new CrmException("El programa no esta a su cargo.");
+              throw new CrmException("El programa no está a su cargo.");
             ofertas.add(f);
           }
           BigDecimal subtotal =
@@ -290,7 +290,7 @@ VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
                   + orden
                   + " por Bs "
                   + texto(total)
-                  + ". Referencia de demostracion; no es un cobro bancario.");
+                  + ". Referencia de demostración; no es un cobro bancario.");
           return porPago(c, u, orden, false);
         });
   }
@@ -307,7 +307,7 @@ VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
           Orden o = porPago(c, u, pago, true);
           Interes t = EmbudoService.tarjeta(c, u, o.nroTarjeta(), true);
           if (!List.of("Pendiente de pago", "Pago rechazado").contains(o.estadoPago()))
-            throw new CrmException("El pago ya esta en revision o fue aprobado.");
+            throw new CrmException("El pago ya está en revisión o fue aprobado.");
           if (t.cerrada())
             throw new CrmException("La tarjeta esta cerrada; no admite otro comprobante.");
           actualizar(
@@ -328,7 +328,7 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
               t,
               "En revision",
               "Pago informado",
-              "Comprobante registrado por correo para revision. " + (nota == null ? "" : nota));
+              "Comprobante registrado por correo para revisión. " + (nota == null ? "" : nota));
           return porPago(c, u, pago, false);
         });
   }
@@ -377,10 +377,10 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
           actor(c, u, true);
           Orden o = porPago(c, u, pago, true);
           if (!"En revision".equals(o.estadoPago()))
-            throw new CrmException("Solo se rechaza un pago en revision.");
+            throw new CrmException("Solo se rechaza un pago en revisión.");
           Interes t = EmbudoService.tarjeta(c, u, o.nroTarjeta(), true);
           if (t.estado().equals("Convertido"))
-            throw new CrmException("La inscripcion ya fue confirmada.");
+            throw new CrmException("La inscripción ya fue confirmada.");
           estados(c, o, "Pago rechazado", nota);
           actualizar(
               c,
@@ -400,7 +400,7 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
           Orden o = porPago(c, u, pago, true);
           if (!"En revision".equals(o.estadoPago()))
             throw new CrmException(
-                "Solo se aprueba un pago en revision; no se repite una aprobacion.");
+                "Solo se aprueba un pago en revisión; no se repite una aprobación.");
           String prospecto =
               uno(
                   c,
@@ -423,7 +423,7 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
                   "SELECT 1 FROM comprobantes_pago WHERE nro_orden=? AND estado_revision='En"
                       + " revision'",
                   pago)
-              == null) throw new CrmException("No hay un comprobante en revision.");
+              == null) throw new CrmException("No hay un comprobante en revisión.");
           BigDecimal porcentaje =
               uno(
                   c,
@@ -439,7 +439,7 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
                   "SELECT nro_solicitud,modulo_codigo,precio_acordado FROM solicitudes_compra WHERE"
                       + " nro_orden=? ORDER BY nro_solicitud FOR UPDATE",
                   o.nro());
-          if (ventas.isEmpty()) throw new CrmException("La orden no tiene modulos.");
+          if (ventas.isEmpty()) throw new CrmException("La orden no tiene módulos.");
           for (Object[] venta : ventas) {
             if (uno(
                     c,
@@ -453,7 +453,7 @@ WHERE i.documento=? AND sc.modulo_codigo=? LIMIT 1
                     venta[1])
                 != null)
               throw new CrmException(
-                  "El prospecto ya tiene una inscripcion confirmada en el modulo " + venta[1]);
+                  "El prospecto ya tiene una inscripción confirmada en el módulo " + venta[1]);
             actualizar(
                 c,
                 "INSERT INTO"
@@ -498,7 +498,7 @@ WHERE i.documento=? AND sc.modulo_codigo=? LIMIT 1
                   vinculado,
                   "Convertido",
                   "Compra validada",
-                  "Modulo inscrito mediante la orden #" + o.nro());
+                  "Módulo inscrito mediante la orden #" + o.nro());
             }
           }
           estados(c, o, "Pago aprobado", nota);
@@ -519,7 +519,7 @@ WHERE i.documento=? AND sc.modulo_codigo=? LIMIT 1
               "Compra validada",
               "Pago #"
                   + pago
-                  + " aprobado por correo. Inscripcion comercial confirmada; envio al SIS"
+                  + " aprobado por correo. Inscripción comercial confirmada; envío al SIS"
                   + " pendiente.");
           return porPago(c, u, pago, false);
         });
@@ -583,7 +583,7 @@ WHERE i.documento=? AND sc.modulo_codigo=? LIMIT 1
 
   private static List<String> separar(String texto) throws CrmException {
     List<String> out = separarOpcional(texto);
-    if (out.isEmpty()) throw new CrmException("Seleccione al menos un modulo.");
+    if (out.isEmpty()) throw new CrmException("Seleccione al menos un módulo.");
     return out;
   }
 

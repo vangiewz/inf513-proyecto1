@@ -48,7 +48,7 @@ public final class AsignacionService {
     return db.enTransaccion(
         c -> {
           if (u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR)
-            throw new CrmException("Solo coordinacion o administracion pueden asignar.");
+            throw new CrmException("Solo coordinación o administración pueden asignar.");
           uno(c, rs -> 1, "SELECT pg_advisory_xact_lock(51305)");
           Interes t = EmbudoService.tarjeta(c, u, nroTarjeta, true);
           if (t.cerrada())
@@ -83,7 +83,7 @@ public final class AsignacionService {
     return db.enTransaccion(
         c -> {
           if (u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR)
-            throw new CrmException("Solo coordinacion o administracion pueden asignar.");
+            throw new CrmException("Solo coordinación o administración pueden asignar.");
           uno(c, rs -> 1, "SELECT pg_advisory_xact_lock(51305)");
           List<Usuario> vendedores =
               lista(

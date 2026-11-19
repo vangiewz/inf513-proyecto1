@@ -66,3 +66,66 @@ Las pruebas de servidor también pueden correr en local: `P1_REMOTE_DB_URL` (con
   exportaciones, recordatorios, bitácora y los cuatro reportes) sin crear ventas.
 - La interoperabilidad HTTP con la versión web retirada (`BaseCompartidaTest`) se eliminó: el P2 debe replicar las claves
   de diseño en sus migraciones de Laravel y tendrá sus propias pruebas.
+
+## Caidas y recuperacion
+
+La versión del 19/11 incorpora `BandejaCorreoTest` (8 pruebas con POP3/SMTP locales y PostgreSQL desechable),
+`ColaCorreoTest` (3 pruebas del mensaje MIME y sus identificadores) y `AppTest` (1 prueba). Los informes
+JUnit conservados en `target/surefire-reports/` registran 141 pruebas sin fallas ni omisiones en la corrida
+preparada por Claude. No confundir esta evidencia local con una ejecución en el servidor de la facultad.
+
+`scripts/prueba_caidas.py` ejercita el JAR completo con servidores de correo de prueba. Solo admite una URL
+de BD en `127.0.0.1`; requiere una base nueva desechable, con la estructura y referencias actuales.
+Si se usa `--pgdata`, debe apuntar exclusivamente al clúster desechable: el script lo apaga de golpe.
+
+```sh
+python -I scripts/prueba_caidas.py --db jdbc:postgresql://127.0.0.1:55443/crm_caidas --cortes 60 --semilla 31 --psql RUTA_PSQL --pgdata RUTA_CLUSTER_DESECHABLE --pg-ctl RUTA_PG_CTL
+```
+
+La ejecución conservada en `doc/pruebas/caidas.json` (19/11, semilla 31) registró 60 cierres forzados,
+12 caídas de BD, pérdidas de confirmación QUIT y fallas SMTP. Los 30 comandos distintos se ejecutaron una
+vez cada uno; no quedaron comandos perdidos, operaciones duplicadas ni respuestas pendientes. Hubo 37
+recepciones SMTP para 30 Message-ID distintos: las entregas inciertas pueden producir copias de una
+respuesta. La garantía no es entrega de correo exactamente una vez. El extracto está en
+`doc/pruebas/caidas-log.txt`.
+
+El script sobrescribe por omisión `doc/pruebas/caidas.json`; para una comprobación adicional sin reemplazar
+la evidencia del documento, indicar `--salida RUTA_TEMPORAL`. La cuenta del servidor y el correo real no se
+utilizan en esta prueba.
+
+**Despliegue pendiente:** la migración `sql/migraciones/2026-11-19_bandeja_correo.sql` no está aplicada a
+`db_grupo05sa.public`. La estructura del SQL actual es la propuesta con bandeja; la integración del 17/11
+corresponde a la versión anterior. Falta validar la versión nueva contra el servidor cuando esté disponible.
+
+## Auditoria de los modelos globales
+
+Segunda revisión: `python scripts/auditar_modelos.py --ampliada`. Agrega controles de PK, ausencia de `id`,
+vigencia, normalización del catálogo, ocho colaboraciones, vistas globales, referencias repetibles y rechazo
+del instalador sobre esquema ocupado. Resultado del 19/11: **54 comprobaciones aprobadas**, en
+`doc/pruebas/auditoria-ampliada.json`. Resumen: `AUDITORIA_ADICIONAL.md`.
+
+```sh
+python scripts/auditar_modelos.py
+```
+
+Requiere Enterprise Architect por COM, pywin32 y PostgreSQL 18 instalado (opción `--pg-bin` para indicar sus
+binarios). Crea un clúster nuevo y exclusivo en `127.0.0.1`, instala `sql/esquema.sql` y compara sus metadatos
+con `doc/ea/crm-p1.eapx`. Detiene y elimina el clúster al terminar. No usa credenciales ni datos del CRM real.
+
+Después de normalizar, el esquema propuesto tiene 25 tablas, 209 columnas y 34 FK; el lógico
+representa las columnas que no son FK como atributos (incluyendo las FK que también son PK) y las FK restantes como asociaciones. Se comprueban PK, UNIQUE y
+nulos al determinar las multiplicidades, el conceptual sin tipos ni métodos, la clase de asociación N a N,
+una vista global por nivel y una secuencia y un procedimental completo por cada CU. Evidencia:
+`doc/pruebas/modelos-globales.json`. Esta auditoría es adicional a las pruebas de aplicación.
+
+## Catálogo normalizado y regresión de P1
+
+`python scripts/probar_catalogo.py --sql-anterior RUTA_SQL_ANTERIOR` crea un PostgreSQL efímero solo en
+127.0.0.1. Comprueba conservación de filas y valores al migrar, reversión, rechazo con rollback de nombres
+contradictorios y equivalencia con la instalación nueva. Ejecuta toda la suite con sus integraciones en ese
+mismo clúster local; las clases llamadas ServidorCompartidoTest y CorreoServidorFinancieroTest usan aquí
+el esquema QA local, no el servidor de la facultad. Genera `doc/pruebas/catalogo-normalizado.json`.
+
+CatalogoNormalizadoTest agrega tres casos: programas y módulos separados con sus FK, rechazo de referencias
+inexistentes y renombrado del programa sin cambiar el histórico comercial. Las migraciones de bandeja y
+catálogo siguen pendientes en producción; P2 requiere adaptar sus consultas a `programas.nombre`.

@@ -15,7 +15,7 @@ public final class ExportacionService {
   public record Preparacion(List<String[]> filas, Adjunto archivo) {}
 
   public static final String[] COLUMNAS = {
-    "Exportacion", "Inscripcion", "Alumno", "Modulo", "Estado"
+    "Exportación", "Inscripción", "Alumno", "Módulo", "Estado"
   };
   private static final String FROM =
       """
@@ -32,7 +32,7 @@ public final class ExportacionService {
   private static void rol(Usuario u) throws CrmException {
     if (u.rol() == Rol.VENDEDOR)
       throw new CrmException(
-          "Solo administracion o coordinacion preparan el intercambio academico.");
+          "Solo administración o coordinación preparan el intercambio académico.");
   }
 
   private static String alcance(Usuario u) {
@@ -86,7 +86,7 @@ public final class ExportacionService {
                   args(u, matricula, matricula));
           if (matricula != null && ids.isEmpty())
             throw new CrmException(
-                "La inscripcion no esta disponible, ya se preparo o no pertenece a su alcance. Use"
+                "La inscripción no está disponible, ya se preparó o no pertenece a su alcance. Use"
                     + " LISTAREXPORTACIONES y VEREXPORTACION para recuperarla.");
           var rows = new ArrayList<String[]>();
           var csv = new StringBuilder(encabezado());
@@ -139,7 +139,7 @@ VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object
                   + " JOIN exportaciones e ON e.nro_solicitud=m.nro_solicitud WHERE e.nro_exportacion=? AND "
                   + alcance(u),
               args(u, nro));
-      if (rows.isEmpty()) throw new CrmException("No existe esa exportacion en su alcance.");
+      if (rows.isEmpty()) throw new CrmException("No existe esa exportación en su alcance.");
       int inscripcion = Integer.parseInt(rows.get(0)[1]);
       return new Preparacion(
           rows,
@@ -157,7 +157,7 @@ VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object
         Valida.elegir(
             estado,
             List.of("preparada", "exportada", "recibida", "error"),
-            "estado de exportacion");
+            "estado de exportación");
     String nota = Valida.texto(respuesta, "respuesta o constancia del SIS", 2000);
     db.enTransaccion(
         c -> {
@@ -171,7 +171,7 @@ VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object
                       + alcance(u)
                       + " FOR UPDATE OF e",
                   args(u, nro));
-          if (anterior == null) throw new CrmException("No existe esa exportacion en su alcance.");
+          if (anterior == null) throw new CrmException("No existe esa exportación en su alcance.");
           if (anterior.equals("recibida") && !e.equals("recibida"))
             throw new CrmException("Una recepcion confirmada no se revierte manualmente.");
           actualizar(

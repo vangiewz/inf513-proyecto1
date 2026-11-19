@@ -49,7 +49,7 @@ public final class ConversionService {
               uno(c, Matricula::de, Matricula.SQL + " WHERE i.nro_tarjeta=? ORDER BY m.nro_solicitud LIMIT 1", nro);
           if (m == null)
             throw new CrmException(
-                "No existe una inscripcion comercial confirmada para esta tarjeta.");
+                "No existe una inscripción comercial confirmada para esta tarjeta.");
           return m; // Idempotente: no duplica inscripciones ni comisiones.
         });
   }
@@ -88,26 +88,26 @@ WHERE origen.documento=? AND sc.modulo_codigo=? AND pg.estado='Pago aprobado' AN
                     "Nombre y apellido",
                     p.getNombreCompleto(),
                     !p.nombre().isBlank() && !p.apellido().isBlank()),
-                new Requisito("Telefono valido", p.telefono(), Valida.esTelefono(p.telefono())),
-                new Requisito("Correo valido", p.correo(), Valida.esCorreo(p.correo())),
+                new Requisito("Teléfono válido", p.telefono(), Valida.esTelefono(p.telefono())),
+                new Requisito("Correo válido", p.correo(), Valida.esCorreo(p.correo())),
                 new Requisito("Vendedor asignado", t.nombreVendedor(), t.vendedorCorreo() != null),
                 new Requisito(
-                    "Pago aprobado e inscripcion confirmada",
+                    "Pago aprobado e inscripción confirmada",
                     pagado ? "Confirmada" : "Pendiente",
                     pagado),
                 new Requisito(
-                    "Inscripcion comercial confirmada",
+                    "Inscripción comercial confirmada",
                     t.estado(),
                     "Convertido".equals(t.estado()))));
     var faltan = bo.uagrm.crm.dominio.pagos.PagoService.faltantes(c, t);
     requisitos.add(
         new Requisito(
-            "Profesion",
+            "Profesión",
             faltan.contains("profesion") ? "Pendiente" : "Completa",
             !faltan.contains("profesion")));
     requisitos.add(
         new Requisito(
-            "Ubicacion",
+            "Ubicación",
             faltan.contains("ubicacion") ? "Pendiente" : "Completa",
             !faltan.contains("ubicacion")));
     return List.copyOf(requisitos);

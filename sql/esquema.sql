@@ -12,10 +12,10 @@ END $$;
 -- PostgreSQL database dump
 --
 
-\restrict GrhxxdSQSvnnGcny1osHKsFGviVWUYZKEWsPkkbW0UmpaPX4XfgjPbzst3YNAbk
+\restrict GCat3zyqvNXd2Ej6faxbCDDDLe0u9p3prB0Rc2t8NfUTcxO2ABhUSP493Q9Tc3m
 
--- Dumped from database version 18.6
--- Dumped by pg_dump version 18.6
+-- Dumped from database version 18.4
+-- Dumped by pg_dump version 18.4
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -108,7 +108,6 @@ CREATE TABLE public.catalogo_cache (
     codigo character varying(255) NOT NULL,
     anuncio_codigo character varying(255),
     programa_codigo character varying(255) NOT NULL,
-    programa_nombre character varying(255) NOT NULL,
     nombre character varying(255) NOT NULL,
     descripcion text,
     precio numeric(12,2) NOT NULL,
@@ -120,6 +119,15 @@ CREATE TABLE public.catalogo_cache (
 --
 -- Name: comisiones; Type: TABLE; Schema: public; Owner: -
 --
+
+-- Programas normalizados: su nombre no se repite en cada modulo de catalogo_cache.
+CREATE TABLE public.programas (
+    codigo character varying(255) NOT NULL,
+    nombre character varying(255) NOT NULL
+);
+ALTER TABLE ONLY public.programas ADD CONSTRAINT programas_pkey PRIMARY KEY (codigo);
+COMMENT ON TABLE public.programas IS 'Programas del catalogo: codigo natural y nombre, sin repeticion por modulo';
+COMMENT ON TABLE public.catalogo_cache IS 'Modulos del catalogo local; su programa y nombre se consultan en programas';
 
 CREATE TABLE public.comisiones (
     nro_solicitud bigint NOT NULL,
@@ -185,6 +193,54 @@ CREATE TABLE public.configuraciones (
     updated_at timestamp(0) without time zone,
     actualizado_por character varying(255)
 );
+
+
+--
+-- Name: correos_salientes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.correos_salientes (
+    nro_correo bigint NOT NULL,
+    nro_registro bigint,
+    nro_recordatorio bigint,
+    destinatario character varying(160) NOT NULL,
+    asunto character varying(300) NOT NULL,
+    mensaje bytea NOT NULL,
+    estado character varying(20) DEFAULT 'Pendiente'::character varying NOT NULL,
+    intentos integer DEFAULT 0 NOT NULL,
+    proximo_intento timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    ultimo_error text,
+    enviado_en timestamp(0) without time zone,
+    created_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT correos_salientes_estado_check CHECK (((estado)::text = ANY (ARRAY[('Pendiente'::character varying)::text, ('Enviado'::character varying)::text, ('Fallido'::character varying)::text, ('Rebotado'::character varying)::text]))),
+    CONSTRAINT correos_salientes_origen_check CHECK (((nro_registro IS NOT NULL) OR (nro_recordatorio IS NOT NULL)))
+);
+
+
+--
+-- Name: TABLE correos_salientes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.correos_salientes IS 'Cola de respuestas y avisos por correo: se envían y reintentan sin repetir la operación que los originó';
+
+
+--
+-- Name: correos_salientes_nro_correo_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.correos_salientes_nro_correo_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: correos_salientes_nro_correo_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.correos_salientes_nro_correo_seq OWNED BY public.correos_salientes.nro_correo;
 
 
 --
@@ -348,8 +404,33 @@ CREATE TABLE public.log_comandos (
     detalle text,
     fecha timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     rol_registrado character varying(40),
-    usuario_correo character varying(255)
+    usuario_correo character varying(255),
+    message_id character varying(255),
+    contenido bytea,
+    bytes integer,
+    procesado_en timestamp(0) without time zone
 );
+
+
+--
+-- Name: COLUMN log_comandos.message_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.log_comandos.message_id IS 'Cabecera Message-ID del correo recibido (o sha256 del contenido si no la trae)';
+
+
+--
+-- Name: COLUMN log_comandos.contenido; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.log_comandos.contenido IS 'Correo crudo mientras espera proceso (resultado Recibido); se vacía al procesarlo';
+
+
+--
+-- Name: COLUMN log_comandos.bytes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.log_comandos.bytes IS 'Tamaño informado por POP3 LIST';
 
 
 --
@@ -676,6 +757,13 @@ ALTER TABLE ONLY public.comprobantes_pago ALTER COLUMN nro_comprobante SET DEFAU
 
 
 --
+-- Name: correos_salientes nro_correo; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correos_salientes ALTER COLUMN nro_correo SET DEFAULT nextval('public.correos_salientes_nro_correo_seq'::regclass);
+
+
+--
 -- Name: exportaciones nro_exportacion; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -779,6 +867,14 @@ ALTER TABLE ONLY public.configuraciones
 
 
 --
+-- Name: correos_salientes correos_salientes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correos_salientes
+    ADD CONSTRAINT correos_salientes_pkey PRIMARY KEY (nro_correo);
+
+
+--
 -- Name: descuentos descuentos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -824,6 +920,14 @@ ALTER TABLE ONLY public.intereses
 
 ALTER TABLE ONLY public.intereses
     ADD CONSTRAINT intereses_pkey PRIMARY KEY (nro_tarjeta);
+
+
+--
+-- Name: log_comandos log_comandos_message_id_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.log_comandos
+    ADD CONSTRAINT log_comandos_message_id_unique UNIQUE (message_id);
 
 
 --
@@ -947,6 +1051,20 @@ ALTER TABLE ONLY public.usuarios
 
 
 --
+-- Name: correos_salientes_nro_registro_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX correos_salientes_nro_registro_idx ON public.correos_salientes USING btree (nro_registro);
+
+
+--
+-- Name: correos_salientes_pendientes_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX correos_salientes_pendientes_idx ON public.correos_salientes USING btree (proximo_intento) WHERE ((estado)::text = 'Pendiente'::text);
+
+
+--
 -- Name: exportaciones_estado_fecha_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -958,6 +1076,13 @@ CREATE INDEX exportaciones_estado_fecha_idx ON public.exportaciones USING btree 
 --
 
 CREATE INDEX interacciones_usuario_fecha_idx ON public.interacciones USING btree (usuario_correo, fecha);
+
+
+--
+-- Name: log_comandos_recibidos_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX log_comandos_recibidos_idx ON public.log_comandos USING btree (nro_registro) WHERE ((resultado)::text = 'Recibido'::text);
 
 
 --
@@ -1068,6 +1193,22 @@ ALTER TABLE ONLY public.comprobantes_pago
 
 ALTER TABLE ONLY public.configuraciones
     ADD CONSTRAINT configuraciones_actualizado_por_fk FOREIGN KEY (actualizado_por) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: correos_salientes correos_salientes_nro_recordatorio_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correos_salientes
+    ADD CONSTRAINT correos_salientes_nro_recordatorio_fk FOREIGN KEY (nro_recordatorio) REFERENCES public.recordatorios(nro_recordatorio) ON DELETE CASCADE;
+
+
+--
+-- Name: correos_salientes correos_salientes_nro_registro_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correos_salientes
+    ADD CONSTRAINT correos_salientes_nro_registro_fk FOREIGN KEY (nro_registro) REFERENCES public.log_comandos(nro_registro) ON DELETE RESTRICT;
 
 
 --
@@ -1271,8 +1412,14 @@ ALTER TABLE ONLY public.usuarios
 
 
 --
+-- Relaciones del catalogo normalizado.
+ALTER TABLE ONLY public.catalogo_cache
+    ADD CONSTRAINT catalogo_cache_programa_codigo_fk FOREIGN KEY (programa_codigo) REFERENCES public.programas(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE ONLY public.programas_responsables
+    ADD CONSTRAINT programas_responsables_programa_codigo_fk FOREIGN KEY (programa_codigo) REFERENCES public.programas(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
+
 -- PostgreSQL database dump complete
 --
 
-\unrestrict GrhxxdSQSvnnGcny1osHKsFGviVWUYZKEWsPkkbW0UmpaPX4XfgjPbzst3YNAbk
+\unrestrict GCat3zyqvNXd2Ej6faxbCDDDLe0u9p3prB0Rc2t8NfUTcxO2ABhUSP493Q9Tc3m
 

@@ -242,13 +242,13 @@ public final class ProspectoService {
             codigo);
     if (ofertas.isEmpty())
       throw new CrmException(
-          "No existe la oferta. Vea LISTAROFERTA[] o consulte a administracion para actualizar el catalogo.");
+          "No existe la oferta. Vea LISTAROFERTA[] o consulte a administración para actualizar el catálogo.");
     if (ofertas.stream().anyMatch(o -> !o.abierta()))
       throw new CrmException("La oferta esta cerrada y no recibe inscripciones.");
     if (actor != null
         && actor.rol() == Rol.COORDINADOR
         && ofertas.stream().anyMatch(of -> !actor.correo().equalsIgnoreCase(Objects.toString(of.coordinadorCorreo(), ""))))
-      throw new CrmException("El programa no esta a su cargo.");
+      throw new CrmException("El programa no está a su cargo.");
     Prospecto p =
         uno(
             c,
@@ -259,7 +259,7 @@ public final class ProspectoService {
     boolean nuevo = p == null;
     if (!nuevo && (!p.ci().equals(doc) || !p.correo().equalsIgnoreCase(email)))
       throw new CrmException(
-          "No se pudo registrar el interes con esos datos. Contacte a coordinacion.");
+          "No se pudo registrar el interés con esos datos. Contacte a coordinación.");
     if (nuevo)
       actualizar(
                 c,

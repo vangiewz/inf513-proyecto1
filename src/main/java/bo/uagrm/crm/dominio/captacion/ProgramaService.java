@@ -18,7 +18,7 @@ public final class ProgramaService {
   public int asignar(Usuario actor, String codigo, String coordinador)
       throws SQLException, CrmException {
     if (actor.rol() != Rol.ADMINISTRADOR)
-      throw new CrmException("Solo administracion puede asignar responsables de programa.");
+      throw new CrmException("Solo administración puede asignar responsables de programa.");
     String programa = Valida.texto(codigo, "codigo de programa", 255);
     String responsable = Valida.correo(coordinador);
     return db.enTransaccion(
@@ -44,7 +44,7 @@ public final class ProgramaService {
                   "SELECT count(*) FROM catalogo_cache WHERE programa_codigo=?",
                   programa);
           if (cuantos == 0)
-            throw new CrmException("No existe ese programa en el catalogo. Vea LISTAROFERTA[].");
+            throw new CrmException("No existe ese programa en el catálogo. Vea LISTAROFERTA[].");
           actualizar(
               c,
               """
