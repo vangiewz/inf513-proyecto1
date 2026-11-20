@@ -46,16 +46,15 @@ def rojo(texto):
 
 
 def fig(archivo, titulo, ancho=16.0, nota=None, horizontal=None, titulos=()):
-    """Figura de EA. horizontal=True: va sola en una página apaisada (diagramas anchos, legibles al imprimir).
-    Sin indicarlo, un diagrama grande va en la orientación en que su letra impresa sale más grande.
-    titulos: [(texto, nivel)] que encabezan la página apaisada, para que no queden huérfanos en la página anterior."""
+    """Inserta una figura en el flujo del texto. Solo horizontal=True reserva una p?gina apaisada
+    para diagramas globales anchos; por defecto la figura sigue el texto en la orientaci?n actual."""
     ruta = DIA / archivo
     if ruta.exists():
         import pymupdf
         px = pymupdf.Pixmap(str(ruta))
         w, h = px.width, px.height
-        if w >= 1600 or horizontal is None:   # la orientación en que la letra impresa sale más grande
-            horizontal = w >= 1600 and min(650 / w, 428 / h) > min(468 / w, 588 / h)
+        if horizontal is None:
+            horizontal = False  # solo diagramas seleccionados expl?citamente van en p?gina apaisada
         if not horizontal and w >= 1600: ancho = 16.0
     horizontal = bool(horizontal)
     if horizontal: d.orientacion(True); ancho = 22.9
@@ -63,7 +62,7 @@ def fig(archivo, titulo, ancho=16.0, nota=None, horizontal=None, titulos=()):
     if ruta.exists():
         import pymupdf
         px = pymupdf.Pixmap(str(ruta))
-        alto_max = (13.2 if horizontal else 20.0) - 1.7 * len(titulos)   # reservar rótulo y títulos en la misma página
+        alto_max = (14.5 if horizontal else 20.0) - 1.7 * len(titulos)   # reservar rótulo y títulos en la misma página
         n_parrafos = len(d.doc.paragraphs)
         d.figura(ruta, titulo, nota, min(ancho, alto_max * px.width / px.height))
         d.doc.paragraphs[n_parrafos].paragraph_format.keep_with_next = True
@@ -74,7 +73,6 @@ def fig(archivo, titulo, ancho=16.0, nota=None, horizontal=None, titulos=()):
         d.rotulo('Figura', titulo)
         rojo(f'figura de Enterprise Architect diagramas/{archivo} (lista en P1_CORREO.md § Diagramas)')
     if horizontal: d.orientacion(False)
-
 
 def dato(valor, que):
     return valor if valor else f'[PENDIENTE: {que}]'
@@ -523,22 +521,8 @@ d.p('Cada ciclo deja una línea en access.log con la latencia de cada etapa, y c
     'Diagnostico (DNS, puerto cerrado, IP fuera de pg_hba.conf, clave cambiada, tabla borrada, buzón bloqueado).')
 
 d.h('Diagramas de secuencia', 3)
-d.p('Todo comando se recibe y se responde igual. Recibir comando muestra el ciclo de App con un fragmento loop cada 10 '
-    'segundos: comprueba el modelo de la base de datos, consulta el buzón y, en un loop por mensaje, descarga cada correo '
-    '(alt: solo las cabeceras con top() si pasa de 8 MB, o completo con retr()) y lo borra; después procesa cada mensaje leído. '
-    'Registrar y responder muestra la bitácora, el envío por SMTP y, en un fragmento opt, el registro del envío fallido.')
-d.p('Cada caso de uso tiene un solo diagrama. Lo común se dibuja una vez: el comando llega a procesador, que llama a procesar() '
-    'del procesador del rol, y este consulta comandos(). Un fragmento alt separa el comando no permitido al rol (denegado()) del '
-    'resto; dentro de [else], ejecutar() lleva a un segundo alt con un operando por comando del caso de uso, cada uno con el método '
-    'real del servicio y la operación de DatabaseService con la que llega a la base de datos (enTransaccion(), lista(), filas() o '
-    'uno()). Al salir del alt, procesador registra la bitácora y el actor recibe la respuesta HTML.')
-d.p('Los correos (el comando que llega al buzón y la respuesta HTML) son mensajes asíncronos; las demás llamadas son síncronas, '
-    'llevan los parámetros del código y su retorno con el tipo que devuelven. Las líneas de vida usan los estereotipos de robustez '
-    '(boundary para los clientes POP3 y SMTP, control para la lógica y entity para DatabaseService) y se nombran con la variable o '
-    'el campo que las referencia en el código (pop, smtp, procesador, parser, usuarios, db). Cuando la lista de parámetros no cabe '
-    'en la etiqueta se muestran los primeros y puntos suspensivos; la lista completa de cada comando está en el Anexo A.')
-fig('sd-recibir.png', 'Diagrama de secuencia común: Recibir comando')
-fig('sd-responder.png', 'Diagrama de secuencia común: Registrar y responder')
+d.p('Cada diagrama de CU muestra el flujo desde el correo recibido por POP3 hasta la respuesta SMTP. App entrega el mensaje a procesarEmail(), que interpreta el comando, consulta al remitente y deriva a la l\u00f3gica p\u00fablica o al procesador del rol. Si SMTP falla, la respuesta queda en memoria para reintento; no hay bandeja persistente ni procesamiento IMAP.')
+d.p('En cada diagrama, un fragmento alt distingue el permiso del rol y los comandos de ese caso de uso. Se muestran las llamadas al servicio y las operaciones de DatabaseService usadas por el c\u00f3digo. Los flujos generales de lectura y respuesta est\u00e1n integrados en cada CU; se retiraron los diagramas auxiliares antiguos de bandeja persistente y rebotes IMAP.')
 for cu, v in CU.items():
     fig(f'sd-{cu.lower()}.png', f'Diagrama de secuencia {cu}: {v[0]}')
 
@@ -576,7 +560,8 @@ d.p('El modelo conceptual es el modelo de dominio final: el inicial (Captura de 
     'autor, responsable). La única relación N a N, entre ordenes_pago y descuentos, une a las dos entidades fuertes, y de la '
     'relación sale una línea punteada a orden_pago_descuentos, la clase de asociación con lo que la relación guarda: el porcentaje '
     'y el monto aplicados. El modelo se presenta completo en una única vista global, sin dividirlo por áreas.')
-fig('conceptual-global.png', 'Modelo conceptual global (modelo de dominio final)')
+fig('conceptual-global.png', 'Modelo conceptual global (modelo de dominio final)', horizontal=True)
+
 
 d.h('Diseño de datos: normalización', 3)
 d.p('Las entidades fuertes (usuarios, prospectos, programas, descuentos, motivos_perdida, roles) se identifican por sus claves naturales; '
@@ -612,7 +597,7 @@ d.p('Cada tabla tiene una sola clave, la de su diseño y con su nombre; ninguna 
     '(vendedor_correo, coordinador_correo). La intermedia orden_pago_descuentos tiene como clave las dos claves foráneas (nro_orden y '
     'descuento_codigo) y guarda el porcentaje y el monto aplicados. La credencial de cada usuario tiene vigencia: fecha_inicio y '
     'fecha_fin, con la restricción fecha_fin >= fecha_inicio.')
-fig('datos-global.png', 'Modelo lógico global de datos')
+fig('datos-global.png', 'Modelo lógico global de datos', horizontal=True)
 
 d.h('Diseño de datos: modelo físico', 3)
 d.p('El modelo físico es el de PostgreSQL 18: cada tabla con sus columnas, tipos, claves y nulos (tablas siguientes) y, en el '
@@ -782,19 +767,23 @@ d.figura(CAP / 'caida-recuperacion.png', 'Falla del POP3 detectada en el ciclo 3
 
 # ---------------------------------------------------------------- IX
 d.h('IX. Conclusiones', 1)
-CONC = [f'Se identificaron cuatro actores y se detallaron los ocho casos de uso aprobados; la matriz de acceso de {N_CMD} comandos '
-        'por rol se definió en el código y de ahí se generó el anexo de comandos, de modo que el documento y el sistema coinciden.',
-        'El análisis agrupó los casos de uso en cuatro paquetes y mostró, en los diagramas de colaboración, que todo comando pasa '
-        'por el mismo control central antes de llegar a la entidad que lo resuelve.',
-        f'La arquitectura en cuatro capas, el modelo de datos conceptual, su normalización hasta 3FN y el diseño lógico y físico ({len(TABLAS)} tablas '
-        'compartidas con el Proyecto 2, cada una con la clave de su diseño, sin campos id y ninguna sin relación) y el despliegue sobre '
-        'los servidores reales de la facultad, Gmail y la PC del grupo quedaron diseñados con un único valor verificado por cada nodo y puerto.',
-        'Se implementó el lector POP3 con sockets propios, el emisor SMTP, el intérprete de comandos y un servicio por caso de uso; '
-        'toda consulta usa sentencias preparadas y cada operación se ejecuta en una transacción que se confirma o se deshace completa.',
-        'El lector se ejecuta en la PC del grupo, revisa el buzón cada 10 segundos y deja en access.log y error.log cada correo '
-        'atendido y cada falla de DNS, red, correo o base de datos con su causa; las pruebas automáticas comprueban el intérprete, '
-        'la matriz de acceso, los ocho casos de uso y la robustez ante entradas malformadas.']
+CONC = [f'Se identificaron cuatro actores y se detallaron los ocho casos de uso aprobados. La matriz de acceso de {N_CMD} comandos '
+        'por rol se definió en el código y de ella se generó el anexo; así, los requerimientos, la documentación y los permisos '
+        'del sistema quedan alineados.',
+        'El análisis organizó los casos de uso en cuatro paquetes. Los diagramas de colaboración muestran cómo las clases de control '
+        'coordinan la interacción con las entidades para resolver cada caso.',
+        f'Se diseñaron la arquitectura en cuatro capas, el modelo de datos conceptual, su normalización hasta 3FN y el diseño lógico '
+        f'y físico de {len(TABLAS)} tablas compartidas con el Proyecto 2. También se documentó el despliegue en los servidores de la '
+        'facultad, Gmail y la PC del grupo.',
+        'Se implementaron en Java el lector POP3 con sockets, el emisor SMTP, el intérprete con control por rol y los servicios de '
+        'los casos de uso. Las consultas usan sentencias preparadas y cada operación se confirma o se revierte dentro de una transacción.',
+        'El lector se puso en marcha en la PC del grupo y revisa el buzón cada 10 segundos. access.log registra los correos atendidos '
+        'y error.log las fallas y sus causas. Las pruebas automáticas recorren los casos aprobados y los comandos por rol; las capturas '
+        'de Gmail documentan la interacción con el servicio.']
+inicio_conclusiones = len(d.doc.paragraphs)
 d.lista(CONC, numerada=True)
+for par in d.doc.paragraphs[inicio_conclusiones:]:
+    par.paragraph_format.keep_together = True
 
 # ---------------------------------------------------------------- X
 d.h('X. Recomendaciones', 1)

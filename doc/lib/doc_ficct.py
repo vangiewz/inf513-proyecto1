@@ -59,6 +59,7 @@ def _sin_sangria(par, interlineado_simple=True):
 class Informe:
     def __init__(self):
         self.doc = doc = Document()
+        self._secuencias = {}
         self.sec = sec = doc.sections[0]
         sec.page_width, sec.page_height = Cm(21.59), Cm(27.94)
         for m in ('left_margin', 'right_margin', 'top_margin', 'bottom_margin'):
@@ -103,7 +104,7 @@ class Informe:
 
     def h(self, texto, nivel): return self.doc.add_heading(texto, nivel)
 
-    def orientacion(self, horizontal):
+    def orientacion(self, horizontal, forzar_seccion=False):
         """Nueva sección (en página nueva) horizontal o vertical, con los mismos márgenes; el encabezado con el número sigue."""
         from docx.enum.section import WD_ORIENT, WD_SECTION
         # Si la sección actual sigue vacía (p. ej. dos figuras apaisadas seguidas), se reorienta en lugar de abrir otra:
@@ -111,7 +112,7 @@ class Informe:
         cuerpo = self.doc.element.body
         previo = cuerpo[-2] if len(cuerpo) > 1 else None
         vacia = previo is not None and previo.tag == qn('w:p') and previo.find(qn('w:pPr') + '/' + qn('w:sectPr')) is not None
-        s = self.doc.sections[-1] if vacia else self.doc.add_section(WD_SECTION.NEW_PAGE)
+        s = self.doc.sections[-1] if vacia and not forzar_seccion else self.doc.add_section(WD_SECTION.NEW_PAGE)
         s.orientation = WD_ORIENT.LANDSCAPE if horizontal else WD_ORIENT.PORTRAIT
         s.page_width, s.page_height = (Cm(27.94), Cm(21.59)) if horizontal else (Cm(21.59), Cm(27.94))
         s.different_first_page_header_footer = False   # solo la carátula va sin número
@@ -136,10 +137,17 @@ class Informe:
     def salto(self): self.doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
     # ---------- figuras y tablas ----------
-    def rotulo(self, tipo, titulo):
-        par = self.doc.add_paragraph(style='Caption')
+    def rotulo(self, tipo, titulo, contenedor=None):
+        if contenedor is None:
+            par = self.doc.add_paragraph(style='Caption')
+        elif len(contenedor.paragraphs) == 1 and not contenedor.paragraphs[0].text:
+            par = contenedor.paragraphs[0]; par.style = 'Caption'
+        else:
+            par = contenedor.add_paragraph(style='Caption')
         par.add_run(f'{tipo} ')
-        _campo(par, f' SEQ {tipo} \\* ARABIC ', '1')
+        numero = self._secuencias.get(tipo, 0) + 1
+        self._secuencias[tipo] = numero
+        _campo(par, f' SEQ {tipo} \\* ARABIC ', str(numero))
         par.add_run(f'. {titulo}')
         return par
 
@@ -170,10 +178,16 @@ class Informe:
                 cells[i].text = ''
                 cells[i].paragraphs[0].add_run(str(v)).font.size = Pt(tam)
         for k, row in enumerate(t.rows):
+            trPr = row._tr.get_or_add_trPr()
+            trPr.append(OxmlElement('w:cantSplit'))  # una fila se mantiene completa; la tabla puede continuar en otra p?gina
+            if k == 0:
+                header = OxmlElement('w:tblHeader')
+                header.set(qn('w:val'), 'true')
+                trPr.append(header)  # repetir encabezado si la tabla contin?a en otra p?gina
             for i, cel in enumerate(row.cells):
                 for par in cel.paragraphs:
                     _sin_sangria(par); par.paragraph_format.space_after = Pt(2)
-                    par.paragraph_format.keep_with_next = k < len(t.rows) - 1   # la tabla no se separa de su título ni se parte
+                    par.paragraph_format.keep_with_next = False
                     if centrar_desde is not None and i >= centrar_desde: par.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 if anchos: cel.width = Cm(anchos[i])
         if nota_txt: self.nota(nota_txt)
