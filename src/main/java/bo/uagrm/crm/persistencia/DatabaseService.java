@@ -30,6 +30,48 @@ public final class DatabaseService {
   private final String url;
   private final String usuario;
   private final String password;
+  private volatile com.zaxxer.hikari.HikariDataSource pool;
+  private static final ThreadLocal<SQLException> FALLO = new ThreadLocal<>();
+  private static final ThreadLocal<Boolean> CORREO = ThreadLocal.withInitial(() -> false);
+  private static final ThreadLocal<Boolean> ESCRITURA = ThreadLocal.withInitial(() -> false);
+  public static void comenzarCorreo() { FALLO.remove(); ESCRITURA.remove(); CORREO.set(true); }
+  public static void terminarCorreo() { FALLO.remove(); ESCRITURA.remove(); CORREO.remove(); }
+  public static SQLException falloCorreo() { return FALLO.get(); }
+  public static boolean sinEscrituras() { return !ESCRITURA.get(); }
+  public static void registrarFallo(SQLException e) {
+    if (!CORREO.get()) return;
+    String estado = e.getSQLState();
+    if (estado == null || estado.startsWith("08") || estado.matches("57P0[123]") || e instanceof java.sql.SQLTimeoutException
+        || e instanceof java.sql.SQLTransientConnectionException) FALLO.set(e);
+  }
+
+  /** Sin secretos; conservar wrapper Hikari, causas JDBC, SQLState y espera del pool. */
+  public String estadoPool() {
+    var p = pool;
+    if (p == null) return "pool=no-iniciado";
+    var b = p.getHikariPoolMXBean();
+    return "pool[activas=" + b.getActiveConnections() + ", libres=" + b.getIdleConnections()
+        + ", total=" + b.getTotalConnections() + ", esperando=" + b.getThreadsAwaitingConnection()
+        + ", maxLifetime_ms=" + p.getMaxLifetime() + "]";
+  }
+
+  private synchronized com.zaxxer.hikari.HikariDataSource pool() {
+    if (pool == null) {
+      var p = new com.zaxxer.hikari.HikariConfig();
+      p.setJdbcUrl(url); p.setUsername(usuario); p.setPassword(password);
+      p.setMaximumPoolSize(1); p.setMinimumIdle(0);
+      p.setConnectionTimeout(15000); p.setValidationTimeout(5000);
+      p.setIdleTimeout(120000); p.setMaxLifetime(600000);
+      p.setInitializationFailTimeout(-1);
+      p.setConnectionInitSql("SET TIME ZONE 'UTC'");
+      p.addDataSourceProperty("connectTimeout", "10");
+      p.addDataSourceProperty("socketTimeout", "30");
+      pool = new com.zaxxer.hikari.HikariDataSource(p);
+      var recurso = pool;
+      Runtime.getRuntime().addShutdownHook(new Thread(recurso::close, "crm-jdbc-cierre"));
+    }
+    return pool;
+  }
 
   public DatabaseService(String url, String usuario, String password) {
     this.url = url;
@@ -47,18 +89,34 @@ public final class DatabaseService {
   }
 
   public Connection getConnection() throws SQLException {
+    long conexionInicio = System.nanoTime();
+    if (!Boolean.getBoolean("crm.jdbc.sinPool")) {
+      try { return pool().getConnection(); }
+      catch (SQLException e) {
+        registrarFallo(e);
+        java.util.logging.Logger.getLogger("crm").log(java.util.logging.Level.WARNING,
+            "JDBC SQLState=" + e.getSQLState() + " codigo=" + e.getErrorCode() + " "
+                + estadoPool() + " espera_ms=" + (System.nanoTime() - conexionInicio) / 1_000_000, e);
+        throw e;
+      }
+      finally { bo.uagrm.crm.Rendimiento.sumar("conexion", conexionInicio); }
+    }
     java.util.Properties props = new java.util.Properties();
     props.setProperty("user", usuario);
     props.setProperty("password", password);
     props.setProperty("connectTimeout", "10");
     props.setProperty("socketTimeout", "30");
-    Connection c = DriverManager.getConnection(url, props);
+    Connection c;
+    try { c = DriverManager.getConnection(url, props); }
+    catch (SQLException e) { registrarFallo(e); throw e; }
     try {
       try (var ps = c.prepareStatement("SET TIME ZONE 'UTC'")) {
         ps.execute();
       }
+      bo.uagrm.crm.Rendimiento.sumar("conexion", conexionInicio);
       return c;
     } catch (SQLException e) {
+      registrarFallo(e);
       c.close();
       throw e;
     }
@@ -83,8 +141,7 @@ public final class DatabaseService {
       "(VALUES " + String.join(",", TABLAS.stream().map(t -> "('" + t + "')").toList()) + ") v(t)";
 
   /**
-   * Se comprueba antes de leer el buzón: si falta una tabla (borrada, otro esquema) no se retiran
-   * mensajes, y el error nombra las tablas que faltan.
+   * Comprueba modelo y permisos, sin mutaciones. El monitor lo ejecuta fuera del hilo POP3.
    */
   public void verificarModelo() throws SQLException {
     try (Connection c = getConnection()) {
@@ -165,6 +222,7 @@ public final class DatabaseService {
         c.commit();
         return resultado;
       } catch (Exception e) {
+        if (e instanceof SQLException s) registrarFallo(s);
         try {
           c.rollback();
         } catch (SQLException r) { // conexión ya muerta: no tapar la causa real con el 08003 del rollback
@@ -177,11 +235,16 @@ public final class DatabaseService {
 
   public static <T> List<T> lista(Connection c, Mapeo<T> mapeo, String sql, Object... params)
       throws SQLException {
+    long inicio = System.nanoTime();
     try (PreparedStatement ps = preparar(c, sql, params);
         ResultSet rs = ps.executeQuery()) {
       List<T> out = new ArrayList<>();
       while (rs.next()) out.add(mapeo.de(rs));
       return out;
+    } catch (SQLException e) {
+      registrarFallo(e); throw e;
+    } finally {
+      bo.uagrm.crm.Rendimiento.sumar("bd", inicio);
     }
   }
 
@@ -195,6 +258,7 @@ public final class DatabaseService {
   /** Filas como texto, listas para una tabla de respuesta (reportes y listados). */
   public static List<String[]> filas(Connection c, String sql, Object... params)
       throws SQLException {
+    long inicio = System.nanoTime();
     try (PreparedStatement ps = preparar(c, sql, params);
         ResultSet rs = ps.executeQuery()) {
       ResultSetMetaData md = rs.getMetaData();
@@ -205,12 +269,22 @@ public final class DatabaseService {
         out.add(f);
       }
       return out;
+    } catch (SQLException e) {
+      registrarFallo(e); throw e;
+    } finally {
+      bo.uagrm.crm.Rendimiento.sumar("bd", inicio);
     }
   }
 
   public static int actualizar(Connection c, String sql, Object... params) throws SQLException {
+    long inicio = System.nanoTime();
+    ESCRITURA.set(true); // antes de ejecutar: una desconexión puede dejar el resultado incierto
     try (PreparedStatement ps = preparar(c, sql, params)) {
       return ps.executeUpdate();
+    } catch (SQLException e) {
+      registrarFallo(e); throw e;
+    } finally {
+      bo.uagrm.crm.Rendimiento.sumar("bd", inicio);
     }
   }
 
@@ -235,6 +309,7 @@ public final class DatabaseService {
 
   private static PreparedStatement preparar(Connection c, String sql, Object... params)
       throws SQLException {
+    if (!sql.stripLeading().matches("(?is)^(SELECT|SHOW)\\b.*")) ESCRITURA.set(true);
     PreparedStatement ps = c.prepareStatement(sql);
     for (int i = 0; i < params.length; i++) ps.setObject(i + 1, params[i]);
     return ps;

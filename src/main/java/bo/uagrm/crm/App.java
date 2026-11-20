@@ -21,8 +21,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
@@ -58,6 +56,10 @@ public final class App {
   private final SmtpSender smtp;
   private final ResponseFormatter fmt;
   private final DatabaseService db;
+  private final DisponibilidadBD saludBD;
+  private final EntregaCorreo entregas;
+  private final EntregaCorreo.Enviar enviarCorreo;
+  private int cursorBuzon;
 
   // Estado entre ciclos, para informar cambios y no solo errores sueltos.
   private long ciclo;
@@ -67,8 +69,15 @@ public final class App {
   private final Map<String, String> ipVista = new HashMap<>(); // host vigilado -> IP(s) resueltas
 
   App(Config cfg) {
+    this(cfg, new DatabaseService(cfg.dbUrl(), cfg.dbUsuario(), cfg.dbPassword()),
+        Path.of(".secrets/entregas-correo"), null);
+  }
+
+  App(Config cfg, DatabaseService db, Path diario, EntregaCorreo.Enviar emisor) {
     this.cfg = cfg;
-    this.db = new DatabaseService(cfg.dbUrl(), cfg.dbUsuario(), cfg.dbPassword());
+    this.db = db;
+    this.entregas = new EntregaCorreo(diario);
+    this.saludBD = new DisponibilidadBD(() -> { vigilarDns(cfg.dbHost()); db.verificarModelo(); });
     this.procesador = new CommandProcessor(db);
     this.seguimiento = new SeguimientoService(db);
     this.fmt = procesador.formatter();
@@ -79,10 +88,18 @@ public final class App {
             cfg.smtpUsuario(),
             cfg.smtpPassword(),
             cfg.buzonSistema());
+    this.enviarCorreo = emisor == null ? smtp::enviarPreparado : emisor;
+    Runtime.getRuntime().addShutdownHook(new Thread(smtp::close, "crm-smtp-cierre"));
   }
 
   public static void main(String[] args) throws Exception {
     TimeZone.setDefault(TimeZone.getTimeZone("America/La_Paz"));
+    if (args.length == 1 && args[0].equals("--estado-entregas")) {
+      var pendientes = new EntregaCorreo(Path.of(".secrets/entregas-correo")).pendientes();
+      if (pendientes.isEmpty()) System.out.println("Sin entregas locales pendientes");
+      else pendientes.forEach(System.out::println);
+      return; // sólo lectura local; sin conexiones POP3, SMTP ni JDBC
+    }
     if (args.length == 1 && args[0].equals("--anexo")) {
       anexo();
       return;
@@ -115,12 +132,21 @@ public final class App {
             Path.of("respuesta.html"), app.fmt.html(r, args[3]), StandardCharsets.UTF_8);
       return;
     }
+    Files.createDirectories(Path.of("logs"));
+    try (var canal = java.nio.channels.FileChannel.open(Path.of("logs/crm-mail.lock"),
+            java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE);
+        var bloqueo = canal.tryLock()) {
+    if (bloqueo == null) throw new IllegalStateException(
+        "Ya hay un lector CRM activo en este directorio; no se inicia otra sesión POP3.");
     configurarLog(true);
     Config cfg = Config.cargar(Path.of(args.length > 0 ? args[0] : "crm-mail.properties"));
     log("CRM vía e-mail iniciado. " + cfg);
     App app = new App(cfg);
-    Diagnostico.revisar(cfg, app.smtp, app.db); // informa; el servicio arranca igual y reintenta
+    // Diagnóstico completo sólo con --diagnostico: no bloquear POP3 durante el arranque.
+    app.saludBD.iniciar();
+    Runtime.getRuntime().addShutdownHook(new Thread(app.saludBD::close, "crm-salud-cierre"));
     app.ejecutar();
+    }
   }
 
   /**
@@ -135,6 +161,11 @@ public final class App {
     for (Handler h : raiz.getHandlers()) raiz.removeHandler(h);
     LOG.setLevel(Level.INFO);
     LOG.setUseParentHandlers(false);
+    // Hikari ya no queda silenciado por SLF4J NOP. Registrar renovación/validación y estadísticas.
+    Logger hikari = Logger.getLogger("com.zaxxer.hikari");
+    hikari.setParent(LOG);
+    hikari.setLevel(Level.INFO);
+    Logger.getLogger("com.zaxxer.hikari.pool").setLevel(Level.FINE);
     ConsoleHandler consola = new ConsoleHandler();
     consola.setFormatter(new SimpleFormatter());
     consola.setEncoding("UTF-8");
@@ -165,8 +196,7 @@ public final class App {
     while (true) {
       ciclo++;
       Instant inicio = Instant.now();
-      vigilarDns(cfg.pop3Host()); // smtp.gmail.com rota sus IP: no se vigila
-      vigilarDns(cfg.dbHost());
+      // El sondeo no espera verificaciones de BD ni resoluciones DNS de otros servicios.
       try {
         String resumen = ciclo();
         if (falla != null)
@@ -253,102 +283,78 @@ public final class App {
   /** Un mensaje bajado del buzón; si superó el límite solo trae sus cabeceras. */
   private record Recibido(byte[] contenido, long bytes, boolean excedido) {}
 
-  /**
-   * Huellas (SHA-256) de los últimos correos ya atendidos. Si el QUIT falla y el servidor no aplicó
-   * los DELE, esos correos vuelven en el siguiente ciclo: se borran sin ejecutarlos otra vez.
-   */
-  // ponytail: en memoria (se pierde al reiniciar el lector); persistirla si hace falta entre reinicios.
-  private final Set<String> atendidos = new LinkedHashSet<>();
-
-  private static final int MAX_HUELLAS = 1000;
-
-  /** Falla de envío SMTP en curso; mientras siga, no se retiran más correos del buzón. */
   private Exception smtpCaido;
 
-  /** Respuesta que no salió por una falla del SMTP (no del destinatario): se reenvía antes de leer más correo. */
-  private record EnEspera(String para, Respuesta r, String asuntoRecibido) {}
-
-  // ponytail: en memoria; si el lector se reinicia con respuestas en espera, se pierden (quedan en la bitácora).
-  private final java.util.ArrayDeque<EnEspera> enEspera = new java.util.ArrayDeque<>();
-
   /**
-   * Un ciclo por etapas: BD → (SMTP, si estaba caído) → POP3: cada correo se atiende y se responde
-   * antes de su DELE → QUIT → recordatorios. Devuelve el resumen para access.log.
+   * POP3 funciona independientemente de la salud BD; DELE sólo con entrega durable terminada.
    */
-  private String ciclo() throws EtapaFallida {
+  String ciclo() throws EtapaFallida {
     long inicio = System.nanoTime();
-    try {
-      db.verificarModelo(); // No retirar mensajes si la BD o el modelo no están disponibles.
-    } catch (Exception e) {
-      throw new EtapaFallida("BD", cfg.dbHost(), cfg.dbPuerto(), e);
-    }
-    long tBd = ms(inicio);
-    if (smtpCaido != null) { // sin poder responder no se toma ningún correo: esperan en el buzón
-      try {
-        // Con respuestas en espera, la prueba es reenviarlas de verdad (un login correcto no basta:
-        // el servidor puede fallar recién en DATA). Sin ellas, alcanza con el login.
-        if (enEspera.isEmpty()) smtp.verificar();
-        while (!enEspera.isEmpty()) {
-          EnEspera p = enEspera.peek();
-          try {
-            smtp.enviar(p.para(), p.r().asunto(), fmt.html(p.r(), p.asuntoRecibido()),
-                fmt.texto(p.r(), p.asuntoRecibido()), p.r().archivos());
-            log("Respuesta en espera enviada a " + p.para() + " · " + p.asuntoRecibido());
-          } catch (Exception e) {
-            if (!rechazoDestinatario(e)) throw e; // el SMTP sigue fallando: queda en espera
-            LOG.warning("SMTP: " + p.para() + " rechazado por el servidor de destino → "
-                + Diagnostico.explicar(cfg.smtpHost(), cfg.smtpPuerto(), e));
-          }
-          enEspera.poll();
-        }
-        smtpCaido = null;
-      } catch (Exception e) {
-        smtpCaido = e;
-        throw new EtapaFallida("SMTP", cfg.smtpHost(), cfg.smtpPuerto(), e);
-      }
-    }
+    smtpCaido = null;
     long t0 = System.nanoTime();
-    int enBuzon, leidos = 0, repetidos = 0;
-    try (Pop3Client pop =
-        new Pop3Client(cfg.pop3Host(), cfg.pop3Puerto(), cfg.pop3Usuario(), cfg.pop3Password())) {
+    int enBuzon, leidos = 0;
+    try (Pop3Client pop = abrirPop3()) {
       enBuzon = pop.stat();
+      if (enBuzon > 0) log("PERF buzon utc=" + Instant.now() + " mensajes=" + enBuzon
+          + " conexion_stat_ms=" + ms(t0));
       int n = Math.min(enBuzon, MAX_POR_CICLO);
-      for (int i = 1; i <= n && smtpCaido == null; i++) {
+      int inicioIndice = enBuzon == 0 ? 0 : cursorBuzon % enBuzon;
+      cursorBuzon = inicioIndice + n;
+      for (int j = 0; j < n; j++) {
+        int i = 1 + (inicioIndice + j) % enBuzon;
         long bytes = pop.tamano(i);
         boolean excedido = bytes > MAX_BYTES;
         byte[] contenido = excedido ? pop.top(i, 0) : pop.retr(i);
         String huella = huella(contenido);
-        if (atendidos.contains(huella)) {
-          repetidos++;
-          Correo ya = Correo.leer(contenido);
-          log("Ya atendido en un ciclo anterior (el servidor lo devolvió): se borra sin repetirlo · "
-              + ya.remitente() + " · " + ya.asunto());
-        } else {
-          atender(new Recibido(contenido, bytes, excedido));
-          recordar(huella);
-          leidos++;
-        }
-        pop.dele(i);
+        DatabaseService.comenzarCorreo();
+        Rendimiento.iniciar(huella.substring(0, 16));
+        try {
+          registrarCabeceras(contenido, huella);
+          Correo c = Correo.leer(contenido);
+          boolean publica = !excedido && procesador.esAyudaPublica(c.asunto());
+          boolean ayudaSinBD = publica && !saludBD.disponible();
+          boolean terminado = entregas.atender(huella, publica || saludBD.disponible(),
+              () -> prepararRespuesta(new Recibido(contenido, bytes, excedido), ayudaSinBD),
+              enviarCorreo);
+          if (terminado) { pop.dele(i); leidos++; }
+          else log("PENDIENTE BD id=" + huella.substring(0,16) + "; conservado en POP3");
+        } catch (Exception e) {
+          if (DatabaseService.falloCorreo() != null) saludBD.invalidar();
+          LOG.log(Level.WARNING, "Correo conservado en POP3 id=" + huella.substring(0,16), e);
+        } finally { Rendimiento.terminar(); DatabaseService.terminarCorreo(); }
       }
       pop.quit(); // confirma los DELE: recién aquí los mensajes salen del buzón
     } catch (Exception e) {
       throw new EtapaFallida("POP3", cfg.pop3Host(), cfg.pop3Puerto(), e);
     }
-    String resumen = "BD " + tBd + " ms · POP3 " + leidos + " msg " + ms(t0) + " ms";
-    if (repetidos > 0) resumen += " · " + repetidos + " ya atendido(s) borrado(s)";
-    if (enBuzon > leidos + repetidos)
-      resumen += " (quedan " + (enBuzon - leidos - repetidos) + " en el buzón para el próximo ciclo)";
+    String resumen = "BD " + (saludBD.disponible() ? "disponible" : "pendiente")
+        + " (monitor independiente) · POP3 " + leidos + " msg " + ms(t0) + " ms";
+    if (enBuzon > leidos)
+      resumen += " (quedan " + (enBuzon - leidos) + " en el buzón para el próximo ciclo)";
     if (smtpCaido != null)
       throw new EtapaFallida("SMTP", cfg.smtpHost(), cfg.smtpPuerto(), smtpCaido);
     try {
-      int avisos = avisarRecordatorios();
+      int avisos = saludBD.disponible() ? avisarRecordatorios() : 0;
       if (avisos > 0) resumen += " · " + avisos + " recordatorio(s) avisado(s)";
     } catch (Exception e) {
+      saludBD.invalidar();
       throw new EtapaFallida("Recordatorios (BD)", cfg.dbHost(), cfg.dbPuerto(), e);
     }
     if (smtpCaido != null)
       throw new EtapaFallida("SMTP", cfg.smtpHost(), cfg.smtpPuerto(), smtpCaido);
     return resumen + " · total " + ms(inicio) + " ms";
+  }
+
+  private long ultimoInicioPop3;
+
+  private Pop3Client abrirPop3() throws IOException, InterruptedException {
+    // Límite conservador del servidor: al menos 3,2 s entre inicios de sesión,
+    // independientemente de la pausa elegida y de la latencia de la red.
+    long espera = 3_200_000_000L - (System.nanoTime() - ultimoInicioPop3);
+    if (ultimoInicioPop3 != 0 && espera > 0)
+      java.util.concurrent.TimeUnit.NANOSECONDS.sleep(espera);
+    ultimoInicioPop3 = System.nanoTime();
+    return new Pop3Client(cfg.pop3Host(), cfg.pop3Puerto(), cfg.pop3Usuario(), cfg.pop3Password());
   }
 
   private static String huella(byte[] contenido) {
@@ -360,67 +366,54 @@ public final class App {
     }
   }
 
-  private void recordar(String huella) {
-    atendidos.add(huella);
-    if (atendidos.size() > MAX_HUELLAS) atendidos.remove(atendidos.iterator().next());
+  private static void registrarCabeceras(byte[] contenido, String id) {
+    try {
+      var mime = new jakarta.mail.internet.MimeMessage(
+          jakarta.mail.Session.getInstance(new java.util.Properties()),
+          new java.io.ByteArrayInputStream(contenido));
+      String[] received = mime.getHeader("Received");
+      String recibido = received == null || received.length == 0 ? "no disponible" : received[0];
+      recibido = recibido.substring(recibido.lastIndexOf(';') + 1).replaceAll("[\\r\\n]", " ").trim();
+      log("PERF proveedor id=" + id.substring(0,16) + " recibido="
+          + recibido.substring(0, Math.min(160, recibido.length()))
+          + " message_id=" + Diagnostico.unaLinea(String.valueOf(mime.getMessageID())));
+    } catch (jakarta.mail.MessagingException e) { LOG.log(Level.FINE, "Cabeceras ilegibles", e); }
   }
 
-  /**
-   * Atiende un correo. Nada de lo que traiga detiene el servicio: todo termina en respuesta,
-   * bitácora o ambos.
-   */
-  private void atender(Recibido m) {
-    Correo c = null;
-    try {
-      c = Correo.leer(m.contenido());
-      String asunto = c.asunto() == null ? "(sin asunto)" : c.asunto();
-      if (c.remitente().isEmpty()) {
-        procesador.bitacora(
-            null, null, c.asunto(), "Error", "Correo ilegible: sin una dirección de remitente válida");
-        log("Ilegible: sin remitente · " + asunto);
-        return;
-      }
-      if (c.automatico()
-          || c.remitente().equalsIgnoreCase(smtp.getRemitente())
-          || c.remitente().equalsIgnoreCase(cfg.buzonSistema())) {
-        procesador.bitacora(
-            c.remitente(), null, c.asunto(), "Ignorado", "Respuesta automática o correo del propio sistema");
-        log("Ignorado (automático o propio): " + c.remitente() + " · " + asunto);
-        return;
-      }
-      Respuesta r;
-      if (m.excedido()) {
-        r =
-            fmt.error(
-                "Correo",
-                "El correo pesa "
-                    + (m.bytes() / 1024)
-                    + " KB y el límite es "
-                    + (MAX_BYTES / 1024)
-                    + " KB. Vuelva a enviar el comando con un adjunto más liviano.");
-        procesador.bitacora(c.remitente(), null, c.asunto(), "Error", r.mensaje());
-      } else {
-        r =
-            procesador.procesarEmail(
-                c.remitente(), c.asunto(), c.adjuntoCsv(), c.adjunto(), c.errorAdjunto());
-        if (r == null) {
-          log("Ignorado (remitente desconocido, asunto sin comando): " + c.remitente() + " · " + asunto);
-          return;
-        }
-      }
-      boolean enviado = enviar(c.remitente(), r, c.asunto());
-      log(r.resultado()
-          + (enviado ? "" : smtpCaido != null ? " (respuesta en espera: SMTP caído)" : " (respuesta NO entregada: destinatario rechazado)")
-          + " · " + c.remitente() + " · " + asunto);
-      for (Aviso a : r.avisos()) enviar(a.para(), a.contenido(), null);
-    } catch (Exception e) {
-      String remitente = c == null ? null : c.remitente();
-      procesador.bitacora(
-          remitente, null, c == null ? null : c.asunto(), "Error",
-          "Fallo al atender el correo: " + Diagnostico.unaLinea(String.valueOf(e.getMessage())));
-      LOG.log(Level.SEVERE, "No se pudo atender un correo de " + remitente + ": "
-          + Diagnostico.explicar(cfg.dbHost(), cfg.dbPuerto(), e), e);
+  private List<byte[]> prepararRespuesta(Recibido m, boolean ayudaSinBD) throws Exception {
+    DatabaseService.comenzarCorreo();
+    Correo c = Correo.leer(m.contenido());
+    if (c.remitente().isEmpty() || c.automatico()
+        || c.remitente().equalsIgnoreCase(smtp.getRemitente())
+        || c.remitente().equalsIgnoreCase(cfg.buzonSistema())) return List.of();
+    Respuesta r;
+    if (ayudaSinBD) {
+      r = procesador.ayudaSinBD(c.asunto());
+      log("HELP público sin BD; respuesta sin datos privados");
+    } else if (m.excedido()) {
+      r = fmt.error("Correo", "El correo supera el límite de " + MAX_BYTES / 1024 + " KB.");
+    } else {
+      r = procesador.procesarEmail(c.remitente(), c.asunto(), c.adjuntoCsv(),
+          c.adjunto(), c.errorAdjunto());
     }
+    var fallo = DatabaseService.falloCorreo();
+    if (fallo != null) {
+      saludBD.invalidar();
+      if (DatabaseService.sinEscrituras()) throw new EntregaCorreo.SinEfectos(fallo);
+      throw fallo;
+    }
+    if (r == null) return List.of();
+    List<byte[]> mensajes = new ArrayList<>();
+    mensajes.add(prepararMime(c.remitente(), r, c.asunto()));
+    for (Aviso a : r.avisos()) mensajes.add(prepararMime(a.para(), a.contenido(), null));
+    log("Respuesta preparada · " + c.asunto() + " · " + r.resultado());
+    return mensajes;
+  }
+
+  private byte[] prepararMime(String para, Respuesta r, String asunto) throws Exception {
+    long inicio = System.nanoTime();
+    try { return smtp.preparar(para, r.asunto(), fmt.html(r, asunto), fmt.texto(r, asunto), r.archivos()); }
+    finally { Rendimiento.sumar("html", inicio); }
   }
 
   /** ¿El servidor rechazó la dirección del destinatario (no el SMTP entero, ni la cuota del remitente)? */
@@ -428,40 +421,6 @@ public final class App {
     return e instanceof jakarta.mail.SendFailedException s
         && s.getInvalidAddresses() != null
         && s.getInvalidAddresses().length > 0;
-  }
-
-  /**
-   * Envía una respuesta; devuelve false si no salió. Un rechazo del destinatario (dirección
-   * inexistente) solo afecta a ese correo. Cualquier otra falla (SMTP caído, login, cuota de Gmail,
-   * corte en DATA) deja la respuesta en espera, marca el SMTP como caído y el ciclo deja de retirar
-   * correos hasta reenviarla.
-   */
-  private boolean enviar(String para, Respuesta r, String asuntoRecibido) {
-    if (smtpCaido != null) {
-      enEspera.add(new EnEspera(para, r, asuntoRecibido));
-      return false;
-    }
-    try {
-      smtp.enviar(
-          para,
-          r.asunto(),
-          fmt.html(r, asuntoRecibido),
-          fmt.texto(r, asuntoRecibido),
-          r.archivos());
-      return true;
-    } catch (Exception e) {
-      String causa = Diagnostico.explicar(cfg.smtpHost(), cfg.smtpPuerto(), e);
-      if (rechazoDestinatario(e)) {
-        procesador.bitacora(
-            para, null, asuntoRecibido == null ? r.asunto() : asuntoRecibido, "Error",
-            "No se pudo entregar la respuesta: " + causa);
-        LOG.warning("SMTP: " + para + " rechazado por el servidor de destino → " + causa);
-      } else {
-        smtpCaido = e; // el ciclo lo informa una vez como FALLA SMTP (y luego RECUPERADO)
-        enEspera.add(new EnEspera(para, r, asuntoRecibido));
-      }
-      return false;
-    }
   }
 
   /** RF4.3: cuando vence un recordatorio, su dueño recibe un correo. Devuelve cuántos se avisaron. */
@@ -485,7 +444,9 @@ public final class App {
                   + r.nro()
                   + "\",\"resultado\"].");
       try {
-        smtp.enviar(r.correoUsuario(), aviso.asunto(), fmt.html(aviso, null), fmt.texto(aviso, null));
+        String id = huella(("recordatorio:" + r.nro()).getBytes(StandardCharsets.UTF_8));
+        entregas.atender(id, true,
+            () -> List.of(prepararMime(r.correoUsuario(), aviso, null)), enviarCorreo);
       } catch (Exception e) {
         if (!rechazoDestinatario(e)) {
           smtpCaido = e; // se reintenta cuando vuelva el SMTP
@@ -522,4 +483,7 @@ public final class App {
   private static void log(String s) {
     LOG.info(s);
   }
+
+  void comprobarBD() { saludBD.comprobar(); }
+  boolean bdDisponible() { return saludBD.disponible(); }
 }

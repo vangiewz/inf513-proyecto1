@@ -19,11 +19,40 @@ import java.util.Properties;
  * sale por Gmail. Reply-To apunta al buzón del sistema para que las respuestas del usuario vuelvan
  * al CRM.
  */
-public final class SmtpSender {
+public final class SmtpSender implements AutoCloseable {
 
   private final Session session;
   private final String remitente;
   private final String buzonSistema;
+  private Transport conexion;
+  private long ultimoUso;
+  /** Falló antes de llamar sendMessage: se sabe que DATA no se intentó. */
+  public static final class NoEnviado extends MessagingException {
+    public NoEnviado(MessagingException causa) { super("SMTP no conectado; DATA no iniciado", causa); }
+  }
+  @FunctionalInterface interface Fabrica { Transport crear() throws MessagingException; }
+  private Fabrica fabrica;
+
+  SmtpSender(Fabrica fabrica) {
+    this("127.0.0.1", 1, "prueba@example.test", "ficticia", "buzon@example.test");
+    this.fabrica = fabrica;
+  }
+
+  private void cerrarConexion() {
+    if (conexion != null) try { conexion.close(); } catch (MessagingException ignored) { }
+    conexion = null;
+  }
+
+  private Transport conexion() throws MessagingException {
+    if (conexion != null && System.nanoTime() - ultimoUso > 60_000_000_000L) cerrarConexion();
+    if (conexion == null || !conexion.isConnected()) {
+      cerrarConexion();
+      conexion = fabrica.crear();
+      conexion.connect();
+    }
+    ultimoUso = System.nanoTime();
+    return conexion;
+  }
 
   public SmtpSender(String host, int puerto, String usuario, String password, String buzonSistema) {
     Properties p = new Properties();
@@ -47,6 +76,7 @@ public final class SmtpSender {
             });
     this.remitente = usuario;
     this.buzonSistema = buzonSistema;
+    this.fabrica = () -> session.getTransport("smtp");
   }
 
   /** Envía un correo multipart/alternative: texto plano + HTML. */
@@ -55,10 +85,55 @@ public final class SmtpSender {
     enviar(para, asunto, html, texto, java.util.List.of());
   }
 
-  public void enviar(
+  public synchronized void enviar(
       String para, String asunto, String html, String texto, java.util.List<Adjunto> archivos)
       throws MessagingException {
-    Transport.send(crearMensaje(para, asunto, html, texto, archivos));
+    long inicio = System.nanoTime();
+    try {
+      enviarPreparado(preparar(para, asunto, html, texto, archivos));
+    } finally { bo.uagrm.crm.Rendimiento.sumar("smtpPreparar", inicio); }
+  }
+
+  /** MIME durable, incluido Message-ID: no se reconstruye al recuperar una respuesta. */
+  public byte[] preparar(String para, String asunto, String html, String texto,
+      java.util.List<Adjunto> archivos) throws MessagingException {
+    MimeMessage m = crearMensaje(para, asunto, html, texto, archivos);
+    m.saveChanges();
+    var bytes = new java.io.ByteArrayOutputStream();
+    try { m.writeTo(bytes); }
+    catch (java.io.IOException e) { throw new MessagingException("Preparando MIME", e); }
+    return bytes.toByteArray();
+  }
+
+  public synchronized void enviarPreparado(byte[] contenido) throws MessagingException {
+    long inicio = System.nanoTime();
+    try {
+      MimeMessage m = new MimeMessage(session, new java.io.ByteArrayInputStream(contenido));
+      var log = java.util.logging.Logger.getLogger("crm");
+      String referencia = " id=" + bo.uagrm.crm.Rendimiento.id() + " message_id="
+          + String.valueOf(m.getMessageID()).replaceAll("[\\r\\n]", " ");
+      log.info("SMTP inicio" + referencia + " utc=" + java.time.Instant.now());
+      if (Boolean.getBoolean("crm.smtp.sinReuso")) {
+        try (Transport t = session.getTransport("smtp")) {
+          try { t.connect(); } catch (MessagingException e) { throw new NoEnviado(e); }
+          t.sendMessage(m, m.getAllRecipients());
+        }
+      }
+      else {
+        long conexionInicio = System.nanoTime();
+        Transport t;
+        try { t = conexion(); }
+        catch (MessagingException e) { throw new NoEnviado(e); }
+        bo.uagrm.crm.Rendimiento.sumar("smtpConexion", conexionInicio);
+        t.sendMessage(m, m.getAllRecipients());
+      }
+      log.info("SMTP aceptado" + referencia + " utc=" + java.time.Instant.now()
+          + " duracion_ms=" + (System.nanoTime() - inicio) / 1_000_000);
+    } catch (MessagingException e) {
+      cerrarConexion();
+      throw e; // no repetir DATA automáticamente: el servidor pudo aceptar el mensaje
+    }
+    finally { bo.uagrm.crm.Rendimiento.sumar("smtp", inicio); }
   }
 
   MimeMessage crearMensaje(String para, String asunto, String html, String texto)
@@ -70,6 +145,8 @@ public final class SmtpSender {
       String para, String asunto, String html, String texto, java.util.List<Adjunto> archivos)
       throws MessagingException {
     MimeMessage m = new MimeMessage(session);
+    String correlacion = bo.uagrm.crm.Rendimiento.id();
+    if (correlacion != null) m.setHeader("X-CRM-Correlation-ID", correlacion);
     try {
       m.setFrom(new InternetAddress(remitente, "CRM Grupo 05 SA", "UTF-8"));
     } catch (UnsupportedEncodingException e) {
@@ -106,13 +183,14 @@ public final class SmtpSender {
   }
 
   /** Abre la conexión con STARTTLS y se autentica, sin enviar nada (para el diagnóstico). */
-  public void verificar() throws MessagingException {
-    try (jakarta.mail.Transport t = session.getTransport("smtp")) {
-      t.connect();
-    }
+  public synchronized void verificar() throws MessagingException {
+    if (Boolean.getBoolean("crm.smtp.sinReuso")) {
+      try (Transport t = session.getTransport("smtp")) { t.connect(); }
+    } else conexion();
   }
 
   public String getRemitente() {
     return remitente;
   }
+  @Override public synchronized void close() { cerrarConexion(); }
 }

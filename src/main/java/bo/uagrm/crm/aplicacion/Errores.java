@@ -23,10 +23,11 @@ final class Errores {
   private Errores() {}
 
   static String traducir(SQLException e) {
+    bo.uagrm.crm.persistencia.DatabaseService.registrarFallo(e);
     String estado = e.getSQLState() == null ? "" : e.getSQLState();
     // Toda excepción SQL capturada queda en error.log (enunciado §5), aunque al usuario se le traduzca.
     java.util.logging.Logger.getLogger("crm")
-        .warning("SQL " + estado + ": " + String.valueOf(e.getMessage()).replaceAll("\\s*[\\r\\n]+\\s*", " "));
+        .log(java.util.logging.Level.WARNING, "SQLState=" + estado + " codigo=" + e.getErrorCode(), e);
     String restriccion =
         e instanceof PSQLException p && p.getServerErrorMessage() != null
             ? p.getServerErrorMessage().getConstraint()

@@ -46,7 +46,9 @@ public final class CommandProcessor {
       String csv,
       bo.uagrm.crm.presentacion.Adjunto archivo,
       String errorArchivo) {
+    long parserInicio = System.nanoTime();
     Command cmd = parser.parse(asunto, remitente, csv).conArchivo(archivo, errorArchivo);
+    bo.uagrm.crm.Rendimiento.sumar("parser", parserInicio);
     Usuario u = null;
     Respuesta r;
     try {
@@ -91,6 +93,7 @@ public final class CommandProcessor {
               "Ocurrió un error interno al procesar el comando. Quedó registrado; intente de"
                   + " nuevo.");
     }
+    if (DatabaseService.falloCorreo() != null) return r; // no intentar otra conexión ni ocultar la caída
     bitacora(
         remitente,
         u == null ? null : u.correo(),
@@ -114,12 +117,24 @@ public final class CommandProcessor {
           resultado,
           detalle);
     } catch (SQLException | RuntimeException e) {
-      java.util.logging.Logger.getLogger("crm").severe("No se pudo escribir la bitácora (" + resultado + " · " + asunto + "): " + e.getMessage());
+      java.util.logging.Logger.getLogger("crm").log(java.util.logging.Level.SEVERE,
+          "No se pudo escribir la bitácora (" + resultado + " · " + asunto + ")", e);
     }
   }
 
   public ResponseFormatter formatter() {
     return fmt;
+  }
+
+  /** Sólo la ayuda pública sin parámetros es independiente de identidad, roles y BD. */
+  public boolean esAyudaPublica(String asunto) {
+    Command c = parser.parse(asunto, "", null);
+    return c.isValido() && c.getTipo() == Comando.HELP && c.cantidad() == 0;
+  }
+
+  public Respuesta ayudaSinBD(String asunto) {
+    if (!esAyudaPublica(asunto)) throw new IllegalArgumentException("Sólo HELP[] público");
+    return publico.procesar(parser.parse(asunto, "", null), null);
   }
 
   /** Fila de la matriz de acceso de cada rol (para el anexo de comandos por rol). */
