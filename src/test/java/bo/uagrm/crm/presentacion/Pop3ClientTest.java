@@ -115,4 +115,32 @@ class Pop3ClientTest {
     p.add(new String[] {"DELE 1", "-ERR no existe"});
     session(p, c -> assertThrows(IOException.class, () -> c.dele(1)));
   }
+
+  @Test
+  void stlsRechazadoNuncaEnviaCredencialesNiHaceDowngrade() throws Exception {
+    try (var server = new ServerSocket(0,1,InetAddress.getLoopbackAddress())) {
+      var pool = Executors.newSingleThreadExecutor();
+      try {
+        var f = pool.submit(() -> {
+          try (var s = server.accept()) {
+            s.setSoTimeout(3000);
+            var in = new BufferedReader(new InputStreamReader(s.getInputStream(),StandardCharsets.US_ASCII));
+            var out=s.getOutputStream(); out.write("+OK QA\r\n".getBytes(StandardCharsets.US_ASCII));out.flush();
+            assertEquals("STLS",in.readLine());
+            out.write("-ERR no TLS\r\n".getBytes(StandardCharsets.US_ASCII));out.flush();
+            assertNull(in.readLine(),"cerrar antes de USER/PASS si STLS falla");
+          }
+          return null;
+        });
+        assertThrows(IOException.class,()->new Pop3Client("127.0.0.1",server.getLocalPort(),"qa","ficticia","starttls"));
+        f.get(5,TimeUnit.SECONDS);
+      } finally { pool.shutdownNow(); }
+    }
+  }
+
+  @Test
+  void modoDesconocidoOCredencialConSaltosSeRechazanAntesDeConectar() {
+    assertThrows(IllegalArgumentException.class,()->new Pop3Client("127.0.0.1",1,"qa","x","inseguro"));
+    assertThrows(IllegalArgumentException.class,()->new Pop3Client("127.0.0.1",1,"qa\r\nSTAT","x","plain"));
+  }
 }

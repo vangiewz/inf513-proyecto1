@@ -4,6 +4,7 @@ El informe principal conserva el formato carta FICCT. Cada lámina complementari
 EA y aumenta su escala para poder leer atributos y operaciones. No modifica el modelo ni el PDF original.
 """
 import json
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import re
 
@@ -51,7 +52,7 @@ def main():
     output.set_metadata({'title': 'P1 Grupo 05 SA Láminas UML completas', 'author': 'Grupo 05 SA'})
     path = root / 'doc/P1-LAMINAS-UML-GRUPO05SA.pdf'
     output.save(path, garbage=4, deflate=True)
-    report = {'fecha': '2026-11-19', 'laminas': records,
+    report = {'fecha': datetime.now(timezone(timedelta(hours=-4))).date().isoformat(), 'laminas': records,
               'nota': 'Una lámina por figura, formato ampliado complementario. Informe principal en carta.'}
     (root / 'doc/pruebas/laminas-uml.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(f'{len(records)} láminas vectoriales completas: {path}')

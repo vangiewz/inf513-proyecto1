@@ -18,7 +18,8 @@ Uso:
       --psql "C:/Program Files/PostgreSQL/18/bin/psql.exe" [--cortes 40] [--semilla 7]       [--pgdata CARPETA_DEL_CLUSTER --pg-ctl ".../pg_ctl.exe"]
 Deja el resumen en doc/pruebas/caidas.json.
 """
-import argparse, json, os, random, re, socket, subprocess, sys, tempfile, threading, time, uuid
+import argparse, base64, json, os, random, re, secrets, socket, subprocess, sys, tempfile, threading, time, uuid
+from firmar_correo import firmar
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--db", required=True)
@@ -84,7 +85,12 @@ class Pop3:
                     out("+OK %s %d" % (p[1], len(vista[int(p[1]) - 1])))
                 elif v in ("RETR", "TOP"):
                     out("+OK")
-                    for x in vista[int(p[1]) - 1].split(b"\r\n"):
+                    lineas = vista[int(p[1]) - 1].split(b"\r\n")
+                    # El terminador del mensaje no es una línea vacía adicional. Agregarla
+                    # alteraría el cuerpo MIME y, correctamente, invalidaría la firma HMAC.
+                    if lineas and lineas[-1] == b"":
+                        lineas.pop()
+                    for x in lineas:
                         c.sendall((b"." + x if x.startswith(b".") else x) + b"\r\n")
                     out(".")
                 elif v == "DELE":
@@ -181,6 +187,7 @@ p_pop, p_smtp = servir(pop), servir(smtp)
 
 # ---------------------------------------------------------------- datos
 admin = "caidas.%s@example.test" % uuid.uuid4().hex[:8]
+clave_firma = secrets.token_bytes(32)
 doc = str(rnd.randint(10_000_000, 99_999_999))
 sql("INSERT INTO usuarios(nombre,apellido,correo,password,rol,estado,fecha_inicio,fecha_fin,created_at,updated_at)"
     " VALUES('Admin','Caidas','%s','x','administrador','activo',CURRENT_DATE-1,CURRENT_DATE+30,now(),now())" % admin)
@@ -194,9 +201,10 @@ marca = uuid.uuid4().hex[:6]
 
 def correo(asunto, mid=None):
     mid = mid or "<%s@qa.test>" % uuid.uuid4()
-    return ("From: %s\r\nTo: buzon@example.test\r\nSubject: %s\r\nMessage-ID: %s\r\n"
+    crudo = ("From: %s\r\nTo: buzon@example.test\r\nSubject: %s\r\nMessage-ID: %s\r\n"
             "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nqa\r\n"
-            % (admin, asunto, mid)).encode("utf-8"), mid
+            % (admin, asunto, mid)).encode("utf-8")
+    return firmar(crudo, clave_firma), mid
 
 
 textos = ["%s nota %02d" % (marca, i) for i in range(30)]
@@ -218,16 +226,24 @@ total_buzon = len(por_llegar)
 # ---------------------------------------------------------------- ejecución con cortes
 tmp = tempfile.mkdtemp(prefix="p1-caidas-")
 props = os.path.join(tmp, "qa.properties")
+claves = os.path.join(tmp, "qa.hmac")
+with open(claves, 'x', encoding='utf-8') as f:
+    f.write(admin + '=' + base64.b64encode(clave_firma).decode('ascii') + '\n')
 with open(props, "w", encoding="utf-8") as f:
     f.write("pop3.host=127.0.0.1\npop3.puerto=%d\npop3.usuario=qa\npop3.password=qa\n"
             "smtp.host=127.0.0.1\nsmtp.puerto=%d\nsmtp.usuario=sistema@example.test\nsmtp.password=qa\n"
             "buzon.sistema=buzon@example.test\ndb.url=%s\ndb.usuario=%s\ndb.password=%s\n"
-            "intervalo.segundos=1\n" % (p_pop, p_smtp, a.db, a.usuario, a.clave))
+            "mail.poll.interval.ms=3000\nauth.keys.file=%s\n" % (p_pop, p_smtp, a.db, a.usuario, a.clave, claves.replace('\\', '/')))
 java = ["java", "-Dcrm.smtp.starttls=false", "-Dstdout.encoding=UTF-8", "-jar", os.path.abspath(a.jar), props]
 log = open(os.path.join(tmp, "consola.txt"), "ab")
+ultimo_fin_proceso = 0.0
 
 
 def lanzar():
+    # El arnés reproduce también el RestartSec=3 previsto, incluso entre procesos nuevos.
+    demora = 3.0 - (time.monotonic() - ultimo_fin_proceso)
+    if demora > 0:
+        time.sleep(demora)
     return subprocess.Popen(java, cwd=tmp, stdout=log, stderr=subprocess.STDOUT)
 
 
@@ -237,7 +253,7 @@ def pg(accion):
     subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, timeout=60)
 
 
-cortes, caidas_bd = [], 0
+cortes, caidas_bd, mensajes_durante_caida, recuperaciones_mismo_proceso = [], 0, 0, 0
 for i in range(a.cortes):
     with pop.cerrojo:
         for _ in range(rnd.randint(1, 3)):
@@ -245,18 +261,46 @@ for i in range(a.cortes):
                 pop.buzon.append(por_llegar.pop(0))
     pop.modo_quit = rnd.choice(["ok", "ok", "perder_respuesta", "sin_aplicar"])
     smtp.modo = rnd.choice(["ok", "ok", "caido", "incierto"])
+    inicio_proceso_log = os.path.getsize(os.path.join(tmp, "consola.txt"))
     p = lanzar()
     espera = rnd.uniform(0.8, 4.0)  # el arranque toma ~1 s; luego cae en cualquier etapa
     if a.pgdata and i % 5 == 2:  # la BD se cae en plena ejecución (sin apagado ordenado)
         time.sleep(espera)
         pg("caer")
         caidas_bd += 1
-        time.sleep(rnd.uniform(1, 4))
+        # Llegan mensajes NUEVOS mientras PostgreSQL está detenido. El POP3 sigue disponible:
+        # deben conservarse en el buzón y procesarse al recuperar la base.
+        with pop.cerrojo:
+            for _ in range(2):
+                if por_llegar:
+                    pop.buzon.append(por_llegar.pop(0))
+                    mensajes_durante_caida += 1
+        # La caída dura más de dos intervalos normales para que el lector la observe.
+        time.sleep(7)
         pg("levantar")
-        espera = rnd.uniform(0.5, 3.0)
+        # Esperar una recuperación OBSERVADA del MISMO proceso. Un tiempo fijo podría
+        # cortarlo justo antes del siguiente backoff y dar un falso negativo al arnés.
+        inicio_recuperacion = time.monotonic()
+        while time.monotonic() - inicio_recuperacion < 90:
+            if p.poll() is not None:
+                raise RuntimeError("El lector terminó durante la recuperación de PostgreSQL QA")
+            log.flush()
+            with open(os.path.join(tmp, "consola.txt"), "rb") as actual:
+                actual.seek(inicio_proceso_log)
+                recuperado = b"RECUPERADO BD" in actual.read()
+            if recuperado:
+                recuperaciones_mismo_proceso += 1
+                break
+            time.sleep(0.5)
+        else:
+            p.kill()
+            p.wait()
+            raise RuntimeError("El lector no confirmó recuperación de PostgreSQL QA en 90 segundos")
+        espera = 0.0
     time.sleep(espera)
     p.kill()  # TerminateProcess / SIGKILL: sin cierre ordenado
     p.wait()
+    ultimo_fin_proceso = time.monotonic()
     cortes.append(round(espera, 2))
 
 # Sin cortes ni fallas hasta vaciar todo. Las respuestas con reintento programado se adelantan
@@ -296,11 +340,18 @@ for m_ in smtp.recibidos:
     irt = re.search(r"(?im)^In-Reply-To:\s*(\S+)", m_)
     ids.setdefault(mid, []).append(origen.get(irt.group(1)) if irt else None)
 respondidos = {t for v in ids.values() for t in v if t}
+log.flush()
+with open(os.path.join(tmp, "consola.txt"), "r", encoding="utf-8", errors="replace") as registro:
+    salida_lector = registro.read()
 resultado = {
     "fecha": time.strftime("%Y-%m-%d %H:%M"),
     "semilla": a.semilla,
     "cortes_forzados": len(cortes),
     "caidas_de_la_bd": caidas_bd,
+    "mensajes_recibidos_durante_caida_bd": mensajes_durante_caida,
+    "falla_bd_observada_por_lector": "FALLA BD" in salida_lector,
+    "recuperacion_bd_observada_por_mismo_proceso": recuperaciones_mismo_proceso == caidas_bd and caidas_bd > 0,
+    "recuperaciones_observadas_mismo_proceso": recuperaciones_mismo_proceso,
     "segundos_hasta_cada_corte": cortes,
     "correos_depositados": total_buzon,
     "comandos_distintos": len(textos),
@@ -325,6 +376,8 @@ ok = (not resultado["comandos_perdidos"] and not resultado["comandos_duplicados"
       and not resultado["comandos_sin_respuesta_recibida"] and not sin_enviar
       and resultado["quedan_en_buzon"] == 0 and resultado["quedan_recibidos"] == 0
       and resultado["quedan_pendientes"] == 0)
+if caidas_bd:
+    ok = ok and resultado["falla_bd_observada_por_lector"] and resultado["recuperacion_bd_observada_por_mismo_proceso"]
 resultado["aprobado"] = ok
 resultado["log_del_lector"] = os.path.join(tmp, "consola.txt")
 os.makedirs(os.path.dirname(a.salida), exist_ok=True)

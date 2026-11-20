@@ -1,9 +1,9 @@
 {
   "fecha": "2026-11-19",
   "entorno": "PostgreSQL desechable en 127.0.0.1; no producción",
-  "sql_sha256": "a2eeeb2ca7b24fdec5873afc583c09c8bb60fb10f40a63496a67c12a87f3cbd8",
-  "tablas": 25,
-  "columnas": 209,
+  "sql_sha256": "e071723260e3f832ec81a5ea51baf52f17ad3f1a0a789bfcfe6586c3ac586086",
+  "tablas": 26,
+  "columnas": 216,
   "claves_foraneas": 34,
   "atributos_logicos": [
     {
@@ -662,6 +662,41 @@
       "tipo": "timestamp(0)"
     },
     {
+      "tabla": "persona",
+      "columna": "apellidos",
+      "tipo": "varchar(120)"
+    },
+    {
+      "tabla": "persona",
+      "columna": "correo",
+      "tipo": "varchar(120)"
+    },
+    {
+      "tabla": "persona",
+      "columna": "documento",
+      "tipo": "varchar(15)"
+    },
+    {
+      "tabla": "persona",
+      "columna": "nombres",
+      "tipo": "varchar(120)"
+    },
+    {
+      "tabla": "persona",
+      "columna": "ocupacion",
+      "tipo": "varchar(80)"
+    },
+    {
+      "tabla": "persona",
+      "columna": "telefono_celular",
+      "tipo": "varchar(16)"
+    },
+    {
+      "tabla": "persona",
+      "columna": "telefono_fijo",
+      "tipo": "varchar(16)"
+    },
+    {
       "tabla": "programas",
       "columna": "codigo",
       "tipo": "varchar(255)"
@@ -914,7 +949,7 @@
   ],
   "comprobaciones": [
     {
-      "comprobacion": "Ninguna tabla aislada",
+      "comprobacion": "CRM relacionado; persona independiente por contrato docente sin FK inventada",
       "aprobada": true,
       "detalle": null
     },
@@ -932,8 +967,8 @@
       "comprobacion": "Tablas completas en el lógico",
       "aprobada": true,
       "detalle": {
-        "esperadas": 25,
-        "en_modelo": 25
+        "esperadas": 26,
+        "en_modelo": 26
       }
     },
     {
@@ -945,8 +980,8 @@
       "comprobacion": "Tablas completas en el conceptual",
       "aprobada": true,
       "detalle": {
-        "esperadas": 25,
-        "en_modelo": 25
+        "esperadas": 26,
+        "en_modelo": 26
       }
     },
     {
@@ -958,8 +993,8 @@
       "comprobacion": "Atributos y tipos lógicos iguales a PostgreSQL",
       "aprobada": true,
       "detalle": {
-        "esperados": 181,
-        "representados": 181,
+        "esperados": 188,
+        "representados": 188,
         "faltan": [],
         "sobran": [],
         "tipos_distintos": []
@@ -1167,6 +1202,21 @@
     },
     {
       "comprobacion": "Cuatro secuencias comunes del canal, sin detalles extra de CU6",
+      "aprobada": true,
+      "detalle": null
+    },
+    {
+      "comprobacion": "Canal representa configuración, frecuencia, exclusión y autenticidad reales",
+      "aprobada": true,
+      "detalle": null
+    },
+    {
+      "comprobacion": "Secuencia del canal autentica HMAC antes de deduplicar escrituras",
+      "aprobada": true,
+      "detalle": null
+    },
+    {
+      "comprobacion": "Secuencia DSN confirma actualización y bitácora antes de SEEN",
       "aprobada": true,
       "detalle": null
     },

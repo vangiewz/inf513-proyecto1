@@ -20,23 +20,33 @@ import java.nio.charset.StandardCharsets;
  */
 public final class Pop3Client implements Closeable {
 
-  private final Socket socket;
-  private final BufferedReader in;
-  private final Writer out;
+  private Socket socket;
+  private BufferedReader in;
+  private Writer out;
 
   public Pop3Client(String host, int puerto, String usuario, String password) throws IOException {
+    this(host, puerto, usuario, password, "plain");
+  }
+
+  /** plain conserva compatibilidad; starttls exige STLS y tls exige TLS desde el primer byte. */
+  public Pop3Client(String host, int puerto, String usuario, String password, String seguridad) throws IOException {
+    String modo = seguridad == null ? "plain" : seguridad.toLowerCase(java.util.Locale.ROOT);
+    if (!java.util.Set.of("plain", "starttls", "tls").contains(modo))
+      throw new IllegalArgumentException("pop3.seguridad debe ser plain, starttls o tls");
+    if (usuario == null || password == null || usuario.matches("(?s).*[\\r\\n].*") || password.matches("(?s).*[\\r\\n].*"))
+      throw new IllegalArgumentException("Credenciales POP3 inválidas");
     socket = new Socket();
     try {
       socket.connect(new InetSocketAddress(host, puerto), 15_000);
       socket.setSoTimeout(60_000);
-      // ISO-8859-1 pasa cada byte tal cual: el MIME se decodifica después con su propio charset.
-      in =
-          new BufferedReader(
-              new InputStreamReader(socket.getInputStream(), StandardCharsets.ISO_8859_1));
-      out =
-          new BufferedWriter(
-              new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.ISO_8859_1));
+      if (modo.equals("tls")) asegurarTls(host, puerto);
+      flujos();
       ok(in.readLine(), "saludo");
+      if (modo.equals("starttls")) {
+        comando("STLS"); // el rechazo termina la sesión: nunca se envían credenciales en claro
+        asegurarTls(host, puerto);
+        flujos();
+      }
       comando("USER " + usuario);
       comando("PASS " + password);
     } catch (IOException | RuntimeException e) {
@@ -47,6 +57,22 @@ public final class Pop3Client implements Closeable {
       }
       throw e;
     }
+  }
+
+  private void flujos() throws IOException {
+    // ISO-8859-1 preserva bytes; MIME decodifica después su charset.
+    in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.ISO_8859_1));
+    out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.ISO_8859_1));
+  }
+
+  private void asegurarTls(String host, int puerto) throws IOException {
+    var ssl = (javax.net.ssl.SSLSocket) ((javax.net.ssl.SSLSocketFactory) javax.net.ssl.SSLSocketFactory.getDefault())
+        .createSocket(socket, host, puerto, true);
+    socket = ssl;
+    var parametros = ssl.getSSLParameters();
+    parametros.setEndpointIdentificationAlgorithm("HTTPS");
+    ssl.setSSLParameters(parametros);
+    ssl.startHandshake();
   }
 
   /** Cantidad de mensajes en el buzón. */
@@ -90,6 +116,8 @@ public final class Pop3Client implements Closeable {
       if (linea.equals(".")) break;
       if (linea.startsWith("..")) linea = linea.substring(1); // byte-stuffing del protocolo
       buf.writeBytes((linea + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
+      if (buf.size() > 8 * 1024 * 1024 + 65536)
+        throw new IOException("El mensaje excede el límite de recepción; no se confirma DELE");
     }
     return buf.toByteArray();
   }
@@ -111,12 +139,18 @@ public final class Pop3Client implements Closeable {
   private String comando(String linea) throws IOException {
     out.write(linea + "\r\n");
     out.flush();
-    return ok(in.readLine(), linea.startsWith("PASS") ? "PASS" : linea);
+    return ok(in.readLine(), linea.startsWith("PASS") ? "PASS" : linea.startsWith("USER") ? "USER" : linea);
   }
 
   private static String ok(String respuesta, String paso) throws IOException {
-    if (respuesta == null || !respuesta.startsWith("+OK"))
-      throw new IOException("POP3 rechazó " + paso + ": " + respuesta);
+    if (respuesta == null || !respuesta.startsWith("+OK")) {
+      String codigo = "";
+      if (respuesta != null) {
+        var m = java.util.regex.Pattern.compile("\\[(AUTH|IN-USE|SYS/TEMP|LOGIN-DELAY|SYS/PERM)\\]").matcher(respuesta);
+        if (m.find()) codigo = " " + m.group();
+      }
+      throw new IOException("POP3 rechazó " + paso + (respuesta == null ? ": conexión cerrada" : ": respuesta negativa" + codigo));
+    }
     return respuesta;
   }
 }

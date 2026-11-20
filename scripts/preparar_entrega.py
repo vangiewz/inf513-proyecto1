@@ -13,7 +13,7 @@ def main():
     root = p1.parent
     dest = root / 'entrega/2026-2_INF513-P1_grupo05sa.zip'
     files = set()
-    for name in ('README.md', 'BASE_DATOS.md', 'PRUEBAS.md', 'GUIA_CORREO_CASOS_APROBADOS.md',
+    for name in ('.gitignore', 'README.md', 'OPERACION.md', 'BASE_DATOS.md', 'PRUEBAS.md', 'GUIA_CORREO_CASOS_APROBADOS.md',
                  'REVISION_DOCUMENTO.md', 'AUDITORIA_ENUNCIADO.md', 'AUDITORIA_ADICIONAL.md', 'CONTINUAR_P1.md', 'pom.xml', 'ejecutar.ps1',
                  'respaldo.ps1', 'crm-mail.properties.example', 'target/crm-mail.jar',
                  'doc/P1-INF513-GRUPO05SA.doc', 'doc/P1-INF513-GRUPO05SA.docx',
@@ -26,7 +26,7 @@ def main():
                                ('scripts', {'.py', '.ps1'}), ('doc', {'.py', '.png', '.emf', '.eapx', '.json', '.tsv', '.txt', '.html'})):
         files.update(p for p in (p1 / folder).rglob('*') if p.is_file() and p.suffix.lower() in extensions
                      and '__pycache__' not in p.parts and '.teselas' not in p.parts
-                     and p.name not in {'usuarios.sql', 'paquete-entrega.json'} and not p.name.startswith('~$'))
+                     and p.name not in {'usuarios.sql', 'paquete-entrega.json', 'entrega-verificada.json'} and not p.name.startswith('~$'))
     if (root / 'tools/doc_ficct.py').is_file():
         files.add(root / 'tools/doc_ficct.py')
     records = []

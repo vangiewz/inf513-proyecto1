@@ -23,6 +23,11 @@ __pycache__/
 *.log
 *.pem
 *.key
+*.eml
+*.hmac
+auth-keys.properties
+*.properties
+!*.properties.example
 *.local.md
 *.pyc
 .DS_Store

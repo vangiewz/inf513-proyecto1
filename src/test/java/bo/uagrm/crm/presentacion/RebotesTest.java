@@ -1,6 +1,7 @@
 package bo.uagrm.crm.presentacion;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
@@ -57,5 +58,23 @@ class RebotesTest {
     var r = leer("From: mailer-daemon@x.org\nSubject: ?\n\nalgo\n");
     assertEquals("(desconocido)", r.destinatario());
     assertEquals("sin motivo en el aviso", r.motivo());
+  }
+
+  @Test void correlacionUsaIdOriginalYNuncaIdExteriorDelDsn() {
+    var r = leer("From: mailer-daemon@example.test\nMessage-ID: <dsn@example.test>\n\n"
+        + "Original-Message-ID: <crm.123@grupo05sa.tecnoweb.org.bo>\nFinal-Recipient: rfc822; ana@example.test\nStatus: 5.1.1\n");
+    assertEquals("<crm.123@grupo05sa.tecnoweb.org.bo>",r.originalMessageId());
+    assertNull(leer("Message-ID: <dsn@example.test>\n\nStatus: 5.1.1\n").originalMessageId());
+  }
+
+  @Test void noSeMarcaLeidoAntesDePersistirYErrorConservaAviso() throws Exception {
+    var mensaje = new jakarta.mail.internet.MimeMessage(jakarta.mail.Session.getInstance(new java.util.Properties()));
+    var r = new Rebotes.Rebote("ana@example.test","5.1.1","<crm.qa@grupo05sa.tecnoweb.org.bo>");
+    assertThrows(jakarta.mail.MessagingException.class,()->Rebotes.confirmar(mensaje,r,x->{
+      assertFalse(mensaje.isSet(jakarta.mail.Flags.Flag.SEEN)); throw new java.sql.SQLException("QA desconectado");
+    },true));
+    assertFalse(mensaje.isSet(jakarta.mail.Flags.Flag.SEEN));
+    Rebotes.confirmar(mensaje,r,x->assertFalse(mensaje.isSet(jakarta.mail.Flags.Flag.SEEN)),true);
+    assertTrue(mensaje.isSet(jakarta.mail.Flags.Flag.SEEN));
   }
 }

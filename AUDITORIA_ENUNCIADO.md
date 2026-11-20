@@ -1,5 +1,19 @@
 # Cotejo del enunciado P1 recibido el 19/11/2026
 
+## Actualización del contrato y de la revisión local
+
+La solicitud posterior exige integrar literalmente LISPER e INSPER: ambos están implementados
+como extensión de CU1 sobre persona, sin sustituir los comandos CRM. La interpretación anterior
+de la tabla siguiente que los trataba sólo como ejemplos queda superada por esa instrucción.
+La implementación actual agrega firma HMAC individual, sondeo mínimo de tres segundos, control
+de reconexiones, soporte POP3 seguro configurable, contingencia de errores y rebotes correlacionados.
+Las pruebas actuales se ejecutan con scripts/probar_local.py; su informe es local-final.json.
+El ZIP se prepara y se compila de nuevo desde una extracción mediante verificar_entrega.py.
+No se aplican migraciones remotas, se envían correos reales ni se publica esta revisión.
+
+El resto de este archivo conserva el cotejo histórico previo. El estado vigente se resume en
+README.md, OPERACION.md, BASE_DATOS.md y CONTINUAR_P1.md; no usar las cifras anteriores como nueva evidencia.
+
 Fuente: texto facilitado por el usuario, “Proyecto #1: Sistema de Automatización y Procesamiento de Datos
 Basado en Correo Electrónico”. No se copian sus credenciales de laboratorio a esta auditoría.
 

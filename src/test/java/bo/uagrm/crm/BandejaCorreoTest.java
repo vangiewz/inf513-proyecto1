@@ -8,6 +8,7 @@ import bo.uagrm.crm.dominio.captacion.ProspectoService;
 import bo.uagrm.crm.dominio.usuarios.Usuario;
 import bo.uagrm.crm.dominio.usuarios.UsuarioService;
 import bo.uagrm.crm.persistencia.DatabaseService;
+import bo.uagrm.crm.presentacion.AutenticidadCorreo;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +37,9 @@ class BandejaCorreoTest {
   static DatabaseService db;
   static Usuario admin;
   static long tarjeta;
+  @org.junit.jupiter.api.io.TempDir static java.nio.file.Path temporal;
+  static final byte[] CLAVE_QA = new byte[32];
+  static java.nio.file.Path archivoClaves;
   static final Pop3Falso pop = new Pop3Falso();
   static final SmtpFalso smtp = new SmtpFalso();
 
@@ -52,6 +56,9 @@ class BandejaCorreoTest {
     admin =
         new UsuarioService(db)
             .insertar("Admin", "Bandeja", "bandeja." + UUID.randomUUID() + "@example.test", "70000001", "administrador");
+    new java.security.SecureRandom().nextBytes(CLAVE_QA);
+    archivoClaves = temporal.resolve("claves-qa.properties");
+    java.nio.file.Files.writeString(archivoClaves, admin.correo() + "=" + Base64.getEncoder().encodeToString(CLAVE_QA));
     String doc = String.valueOf(10_000_000 + new Random().nextInt(80_000_000));
     tarjeta =
         new ProspectoService(db)
@@ -90,13 +97,91 @@ class BandejaCorreoTest {
             "sistema@example.test", "ficticia", "buzon@example.test",
             System.getenv("P1_TEST_DB_URL"),
             System.getenv().getOrDefault("P1_TEST_DB_USER", "crm_user"),
-            System.getenv().getOrDefault("P1_TEST_DB_PASSWORD", "crm_password"), 1));
+            System.getenv().getOrDefault("P1_TEST_DB_PASSWORD", "crm_password"), 1,
+            1000, 30000, 60000, temporal.resolve("logs").toString(), temporal.resolve("run").toString(),
+            archivoClaves.toString(), "plain"));
   }
 
   static String correo(String from, String asunto) {
-    return "From: " + from + "\r\nTo: buzon@example.test\r\nSubject: " + asunto
+    String crudo = "From: " + from + "\r\nTo: buzon@example.test\r\nSubject: " + asunto
         + "\r\nMessage-ID: <" + UUID.randomUUID() + "@qa.test>\r\nDate: Thu, 19 Nov 2026 10:00:00 -0400"
         + "\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nqa\r\n";
+    if (!from.equals(admin.correo())) return crudo;
+    try {
+      return new String(AutenticidadCorreo.firmar(crudo.getBytes(StandardCharsets.ISO_8859_1), CLAVE_QA,
+          java.time.Instant.now()), StandardCharsets.ISO_8859_1);
+    } catch (Exception e) { throw new IllegalStateException(e); }
+  }
+
+  @Test
+  void fromFalsificadoNoAutorizaOperaciones() throws Exception {
+    String txt = "suplantacion " + UUID.randomUUID();
+    String firmado = correo(admin.correo(), nota(txt));
+    String sinFirma = firmado.replaceAll("(?m)^X-CRM-(?:Signature|Timestamp):[^\\r\\n]*\\r?\\n", "");
+    pop.buzon.add(sinFirma);
+    app().ciclo();
+    assertEquals(0, interacciones(txt), "From conocido sin firma no autoriza negocio");
+    assertEquals(1, cuenta("SELECT count(*) FROM log_comandos WHERE asunto=? AND resultado='Denegado'", nota(txt)));
+    assertEquals(1, smtp.recibidos.size(), "se comunica la denegación");
+  }
+
+  @Test
+  void falloInternoAlCerrarRevierteNegocioYEncolaRespuestaDeContingencia() throws Exception {
+    String txt = "contingencia-qa-" + UUID.randomUUID();
+    try (Connection c = db.getConnection()) {
+      DatabaseService.actualizar(c, """
+          CREATE FUNCTION qa_contingencia_correo() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN
+            IF NEW.resultado='Éxito' AND NEW.asunto LIKE '%contingencia-qa-%' THEN
+              RAISE EXCEPTION 'QA cierre interrumpido';
+            END IF;
+            RETURN NEW;
+          END $$
+          """);
+      DatabaseService.actualizar(c, "CREATE TRIGGER qa_contingencia_correo BEFORE UPDATE ON log_comandos"
+          + " FOR EACH ROW EXECUTE FUNCTION qa_contingencia_correo()");
+    }
+    try {
+      pop.buzon.add(correo(admin.correo(), nota(txt)));
+      app().ciclo();
+      assertEquals(0, interacciones(txt), "la transacción que no cerró no confirma el negocio");
+      assertEquals(1, cuenta("SELECT count(*) FROM log_comandos WHERE asunto=? AND resultado='Error'",nota(txt)));
+      assertEquals(1, smtp.recibidos.size(), "la contingencia responde automáticamente");
+      assertEquals(0, cuenta("SELECT count(*) FROM log_comandos WHERE asunto=? AND resultado='Recibido'",nota(txt)));
+    } finally {
+      try (Connection c = db.getConnection()) {
+        DatabaseService.actualizar(c,"DROP TRIGGER qa_contingencia_correo ON log_comandos");
+        DatabaseService.actualizar(c,"DROP FUNCTION qa_contingencia_correo()");
+      }
+    }
+  }
+
+  @Test
+  void reboteSeAsociaAlMensajeExactoYNoAlUltimoDestinatario() throws Exception {
+    var sender = new bo.uagrm.crm.presentacion.SmtpSender("127.0.0.1", smtp.puerto(),
+        "sistema@example.test", "ficticia", "buzon@example.test");
+    var bandeja = new bo.uagrm.crm.presentacion.Bandeja(db);
+    byte[] primero = sender.preparar(admin.correo(), "Primero", "ok", "ok", List.of(), null);
+    byte[] segundo = sender.preparar(admin.correo(), "Segundo", "ok", "ok", List.of(), null);
+    long registro = bandeja.guardar("sha256:" + UUID.randomUUID(), admin.correo(), "QA rebote", new byte[0], 0);
+    long[] ids = db.enTransaccion(c -> {
+      long a = bandeja.encolar(c, registro, null, admin.correo(), "Primero", primero);
+      long b = bandeja.encolar(c, registro, null, admin.correo(), "Segundo", segundo);
+      bandeja.enviado(c, a); bandeja.enviado(c, b);
+      return new long[] {a,b};
+    });
+    assertEquals(0, bandeja.rebote(admin.correo(), "sin correlación", null));
+    assertEquals(1, bandeja.rebote(admin.correo(), "550 QA", bo.uagrm.crm.presentacion.Correo.messageIdOriginal(primero)));
+    assertEquals("Rebotado", estado(ids[0]));
+    assertEquals("Enviado", estado(ids[1]));
+  }
+
+  @Test
+  void reboteSinCorrelacionSePersisteAntesDeConfirmarlo() throws Exception {
+    long anteriores = cuenta("SELECT count(*) FROM log_comandos WHERE remitente='(rebote)'");
+    assertEquals(0,app().registrarRebote(new bo.uagrm.crm.presentacion.Rebotes.Rebote(
+        "desconocido@example.test","550 QA",null)));
+    assertEquals(anteriores+1,cuenta("SELECT count(*) FROM log_comandos WHERE remitente='(rebote)'"));
   }
 
   static long cuenta(String sql, Object... p) throws SQLException {

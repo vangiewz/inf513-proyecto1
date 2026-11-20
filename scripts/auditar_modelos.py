@@ -75,7 +75,9 @@ def main():
           FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
           WHERE n.nspname='public' AND c.contype='f') x""")
         tables = {c['tabla'] for c in cols}
-        verify('Ninguna tabla aislada', tables <= {t for f in fks for t in (f['hija'], f['padre'])})
+        verify('CRM relacionado; persona independiente por contrato docente sin FK inventada',
+               tables - {'persona'} <= {t for f in fks for t in (f['hija'], f['padre'])}
+               and not any('persona' in (f['hija'], f['padre']) for f in fks))
         unique = {(k['tabla'], k['columnas'][0]) for k in keys if len(k['columnas']) == 1}
         foreign = {(f['hija'], f['columna']) for f in fks}
         required = {(c['tabla'], c['columna']): c['obligatorio'] for c in cols}
@@ -181,6 +183,30 @@ def main():
             common = [d for d in packages['Secuencia'].Diagrams if not d.Name.startswith('CU')]
             verify('Cuatro secuencias comunes del canal, sin detalles extra de CU6', len(common) == 4 and
                    not any('Detalle de secuencia CU6' in d.Name for p in packages.values() for d in p.Diagrams))
+            canal = next(d for d in packages['Clases'].Diagrams if d.Name == 'Canal de correo: modelo global')
+            clases_canal = {repo.GetElementByID(o.ElementID).Name for o in canal.DiagramObjects}
+            verify('Canal representa configuración, frecuencia, exclusión y autenticidad reales',
+                   {'Config', 'ControlSondeo', 'BucleSondeo', 'InstanciaCorreo', 'AutenticidadCorreo'} <= clases_canal)
+
+            def mensajes_diagrama(nombre):
+                diagrama = next(d for d in common if d.Name == nombre)
+                mensajes = {c.ConnectorID: c for o in diagrama.DiagramObjects
+                            for c in repo.GetElementByID(o.ElementID).Connectors
+                            if c.DiagramID == diagrama.DiagramID and c.Type == 'Sequence'}
+                return [c.Name for c in sorted(mensajes.values(), key=lambda c: int(c.SequenceNo))]
+
+            procesamiento = mensajes_diagrama('Procesar un correo guardado')
+            posicion = lambda textos, termino: next((i for i, t in enumerate(textos) if termino in t), -1)
+            firma_hmac = posicion(procesamiento, '2.6 verificar')
+            repetido = posicion(procesamiento, '2.12 repetido')
+            verify('Secuencia del canal autentica HMAC antes de deduplicar escrituras',
+                   firma_hmac >= 0 and repetido > firma_hmac)
+            rebotes = mensajes_diagrama('Leer rebotes')
+            callback = posicion(rebotes, 'registrarRebote')
+            commit = posicion(rebotes, 'COMMIT: resultado y bitácora')
+            seen = posicion(rebotes, 'setFlag')
+            verify('Secuencia DSN confirma actualización y bitácora antes de SEEN',
+                   callback >= 0 and commit > callback and seen > commit)
             components = [d for p in packages.values() for d in p.Diagrams if d.Name == 'Diagrama de componentes']
             verify('Implementación: un único diagrama global de componentes', len(components) == 1)
             if len(components) == 1:

@@ -1,7 +1,7 @@
 {
-  "fecha": "2026-11-19",
-  "alcance": "Normalización y auditoría local de P1; arquitectura mejorada en EA; sin cambios de producción ni web",
-  "paginas": 150,
+  "fecha": "2026-11-20T04:05:30.833294+00:00",
+  "paginas": 169,
+  "alcance": "Revisión local final; sin validación institucional",
   "paginas_blancas": [],
   "marcadores_pendientes": [],
   "indices": {
@@ -11,41 +11,50 @@
       "diferencias": []
     },
     "Tabla": {
-      "entradas": 53,
-      "rotulos": 53,
+      "entradas": 54,
+      "rotulos": 54,
       "diferencias": []
     }
   },
-  "suite_completa": {
-    "tests": 144,
-    "failures": 0,
-    "errors": 0,
-    "skipped": 0
-  },
-  "prueba_adicional_parser": "1 caso nuevo; 7 casos CommandParserTest aprobados en ejecución aislada posterior",
-  "junit_xml_actuales": {
-    "tests": 145,
-    "skipped": 0,
-    "failures": 0,
-    "errors": 0
-  },
-  "modelos": {
-    "comprobaciones": 28,
-    "tablas": 25,
-    "columnas": 209,
-    "fk": 34,
-    "atributos_logicos": 181,
-    "faltantes_pdf": []
-  },
-  "criterio_diagramas": "Una secuencia y un procedimental completo por CU, una vista global conceptual y una lógica; sin dividir diagramas",
+  "revision_visual": "Imágenes completas generadas para inspección; registrar resultado después de revisarlas",
   "migraciones_produccion": "PENDIENTES DE APLICAR",
-  "pendientes_enunciado": "AUDITORIA_ENUNCIADO.md",
-  "laminas": 33,
+  "local-final": {
+    "aprobado": true,
+    "junit": {
+      "tests": 214,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "lisper-vacio": {
+    "aprobado": true,
+    "junit": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "modelos-globales": {
+    "aprobado": true,
+    "tablas": 26,
+    "columnas": 216,
+    "claves_foraneas": 34
+  },
+  "auditoria-ampliada": {
+    "aprobado": true,
+    "tablas": 26,
+    "columnas": 216,
+    "claves_foraneas": 34
+  },
   "sha256": {
-    "doc": "bf894bf6a8ca3326e5d2e84162ba02f9efefb1446d8c4f4109ece79203ab431b",
-    "pdf": "1fa9a2026de0043bc776f8d8b98269c6e9026322510d41797926f1ab77d7b1d0",
-    "laminas": "31284505d8353aa38cbc69df5881597b2f0473b1e175d8ef2b223bf62784ba7b",
-    "ea": "f53571f91031d2f920cd1777ee84d2f8d58be087578b76ad583300c4e2d38f3e",
-    "jar": "106564f9876521d320b25ddbfb65ee1529bf8176cf5345ae6f1ac68aea087251"
-  }
+    "doc": "42b19cc5735b9575237236e9f49fdbeb0c2a336cf9fb778836776bd0375c9a83",
+    "docx": "c021ea2130bc581672c6a68d813d99ef1ba02adfa6919430495add4f08dbd18f",
+    "pdf": "5d3bcf3e963a0c81bd01da927c65abe4dec188b67ac826a00fa61b3a3b6e0ef4",
+    "laminas": "5bee468922a839039b779b3076ec5642c12e98b917326a5b5989e885bff24bc3",
+    "ea": "4dd2f1f2c074fad5ff62496a42bc63d5bc4214c5caa1bf3fa33e1691eed82645",
+    "jar": "729630e5f45f9f65d2f1cc5c59602e04618c7e9bd55afd970b6f7d0a50f7b7f9"
+  },
+  "verificacion_estructural_aprobada": true
 }

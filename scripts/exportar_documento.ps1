@@ -78,18 +78,20 @@ try {
     $documento.Save()
     $documento.ExportAsFixedFormat("$base.pdf", 17)
     $paginas = $documento.ComputeStatistics(2)
+    # Entregar también el DOCX con las figuras vectoriales y los campos ya actualizados.
+    $documento.SaveAs2("$base.docx", 16)
     $documento.Close(0)
     $documento = $null
 } finally {
     if ($null -ne $documento) { try { $documento.Close(0) } catch {} }
     $word.Quit()
 }
-foreach ($extension in @('doc', 'pdf')) {
+foreach ($extension in @('doc', 'docx', 'pdf')) {
     if ((Get-Item -LiteralPath "$base.$extension").Length -eq 0) {
         throw "La exportación produjo un archivo vacío: $extension"
     }
 }
-foreach ($extension in @('doc', 'pdf')) {
+foreach ($extension in @('doc', 'docx', 'pdf')) {
     Copy-Item -LiteralPath "$base.$extension" -Destination (Join-Path $destino "$nombre.$extension") -Force
 }
 Write-Output "paginas: $paginas"

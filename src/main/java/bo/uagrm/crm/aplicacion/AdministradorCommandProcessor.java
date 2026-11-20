@@ -11,6 +11,8 @@ public final class AdministradorCommandProcessor extends RolCommandProcessor {
 
   private static final Set<Comando> COMANDOS =
       EnumSet.of(
+          LISPER,
+          INSPER,
           HELP,
           LISTARUSUARIOS,
           INSERTARUSUARIO,

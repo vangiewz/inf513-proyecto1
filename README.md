@@ -1,168 +1,196 @@
 # CRM de captación de prospectos vía e-mail
 
-Proyecto 1 de INF513 Tecnología Web (SA), UAGRM FICCT, gestión 2-2026. Grupo 05 SA:
-Lobo Gutierrez Carlos Gabriel, Serrate Basma Leonardo y Vasquez Ardaya Brandon Lider.
+Proyecto 1 de INF513 Tecnología Web, UAGRM FICCT, gestión 2026-2, Grupo 05 SA.
+Integrantes: Lobo Gutierrez Carlos Gabriel, Serrate Basma Leonardo y Vasquez Ardaya Brandon Lider.
 
-El usuario escribe un comando en el **asunto** de un correo a `grupo05sa@tecnoweb.org.bo`, por ejemplo
-`VERTABLERO[]` o `MOVERTARJETA["7","Contactado"]`. El sistema lee el buzón por POP3, identifica al remitente por su
-correo, comprueba que su rol pueda usar el comando, lo ejecuta en PostgreSQL y le responde con un correo HTML.
-`HELP[]` devuelve los comandos de cada rol.
+El sistema recibe comandos exclusivamente en el Subject, interpreta y valida sus parámetros,
+comprueba identidad y permisos, opera sobre PostgreSQL y responde automáticamente por SMTP.
+Conserva los ocho casos de uso aprobados y agrega LISPER/INSPER como extensión administrativa de CU1.
+No requiere ejecutar P2 web. Ambos proyectos conservan la misma base institucional y sus registros.
 
-Para retomar el trabajo: [CONTINUAR_P1.md](CONTINUAR_P1.md) reúne las decisiones sobre diagramas,
-referencias aprobadas, estado de pruebas y pendientes. [AUDITORIA_ENUNCIADO.md](AUDITORIA_ENUNCIADO.md)
-contrasta los requisitos de presentación con sus evidencias y límites.
+## Requisitos
 
-Las migraciones nuevas todavía **no están aplicadas en Tecnoweb**. Conservar los registros existentes:
-leer `BASE_DATOS.md`, detener el lector, respaldar y aplicar los scripts de `sql/migraciones/` con transacción.
-`sql/esquema.sql` sirve únicamente para crear una base nueva, no para sustituir la base compartida vigente.
+- JDK 21 o posterior; el compilador produce bytecode Java 21 (`maven.compiler.release=21`).
+- Maven 3.9 o posterior.
+- PostgreSQL 18 para ejecución y pruebas de integración.
+- Python 3.8 o posterior para las herramientas locales; python-docx, PyMuPDF, Pillow y pywin32 para documentación.
+- Enterprise Architect instalado y autorizado para regenerar UML; Word para exportar DOC/PDF.
 
-El repositorio está **privado** (verificado el 19/11/2026): un compañero necesita acceso como colaborador.
-Publicar el código aquí no cambia la base de Tecnoweb. El acceso público requerido para la entrega sigue pendiente.
+Backend Java sin framework web: JDBC PostgreSQL, Angus/Jakarta Mail y jBCrypt. Las dependencias se declaran en pom.xml.
 
-## Arquitectura
+## Arquitectura y estructura
 
-| Capa | Paquete | Contenido |
+| Capa o recurso | Ubicación | Función |
 |---|---|---|
-| Presentación | `presentacion` | `Pop3Client` (sockets, RFC 1939), `SmtpSender` (Jakarta Mail), `Correo` (MIME) |
-| Aplicación | `aplicacion` | `CommandParser`, `Command`, `CommandProcessor`, un `RolCommandProcessor` por rol, `ResponseFormatter` |
-| Dominio | `dominio.<cu>` | un paquete por caso de uso con su `XService` y sus entidades |
-| Persistencia | `persistencia` | `DatabaseService` (JDBC, consultas parametrizadas) |
-
-Casos de uso: CU1 usuarios · CU2 captación y oferta · CU3 asignación · CU4 embudo Kanban · CU5 pérdidas y motivos ·
-CU6 validación y conversión a matrícula · CU7 bitácora, interacciones y recordatorios · CU8 reportes.
-Roles: `administrador`, `coordinador`, `vendedor` y el remitente no registrado (público).
-La matriz de acceso se genera del código con `java -jar target/crm-mail.jar --anexo`.
-
-### Flujo del analizador de correos
+| Orquestación | src/main/java/bo/uagrm/crm | App, Config, ControlSondeo, BucleSondeo, InstanciaCorreo |
+| Presentación | presentacion | POP3 propio, MIME, HMAC, bandeja, SMTP e IMAP de rebotes |
+| Aplicación | aplicacion | Parser, contratos, permisos por rol y formato de respuestas |
+| Dominio | dominio | Ocho CU, pagos y personas del contrato docente |
+| Persistencia | persistencia | JDBC preparado, transacciones y verificación del modelo |
+| SQL | sql | Instalador de base nueva, referencias, diagnóstico y migraciones |
+| Pruebas | src/test/java y scripts | JUnit, integración local y cortes del JAR/PostgreSQL |
+| Documentación | doc | PUDS, modelo EA, diagramas y evidencias |
+| Despliegue | deploy | Unidad systemd; procedimiento en OPERACION.md |
 
 ```mermaid
 flowchart TD
-    A[Correo en grupo05sa: comando en Subject] --> B{BD y modelo disponibles}
-    B -- No --> C[Registrar falla local y conservar correo en buzón]
-    C --> B
-    B -- Sí --> D[POP3: guardar correo antes de DELE y QUIT]
-    D --> E[Decodificar MIME y UTF-8]
-    E --> F{Comando, sintaxis, tipos y permisos válidos}
-    F -- No --> G[Preparar respuesta de error o denegado]
-    F -- Sí --> H[Servicio del CU: SQL preparado en transacción]
-    H --> I{Operación correcta}
-    I -- No --> G
-    I -- Sí --> J[Preparar respuesta de éxito]
-    G --> K[Confirmar resultado y respuesta en cola]
-    J --> K
-    K --> L[Enviar por SMTP]
-    L --> M{Entrega aceptada}
-    M -- No --> N[Registrar causa y reintentar si es transitoria]
-    N --> L
-    M -- Sí --> O[Marcar enviado y vigilar rebotes por IMAP]
+ A[Subject con comando] --> B[Verificar BD y estructura]
+ B --> C[POP3 guardar antes de DELE y QUIT]
+ C --> D[Decodificar MIME y validar firma del usuario registrado]
+ D --> E[Parser, rol, vigencia y alcance]
+ E --> F[Servicio y SQL preparado]
+ F --> G[COMMIT de operación, resultado y respuesta en cola]
+ G --> H[SMTP con reintentos sin repetir la operación]
+ H --> I[Registro de envío y seguimiento de rebotes]
 ```
 
-Se toleran espacios adicionales y asuntos UTF-8. Dentro de un parámetro entre comillas, una comilla
-literal se escribe duplicada: `REGISTRARINTERACCION["7","Nota","Pidió el curso ""Web"""]`.
-Las respuestas contienen el resultado o una descripción comprensible del error; las trazas técnicas se
-conservan en los logs. Si la BD está caída antes de leer el buzón, se difiere el proceso hasta recuperarla.
+Si la BD falla antes de descargar, el correo permanece en POP3. Si falla la escritura antes del COMMIT,
+se conserva la solicitud recuperable. Si SMTP falla después del COMMIT, se reintenta la respuesta persistida.
+Una confirmación SMTP perdida puede producir copias de la misma respuesta; no se promete entrega exactamente una vez.
 
-## Despliegue
+## Configuración y compilación
 
-| Pieza | Valor |
+```powershell
+$env:JAVA_HOME = 'RUTA_JDK_21_O_POSTERIOR'
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+mvn -B package
+Copy-Item crm-mail.properties.example RUTA_PRIVADA\crm-mail.properties
+.\ejecutar.ps1 -JavaHome $env:JAVA_HOME -Config RUTA_PRIVADA\crm-mail.properties
+```
+
+Completar la configuración privada fuera de Git y ZIP. `ejecutar.ps1` rechaza Java anterior a 21.
+No ejecutar la aplicación contra la universidad durante una prueba local.
+
+| Servicio institucional | Configuración prevista |
 |---|---|
-| Lectura | POP3 `mail.tecnoweb.org.bo:110` (Dovecot), cuenta `grupo05sa` |
-| Respuesta | SMTP `smtp.gmail.com:587` STARTTLS (la facultad no reenvía a dominios externos) |
-| Base de datos | PostgreSQL 18.6 `db.tecnoweb.org.bo:5432`, BD `db_grupo05sa`, esquema compartido `public` |
-| Ejecución | PC del grupo (Windows 11, JDK 21) con `ejecutar.ps1`; el servicio del VPS (`deploy/crm-mail.service`) quedó deshabilitado como respaldo |
-| Log | consola y `logs/crm-mail.N.log` (5 MB x 5): una línea por ciclo y la causa de cada falla |
+| Buzón | grupo05sa@tecnoweb.org.bo |
+| Recepción | mail.tecnoweb.org.bo:110, POP3; capacidades TLS externas pendientes |
+| Respuestas | smtp.gmail.com:587, STARTTLS obligatorio |
+| Rebotes | imap.gmail.com:993, TLS; solamente seguimiento de respuestas |
+| Datos | db.tecnoweb.org.bo:5432/db_grupo05sa, esquema public |
 
-## Compilar y ejecutar
+`pop3.seguridad=plain` conserva el servicio conocido; `starttls` exige STLS y `tls` usa TLS implícito.
+No hay degradación automática a texto claro. No cambiar puertos sin verificar capacidades con autorización.
 
-```sh
-mvn package                                   # Java 21+, Maven 3.9; genera target/crm-mail.jar
+## Sondeo y protección de frecuencia
 
-# Para instalar una base nueva de pruebas, consultar BASE_DATOS.md.
-cp crm-mail.properties.example crm-mail.properties   # completar las contraseñas (no se versiona)
-java -jar target/crm-mail.jar crm-mail.properties
+```properties
+mail.poll.interval.ms=3000
+mail.poll.backoff.max.ms=30000
+mail.poll.permanent.retry.ms=60000
 ```
 
-En la PC del grupo (PowerShell), con la configuración privada en `..\.secrets\crm-mail.properties`:
+La espera empieza al terminar el ciclo: no hay solapamiento ni recuperación de ciclos atrasados.
+En Tecnoweb se rechaza cualquier valor inferior a 3000 ms. La propiedad histórica `intervalo.segundos`
+sigue admitida si falta `mail.poll.interval.ms`; el valor nuevo tiene prioridad.
+Los fallos temporales producen esperas 3, 6, 12, 24 y 30 segundos, con la configuración predeterminada.
+Los errores permanentes de esquema o credenciales requieren revisión y esperan 60 segundos.
+La comprobación de BD ocurre antes del POP3; no se añaden esperas entre sentencias SQL de una transacción.
+El control de reconexiones JDBC evita reintentos agresivos después de un fallo.
+
+El bloqueo de archivo por buzón impide arrancar dos lectores en el mismo directorio compartido de bloqueo.
+En systemd se utiliza /run/crm-mail. No ejecutar simultáneamente lector PC y VPS: el bloqueo de archivo
+es local a la máquina. El responsable debe mantener un solo lector autorizado.
+No ejecutar monitores o diagnósticos repetitivos en paralelo. Esta política interpreta el aviso docente
+como separación mínima entre sondeos/reintentos; cualquier límite adicional por servicio debe confirmarse.
+
+## Identidad y comandos
+
+From identifica una cuenta candidata; no acredita identidad. Las operaciones de usuarios registrados
+requieren firma HMAC-SHA256 con una clave privada individual de al menos 32 bytes, además de rol,
+estado y vigencia. Una firma ausente, modificada o sin clave configurada no autoriza la cuenta.
+No se confía en Authentication-Results suministrado por un remitente.
+Los visitantes conservan exclusivamente los comandos públicos de oferta y registro de interés.
 
 ```powershell
-.\ejecutar.ps1                # servicio: revisa el buzón cada 10 s (Ctrl+C para detener)
-.\ejecutar.ps1 -Diagnostico   # solo revisa DNS, puertos, POP3, SMTP y la BD (IP vista por PostgreSQL, tablas, permisos)
+python scripts/firmar_correo.py --crear-clave admin@example.test RUTA_PRIVADA\auth-keys.properties
+python scripts/firmar_correo.py entrada.eml RUTA_PRIVADA\auth-keys.properties firmado.eml
 ```
 
-Cada ciclo deja una línea (`ciclo 812 OK · BD 42 ms · POP3 0 msg 310 ms`). Ante una falla, el log nombra la etapa, el
-destino y la causa probable (DNS, puerto cerrado, IP fuera de `pg_hba.conf`, clave cambiada, tabla borrada, permiso
-revocado, buzón bloqueado por otro lector, clave de aplicación de Gmail revocada); mientras sigue, una línea corta por
-ciclo, y al volver, `RECUPERADO` con su duración. La traducción está en `Diagnostico.java` (prueba: `DiagnosticoTest`).
-Si la BD no responde o le faltan tablas, el ciclo no retira mensajes del buzón: se atienden cuando vuelve.
+Estas órdenes sólo crean archivos locales: no envían correo. Configurar `auth.keys.file` en el lector y
+provisionar cada clave por un canal privado. El cliente que envíe el EML debe conservar las cabeceras
+firmadas y el cuerpo MIME. Un correo normal redactado en Gmail sin firma no autoriza operaciones registradas.
+El despliegue exige verificar la conservación del mensaje firmado por el trayecto institucional.
+La firma admite 24 horas de antigüedad y cinco minutos de desfase futuro. Si una caída o una cola
+supera esa ventana, el usuario debe volver a firmar y enviar la solicitud; no ampliar la ventana sin evaluar replay.
 
-### Bandeja persistente (19/11/2026)
+Los parámetros de LISPER/INSPER requieren comillas dobles ASCII. Se admiten espacios externos, UTF-8,
+comillas literales duplicadas `""` o escapadas con barra inversa. Los comandos CRM conservan su tolerancia
+histórica a números/texto sin comillas y comillas tipográficas; no se aplica esa excepción al contrato docente.
+Se rechazan comas finales, separadores inválidos y corchetes fuera de parámetros entrecomillados.
 
-La versión nueva guarda cada correo en `log_comandos` antes de borrarlo del buzón. El procesamiento de negocio,
-el resultado y la respuesta pendiente se confirman en una misma transacción. `correos_salientes` conserva el
-mensaje MIME para reintentar su envío sin repetir la operación. Un reintento conserva su Message-ID; si el SMTP
-aceptó el mensaje pero perdió la confirmación, el destinatario puede recibir otra copia de esa misma respuesta.
-Los logs distinguen `RECIBIDO`, `CONFIRMADO`, `PENDIENTE`, `ENVIADO` y `FALLIDO`.
+```text
+LISPER["*"]
+INSPER["4715292","Juan Carlos","Perez Seras","Estudiante","33554433","71055123","juanperez@uagrm.edu.bo"]
+HELP[]
+LISTARUSUARIOS[]
+VERTABLERO[]
+MOVERTARJETA["7","En Contacto"]
+COMPLETARRECORDATORIO["5","Se contactó al prospecto"]
+```
 
-**La migración de esta versión todavía no está aplicada a producción.** Consultar
-[BASE_DATOS.md](BASE_DATOS.md#bandeja-de-entrada-y-salida-del-correo-19112026--pendiente-de-aplicar).
-El JAR nuevo no procesa el buzón si falta la estructura requerida. No ejecutar el SQL de instalación sobre la
-base vigente. Las pruebas locales y sus límites están en [PRUEBAS.md](PRUEBAS.md#caidas-y-recuperacion).
-Si el servidor de un destinatario rechaza una respuesta después de que Gmail la aceptó, el aviso de rebote llega a la
-cuenta emisora; cada minuto se lee por IMAP y queda como `REBOTE respuesta a X no entregada → motivo` en el log y en
-la bitácora. Si IMAP falla, se avisa una vez y el ciclo sigue.
+LISPER e INSPER sólo están disponibles para administrador activo, vigente y autenticado.
+`public.persona` tiene documento, nombres, apellidos, ocupación, teléfono fijo, teléfono celular y correo.
+Documento es PK y correo tiene unicidad sin distinguir mayúsculas. No se inventa una FK al CRM.
+Los siete campos son obligatorios. Las longitudes y formatos exactos figuran en BASE_DATOS.md;
+los teléfonos del contrato docente admiten 7–15 dígitos y un `+` inicial opcional, sin separadores.
+Las consultas, inserciones y respuestas vacías o errores utilizan el procesamiento real y la cola SMTP.
+Los comandos originales de modificar/eliminar usuarios, prospectos y motivos permanecen disponibles.
 
-Si borran tablas o datos, se repone el esquema `public` desde un respaldo (todo o nada, en una sola transacción):
+Los ocho CU se conservan: usuarios; captación/oferta; asignación; embudo; pérdidas; conversión/pagos;
+bitácora/interacciones/recordatorios; reportes. Roles: administrador, coordinador, vendedor y visitante.
+La matriz completa se obtiene con `java -jar target/crm-mail.jar --anexo` y está en doc/matriz-acceso.tsv.
+La guía de negocio permanece en GUIA_CORREO_CASOS_APROBADOS.md.
+
+## Base de datos y migraciones
+
+Ver BASE_DATOS.md y OPERACION.md. El instalador `sql/esquema.sql` sólo sirve para una base nueva;
+rechaza esquemas ocupados. No instalarlo sobre producción ni sustituir registros por referencias de prueba.
+Cuando se autorice el despliegue: detener el lector, obtener y comprobar respaldo, ejecutar el diagnóstico
+`sql/diagnostico_estructura.sql`, contrastar sus diferencias y aplicar las migraciones necesarias en orden:
+bandeja, catálogo y persona. Una cifra de tablas no identifica por sí sola la versión remota.
+La versión de persona se registra en configuraciones; no se agrega otra base ni un esquema CRM retirado.
+P2 deberá adaptar sus consultas al catálogo normalizado; su código no se modifica en esta tarea.
+La API SIS sigue pendiente de su contrato: exportación CSV no significa matrícula automática por API.
+
+## Pruebas reproducibles
 
 ```powershell
-.\respaldo.ps1                                          # respaldo en ..\.secrets\respaldos\public_AAAAMMDD_HHMMSS.dump
-.\respaldo.ps1 -Restaurar ..\.secrets\respaldos\X.dump  # recrea tablas, claves y datos de ese respaldo
+mvn -B test
+python scripts/probar_local.py --java-home RUTA_JDK --defensa
 ```
 
-Cualquier remitente puede escribir (Gmail, Outlook, `@uagrm.edu.bo`...): el rol se busca por su correo en `usuarios`
-y, si no está, actúa como visitante. Se aceptan los prefijos `Re:`/`RV:`/`Fwd:` y las comillas tipográficas.
+La primera orden omite integraciones sin sus variables. La segunda crea PostgreSQL exclusivo en
+127.0.0.1, instala datos ficticios, prueba migraciones, dirige todas las suites a QA local y compila el JAR.
+Con --defensa también interrumpe el proceso y PostgreSQL de prueba y verifica recuperación.
+No lee configuración institucional. Requiere binarios PostgreSQL; se pueden indicar con --pg-bin.
+Resultados actuales en doc/pruebas/local-final.json y defensa-local.json; XML JUnit en target/surefire-reports.
+Los resultados históricos se conservan identificados como anteriores. Detalles en PRUEBAS.md.
 
-Prueba sin correo: `java -jar target/crm-mail.jar --probar crm-mail.properties remitente@gmail.com "VERTABLERO[]"`.
+## Logs, operación y solución de problemas
 
-## Base de datos y alcance
+Logs rotativos en logs/crm-mail.N.log, o en /var/log/crm-mail bajo systemd: fecha, etapa,
+referencia persistente, resultado y recuperación. Los asuntos y direcciones no se imprimen completos.
+`log.directory` y `lock.directory` admiten rutas explícitas; systemd establece sus valores mediante JVM.
+Si falta esquema, corregir la migración antes de reiniciar. Si falla conexión, el lector conserva el buzón
+y reintenta; si SMTP falla, la operación confirmada no se repite. Un fallo definitivo queda trazable.
+No usar `--probar` como diagnóstico de sólo lectura: ejecuta comandos y escribe respuesta.html.
+`--diagnostico` puede autenticar servicios reales; usarlo sólo cuando se autorice y sin otro monitor activo.
+Procedimiento Linux, permisos, reinicio y recuperación: OPERACION.md.
 
-Ahora se termina **P1 correo**, con los ocho casos de uso aprobados. P2 web sigue en
-desarrollo y se continuara despues sobre la misma base y registros. Aunque se comenzo
-por web, correo funciona directamente con PostgreSQL y no requiere ejecutar Laravel.
-La base vigente es `db_grupo05sa`, esquema `public`.
-Estructura e instalacion en una base nueva: [BASE_DATOS.md](BASE_DATOS.md).
+## Documentación y entrega
 
-- El vendedor no se autoasigna ni ve la bolsa; administracion/coordinacion distribuyen por menor carga.
-- Se aceptan los alias En Contacto y Seguimiento; el tablero muestra las seis etapas aprobadas y los pagos pueden gestionarse por correo.
-- CU6 permite generar ordenes, adjuntar comprobantes reales, revisar pagos y confirmar inscripciones sin abrir web.
-- La conversion consulta la inscripcion confirmada, sin duplicarla; la exportacion CSV prepara el intercambio con SIS.
-- `COMPLETARRECORDATORIO["id","resultado"]` exige una nota de cumplimiento.
-- El catalogo externo sigue simulado; las referencias iniciales estan en `sql/referencias.sql`.
-- El acceso actual de correo identifica al remitente registrado; las claves de acceso web se gestionaran en P2.
-- Coordinacion en correo se limita a sus programas (RF1.3); administracion los asigna con `ASIGNARCOORDINADOR`.
-- Guia funcional: [GUIA_CORREO_CASOS_APROBADOS.md](GUIA_CORREO_CASOS_APROBADOS.md).
-- La API del Grupo 06 todavia no esta disponible: no se realiza una matriculacion automatica en SIS.
+PUDS y láminas: doc/P1-INF513-GRUPO05SA.docx, .doc y .pdf; doc/P1-LAMINAS-UML-GRUPO05SA.pdf.
+Modelo editable real: doc/ea/crm-p1.eapx; generadores y diagramas en doc/.
+Un diagrama de cada tipo por CU, vistas conceptuales y lógicas globales y cuatro secuencias del canal.
+Las láminas amplían cada figura completa. No equivalen a fragmentar el modelo.
 
-Pruebas y preparacion del entorno aislado: [PRUEBAS.md](PRUEBAS.md).
-Resumen verificado: `doc/pruebas/integracion-servidor.json` y `PRUEBAS.md`.
-Documento PUDS y diagramas EA actualizados el 19/11/2026 sobre el esquema propuesto: `doc/documento_p1.py` y `doc/ea/ea_p1.py`
-(las firmas de las clases y el despacho de comandos se leen del código con `doc/ea/firmas.py`).
-Para regenerar desde un clon independiente: `python doc/documento_p1.py` (Python con python-docx,
-PyMuPDF, Pillow y pywin32). Se incluye la herramienta FICCT en `doc/lib/` y el logo en `doc/recursos/`;
-no es necesario que el directorio del clon se llame `p1`. EA requiere su instalación autorizada y la exportación
-final requiere Word en Windows. El esquema y el código Java no dependen de esas herramientas documentales.
-Después de generar el DOCX, `scripts/exportar_documento.ps1` exporta DOC y PDF con Word real, sustituye los PNG
-por sus EMF cuando existen y actualiza los índices después de convertir al formato DOC. Se mantiene un único
-diagrama de secuencia por caso de uso, sin vistas adicionales de detalle del CU6.
+```powershell
+python scripts/preparar_entrega.py
+```
 
-Los modelos de dominio inicial, conceptual, lógico, canal de correo, arquitectura y componentes tienen vistas
-globales. El conceptual y el lógico muestran las 25 tablas propuestas en una sola figura por nivel. Cada CU
-conserva un procedimental completo, incluyendo las clases compartidas con sus miembros visibles.
-`scripts/auditar_modelos.py` los coteja contra un PostgreSQL desechable, sin acceder a producción.
-`scripts/laminas_uml.py` genera `doc/P1-LAMINAS-UML-GRUPO05SA.pdf`: las mismas figuras vectoriales completas,
-ampliadas para lectura o impresión. No divide diagramas ni cambia el formato carta del informe principal.
-
-El catálogo normalizado separa `programas(codigo,nombre)` de sus módulos en `catalogo_cache`.
-Se mantienen comandos, códigos, precios e instantáneas comerciales. Tanto la migración de bandeja como
-`sql/migraciones/2026-11-19_normalizar_catalogo.sql` están pendientes en producción; el JAR nuevo
-valida ambas antes de leer el buzón. Ver instrucciones y reversión en `BASE_DATOS.md`.
-P2 deberá adaptar sus consultas a la columna retirada antes de usar este esquema; `crm-web/` no se modificó.
+Genera ../entrega/2026-2_INF513-P1_grupo05sa.zip por lista permitida con manifiesto, CRC y SHA256.
+No publica ni entrega al aula. No incluye credenciales, claves, configuraciones privadas ni logs reales.
+El remoto configurado es https://github.com/vangiewz/inf513-proyecto1; su visibilidad actual no se modifica
+ni se consulta automáticamente. La última verificación conservada lo identificaba como privado.
+CONTINUAR_P1.md registra el estado actual y las acciones externas pendientes.

@@ -18,9 +18,14 @@ class ColaCorreoTest {
   }
 
   @Test
-  void idMensajeUsaLaCabeceraOElResumen() {
-    assertEquals("<abc@gmail.com>", Correo.idMensaje(b("Message-ID: <abc@gmail.com>\r\nSubject: x\r\n\r\ny\r\n")));
-    assertEquals("<abc@gmail.com>", Correo.idMensaje(b("Message-Id:\r\n <abc@gmail.com>\r\nSubject: x\r\n\r\ny\r\n")), "cabecera plegada");
+  void idMensajeUsaContenidoYSeparaLaCabeceraDeProtocolo() {
+    byte[] a = b("Message-ID: <abc@gmail.com>\r\nSubject: x\r\n\r\ny\r\n");
+    byte[] plegado = b("Message-Id:\r\n <abc@gmail.com>\r\nSubject: x\r\n\r\ny\r\n");
+    assertEquals("<abc@gmail.com>", Correo.messageIdOriginal(a));
+    assertEquals(Correo.idMensaje(a), Correo.idMensaje(plegado), "cabecera plegada");
+    assertNotEquals(Correo.idMensaje(a), Correo.idMensaje(b("Message-ID: <abc@gmail.com>\r\nSubject: otro\r\n\r\ny\r\n")),
+        "Message-ID repetido con otro contenido no suprime una solicitud distinta");
+    assertNotEquals(Correo.idMensaje(a), Correo.idMensaje(b("From: otro@example.test\r\nMessage-ID: <abc@gmail.com>\r\nSubject: x\r\n\r\ny\r\n")));
     String sin = Correo.idMensaje(b("Subject: HELP[]\r\n\r\ntelnet\r\n"));
     assertTrue(sin.startsWith("sha256:") && sin.length() == 71);
     assertEquals(sin, Correo.idMensaje(b("Subject: HELP[]\r\n\r\ntelnet\r\n")), "estable al releer");

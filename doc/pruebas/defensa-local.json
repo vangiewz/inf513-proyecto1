@@ -1,0 +1,50 @@
+{
+  "fecha": "2026-11-20 00:00",
+  "semilla": 31,
+  "cortes_forzados": 5,
+  "caidas_de_la_bd": 1,
+  "mensajes_recibidos_durante_caida_bd": 2,
+  "falla_bd_observada_por_lector": true,
+  "recuperacion_bd_observada_por_mismo_proceso": true,
+  "recuperaciones_observadas_mismo_proceso": 1,
+  "segundos_hasta_cada_corte": [
+    1.25,
+    2.51,
+    0.0,
+    1.54,
+    1.46
+  ],
+  "correos_depositados": 35,
+  "comandos_distintos": 30,
+  "relecturas_mismo_message_id": 3,
+  "reintentos_del_usuario": 2,
+  "pop3_quit": {
+    "ok": 8,
+    "perder_respuesta": 0,
+    "sin_aplicar": 1
+  },
+  "smtp_conexiones": {
+    "ok": 31,
+    "caido": 0,
+    "incierto": 2
+  },
+  "registros_por_resultado": {
+    "Éxito": 30,
+    "Repetido": 2
+  },
+  "ejecuciones_por_comando": [
+    1
+  ],
+  "comandos_perdidos": [],
+  "comandos_duplicados": [],
+  "respuestas_recibidas_por_smtp": 33,
+  "message_id_distintos": 30,
+  "copias_repetidas_mismo_message_id": 3,
+  "comandos_sin_respuesta_recibida": [],
+  "registros_sin_respuesta_enviada": [],
+  "quedan_en_buzon": 0,
+  "quedan_recibidos": 0,
+  "quedan_pendientes": 0,
+  "aprobado": true,
+  "log_del_lector": "C:\\Users\\usuario\\AppData\\Local\\Temp\\p1-caidas-rakaq71k\\consola.txt"
+}

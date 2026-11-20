@@ -1,5 +1,15 @@
 # Continuación de la revisión del PUDS — 19/11/2026
 
+## Revisión final posterior
+
+El generador documental incorpora LISPER/INSPER, persona independiente, firma HMAC, frecuencia
+mínima de tres segundos, reconexión y contingencia. El modelo EA y las exportaciones se regeneran
+con las herramientas instaladas, conservando los ocho CU y sus vistas globales.
+Las evidencias de la versión actual son local-final.json, defensa-local.json y los cotejos de
+modelos regenerados. Las cifras y hashes anteriores de este archivo pertenecen a su revisión
+histórica y se sustituyen para la entrega por revision-documental.json actualizado.
+No se prueba ni modifica infraestructura institucional en esta revisión.
+
 Se continuó la revisión documental donde quedó Claude y, por instrucción posterior del usuario, se normalizó
 el catálogo en código Java y SQL locales. No se modificaron base de producción, configuración privada ni
 `crm-web/`. Las migraciones se prueban en PostgreSQL desechable; no se aplicaron al servidor ni se hizo commit,

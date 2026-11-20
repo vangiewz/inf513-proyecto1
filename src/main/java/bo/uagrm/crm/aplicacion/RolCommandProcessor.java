@@ -6,6 +6,8 @@ import bo.uagrm.crm.aplicacion.Respuesta.Carril;
 import bo.uagrm.crm.aplicacion.Respuesta.Tabla;
 import bo.uagrm.crm.dominio.CrmException;
 import bo.uagrm.crm.dominio.Valida;
+import bo.uagrm.crm.dominio.personas.Persona;
+import bo.uagrm.crm.dominio.personas.PersonaService;
 import bo.uagrm.crm.dominio.asignacion.AsignacionService;
 import bo.uagrm.crm.dominio.asignacion.AsignacionService.Asignacion;
 import bo.uagrm.crm.dominio.captacion.Oferta;
@@ -46,6 +48,7 @@ public abstract class RolCommandProcessor {
 
   protected final ResponseFormatter fmt;
   protected final UsuarioService usuarios;
+  protected final PersonaService personas;
   protected final ProspectoService prospectos;
   protected final AsignacionService asignacion;
   protected final EmbudoService embudo;
@@ -59,6 +62,7 @@ public abstract class RolCommandProcessor {
   protected RolCommandProcessor(DatabaseService db, ResponseFormatter fmt) {
     this.fmt = fmt;
     this.usuarios = new UsuarioService(db);
+    this.personas = new PersonaService(db);
     this.prospectos = new ProspectoService(db);
     this.asignacion = new AsignacionService(db);
     this.embudo = new EmbudoService(db);
@@ -111,6 +115,18 @@ public abstract class RolCommandProcessor {
 
   private Respuesta ejecutar(Command c, Usuario u) throws SQLException, CrmException {
     return switch (c.getTipo()) {
+      case LISPER -> {
+        List<Persona> registros = personas.listar(u, c.getParam(0));
+        yield fmt.successTable("Listado de personas",
+            registros.isEmpty() ? "No hay personas registradas." : registros.size() + " persona(s).",
+            Persona.COLUMNAS, filas(registros, Persona::fila));
+      }
+      case INSPER -> {
+        Persona persona = personas.insertar(u, c.getParam(0), c.getParam(1), c.getParam(2),
+            c.getParam(3), c.getParam(4), c.getParam(5), c.getParam(6));
+        yield fmt.successTable("Éxito: persona registrada", "El registro quedó confirmado en PostgreSQL.",
+            Persona.COLUMNAS, List.<String[]>of(persona.fila()));
+      }
       case HELP -> ayuda(c.getParam(0), u);
 
       // CU1. Gestión de Usuarios

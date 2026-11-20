@@ -2,7 +2,7 @@
 Uso: python p1/doc/ea/ea_p1.py  ->  p1/doc/ea/crm-p1.eapx y p1/doc/diagramas/*.png
 Todo nombre de clase, método, comando, host y puerto sale del código de p1/ o de lo verificado en los servidores
 (lista y criterio en P1_CORREO.md § Diagramas)."""
-import math, os, pathlib, random, re, shutil, sys, uuid
+import heapq, math, os, pathlib, random, re, shutil, sys, uuid
 import win32com.client
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -173,6 +173,43 @@ def colocar_asociaciones(ea, d):
         obj.Update()
 
 
+def ruta_ortogonal(a, b, obstaculos):
+    """A* sobre corredores de cajas: admite los quiebres necesarios sin atravesar atributos."""
+    xs = sorted({a[0], b[0]} | {v for x0, _, x1, _ in obstaculos for v in (x0 - 1, x1 + 1)})
+    ys = sorted({a[1], b[1]} | {v for _, y0, _, y1 in obstaculos for v in (y0 - 1, y1 + 1)})
+    origen, destino = (xs.index(a[0]), ys.index(a[1])), (xs.index(b[0]), ys.index(b[1]))
+    coord = lambda n: (xs[n[0]], ys[n[1]])
+    h = lambda n: abs(xs[n[0]] - b[0]) + abs(ys[n[1]] - b[1])
+    pendientes, costo, previo = [(h(origen), 0, origen)], {origen: 0}, {}
+    libres = {}
+    while pendientes:
+        _, g, n = heapq.heappop(pendientes)
+        if g != costo[n]: continue
+        if n == destino:
+            camino = [coord(n)]
+            while n in previo:
+                n = previo[n]; camino.append(coord(n))
+            camino.reverse()
+            esquinas = []
+            for i, p in enumerate(camino[1:-1], 1):
+                anterior, siguiente = camino[i - 1], camino[i + 1]
+                if (anterior[0] == p[0] == siguiente[0]) or (anterior[1] == p[1] == siguiente[1]): continue
+                esquinas.append(p)
+            return esquinas
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            q = n[0] + dx, n[1] + dy
+            if not (0 <= q[0] < len(xs) and 0 <= q[1] < len(ys)): continue
+            borde = tuple(sorted((n, q)))
+            if borde not in libres:
+                libres[borde] = not any(_atraviesa(coord(n), coord(q), r) for r in obstaculos)
+            if not libres[borde]: continue
+            nuevo = g + abs(xs[q[0]] - xs[n[0]]) + abs(ys[q[1]] - ys[n[1]])
+            if nuevo < costo.get(q, float('inf')):
+                costo[q], previo[q] = nuevo, n
+                heapq.heappush(pendientes, (nuevo + h(q), nuevo, q))
+    raise RuntimeError('No existe corredor ortogonal entre las cajas')
+
+
 def rutar_enlaces(ea, d):
     """Enruta en EA las asociaciones que atraviesan otra caja; no cambia sus extremos ni multiplicidades."""
     d.DiagramObjects.Refresh(); d.DiagramLinks.Refresh()
@@ -196,8 +233,7 @@ def rutar_enlaces(ea, d):
             if any(_atraviesa(p, q, r) for p, q in tramos for r in otras): continue
             largo = sum(math.hypot(q[0] - p[0], q[1] - p[1]) for p, q in tramos)
             validas.append((largo, puntos))
-        if not validas: raise RuntimeError('No hay ruta libre para ' + str(c.ConnectorID))
-        _, puntos = min(validas)
+        puntos = min(validas)[1] if validas else ruta_ortogonal(a, b, otras)
         link.LineStyle = 3  # Custom Line, EA Automation API
         link.Path = ''.join(f'{int(x)}:{-int(y)};' for x, y in puntos)
         if not link.Update(): raise RuntimeError('EA no guardó la ruta: ' + link.GetLastError())
@@ -231,7 +267,7 @@ def despejar_cajas(pos, aristas):
                 if (xx, yy) == (x, y): continue
                 if any(xx < ox + ow + 25 and xx + w + 25 > ox and yy < oy + oh + 25 and yy + h + 25 > oy
                        for k, (ox, oy, ow, oh) in pos.items() if k != n): continue
-                propuesta = pos | {n: (xx, yy, w, h)}
+                propuesta = {**pos, n: (xx, yy, w, h)}
                 nota = puntuacion(propuesta)
                 if nota < mejor: mejor, mejor_pos = nota, propuesta
         if mejor_pos is None: break
@@ -394,10 +430,10 @@ def actores(cu):
     return [n for n in ROLES if any(f[0] == cu and f[COL[n]] == 'Sí' for f in MATRIZ)]
 
 
-SERVICIOS = {'CU1': ['UsuarioService'], 'CU2': ['ProspectoService', 'ProgramaService'], 'CU3': ['AsignacionService'],
+SERVICIOS = {'CU1': ['UsuarioService', 'PersonaService'], 'CU2': ['ProspectoService', 'ProgramaService'], 'CU3': ['AsignacionService'],
              'CU4': ['EmbudoService'], 'CU5': ['PerdidaService'], 'CU6': ['ConversionService', 'PagoService', 'ExportacionService'],
              'CU7': ['SeguimientoService'], 'CU8': ['ReporteService']}
-CAMPO = {s: c for c, s in firmas.CAMPOS.items()} | {'ProgramaService': ''}   # nombre del campo que referencia al servicio
+CAMPO = {**{s: c for c, s in firmas.CAMPOS.items()}, 'ProgramaService': ''}   # nombre del campo que referencia al servicio
 LLAMADAS = firmas.llamadas()
 
 
@@ -430,12 +466,12 @@ RELACIONES_INICIALES = [   # (origen, destino, nombre de la asociación, requeri
     ('Interés', 'Motivo de pérdida', 'se pierde por', 'RF3.3'), ('Interés', 'Matrícula', 'se convierte en', 'RF3.4'),
     ('Interés', 'Interacción', 'registra', 'RF4.1'), ('Interés', 'Recordatorio', 'programa', 'RF4.3')]
 
-ENTIDADES_CU = {'CU1': ['Usuario', 'Rol'], 'CU2': ['Oferta', 'Prospecto', 'Interes', 'ProspectoService.Alta'],
+ENTIDADES_CU = {'CU1': ['Usuario', 'Rol', 'Persona'], 'CU2': ['Oferta', 'Prospecto', 'Interes', 'ProspectoService.Alta'],
                 'CU3': ['Interes', 'AsignacionService.Asignacion'], 'CU4': ['Interes'], 'CU5': ['MotivoPerdida', 'Interes'],
                 'CU6': ['Matricula', 'ConversionService.Requisito', 'PagoService.Orden', 'PagoService.Comprobante',
                         'ExportacionService.Preparacion', 'Interes'],
                 'CU7': ['Interaccion', 'Recordatorio', 'SeguimientoService.Historial'], 'CU8': []}
-CANAL = ['App', 'Bandeja', 'Bandeja.Entrante', 'Bandeja.Saliente', 'Pop3Client', 'SmtpSender', 'Correo', 'Rebotes',
+CANAL = ['App', 'Config', 'ControlSondeo', 'BucleSondeo', 'InstanciaCorreo', 'AutenticidadCorreo', 'Bandeja', 'Bandeja.Entrante', 'Bandeja.Saliente', 'Pop3Client', 'SmtpSender', 'Correo', 'Rebotes',
          'CommandProcessor.Atendido']
 NUCLEO = ['Command', 'CommandParser', 'CommandProcessor', 'RolCommandProcessor', 'AdministradorCommandProcessor',
           'CoordinadorCommandProcessor', 'VendedorCommandProcessor', 'PublicoCommandProcessor', 'ResponseFormatter',
@@ -509,6 +545,9 @@ def sueltos(ea):
             for i in ids:
                 e = ea.r.GetElementByID(i)
                 if e.Type in ('Boundary', 'Text', 'InteractionFragment', 'Note', 'Package'): continue
+                # Contrato docente añadido: persona no es equivalente a usuarios/prospectos.
+                # Su independencia es deliberada; no se inventa una FK para satisfacer el dibujo.
+                if e.Name == 'persona' and d.Name.startswith(('Modelo conceptual:', 'Modelo lógico:')): continue
                 if e.Type == 'Class' and e.AssociationClassConnectorID:
                     relacion = ea.r.GetConnectorByID(e.AssociationClassConnectorID)
                     if {relacion.ClientID, relacion.SupplierID} <= ids: continue
@@ -720,12 +759,12 @@ def construir(ea):
         # EA centra el nombre de un boundary, justo donde pasan las dependencias: se rotula arriba a la izquierda
         ea.poner(d, ea.elemento(cap, '', 'Boundary'), 30, y, 1260, h, seq=50)
         ea.poner(d, ea.elemento(cap, nombre, 'Text', notas=nombre), 40, y + 6, 200, 20, seq=40)
-    APP, DIAG, CPR, DBS = 'App (bucle cada 10 s)', 'Diagnostico (causa de cada falla)', 'CommandProcessor y procesadores por rol', 'DatabaseService (PostgreSQL)'
+    APP, DIAG, CPR, DBS = 'App (sondeo serial mínimo 3 s)', 'Diagnostico (causa de cada falla)', 'CommandProcessor y procesadores por rol', 'DatabaseService (PostgreSQL)'
     BAN = 'Bandeja (entrada y salida persistentes)'
     sitio = {APP: (420, 60), DIAG: (740, 60), BAN: (1020, 60), 'Lector de Correos POP3 (Pop3Client)': (60, 180), 'Correo (MIME)': (380, 180),
              'Emisor SMTP (SmtpSender)': (620, 180), 'Lector de rebotes IMAP (Rebotes)': (920, 180),
              CPR: (470, 350), DBS: (520, 690)}
-    dominio = ['usuarios', 'captacion', 'asignacion', 'embudo', 'perdidas', 'conversion', 'pagos', 'seguimiento', 'reportes']
+    dominio = ['usuarios', 'personas', 'captacion', 'asignacion', 'embudo', 'perdidas', 'conversion', 'pagos', 'seguimiento', 'reportes']
     for j, h in enumerate(dominio):
         sitio[h] = (45 + j * 137, 520)
     pk = {}
@@ -758,6 +797,9 @@ def construir(ea):
 
     # Las del canal de correo y del núcleo, de los campos y las llamadas reales de App, Bandeja y CommandProcessor.
     for a, b in [('App', 'Bandeja'), ('App', 'Pop3Client'), ('App', 'SmtpSender'), ('App', 'Correo'), ('App', 'Rebotes'),
+                 ('App', 'Config'), ('App', 'ControlSondeo'), ('App', 'BucleSondeo'), ('App', 'InstanciaCorreo'),
+                 ('App', 'AutenticidadCorreo'), ('App', 'SeguimientoService'), ('App', 'ResponseFormatter'),
+                 ('DatabaseService', 'Config'),
                  ('App', 'CommandProcessor'), ('App', 'DatabaseService'), ('Bandeja', 'DatabaseService'),
                  ('Bandeja', 'Bandeja.Entrante'), ('Bandeja', 'Bandeja.Saliente'), ('App', 'CommandProcessor.Atendido'),
                  ('CommandProcessor', 'CommandProcessor.Atendido'),
@@ -901,7 +943,7 @@ def componentes(ea, imp, servicios):
 # ---------------------------------------------------------------- Diseño: secuencia
 SLOT, Y1 = 35, 133   # alto fijo de cada mensaje en EA 15 y y del primero con las líneas de vida en y=40 (medidos)
 ROBUSTEZ = {'Pop3Client': 'boundary', 'SmtpSender': 'boundary', 'Rebotes': 'boundary', 'Logger': 'boundary',
-            'DatabaseService': 'entity'}
+            'Message': 'boundary', 'DatabaseService': 'entity'}
 
 
 def ancho_msg(texto):
@@ -909,7 +951,7 @@ def ancho_msg(texto):
 
 
 def secuencias(ea, dis):
-    """Un diagrama común de recepción (loop cada 10 s), uno de respuesta, y uno por CU: el flujo común una vez y un
+    """Cuatro interacciones comunes del canal con fixed delay mínimo de 3000 ms, y una por CU: el flujo común una vez y un
     alt [no permitido al rol] / [else] con un alt anidado de un operando por comando del CU."""
     seq = ea.paquete(dis, 'Secuencia')
 
@@ -977,40 +1019,67 @@ def secuencias(ea, dis):
              (o['ban'], o['App'], 'Long', 'return', ''),
              (o['App'], o['pop'], '1.9 dele', 'call', 'i'),
              (o['App'], o['pop'], '1.10 quit', 'call', ' ')]
-    frags = [(4, [('cada intervalo.segundos (10 s)', 2, 17)], 1, 5, 0),
-             (4, [('por mensaje, máximo 20', 5, 16)], 1, 5, 1),
-             (0, [('tamaño > 8 MB', 7, 8), ('else', 9, 10)], 1, 2, 2)]
+    frags = [(4, [('fixed delay >= 3000 ms desde fin; sin superposición ni diagnóstico paralelo', 2, 17)], 1, 5, 0),
+             (1, [('BD y modelo disponibles; si fallan se conserva el buzón sin consultarlo', 3, 17)], 1, 5, 1),
+             (4, [('por mensaje, máximo 20', 5, 16)], 1, 5, 2),
+             (0, [('tamaño > 8 MB', 7, 8), ('else', 9, 10)], 1, 2, 3)]
     dibujar(d, cols, pasos, frags, 'sd-recibir.png')
 
     # --- Procesar un correo guardado: App.procesarUno() en UNA transacción
     d = ea.diagrama(seq, 'Procesar un correo guardado', 'Sequence'); d.StyleEx = 'SuppressBrackets=1;'; d.Update()
     o = {'App': vida('App', ''), 'db': vida('DatabaseService', 'db'), 'ban': vida('Bandeja', 'bandeja'),
-         'cor': vida('Correo', ''), 'proc': vida('CommandProcessor', 'procesador'), 'smtp': vida('SmtpSender', 'smtp')}
-    cols = [o['App'], o['db'], o['ban'], o['cor'], o['proc'], o['smtp']]
+         'cor': vida('Correo', ''), 'auth': vida('AutenticidadCorreo', 'autenticidad'),
+         'proc': vida('CommandProcessor', 'procesador'), 'smtp': vida('SmtpSender', 'smtp')}
+    cols = [o['App'], o['db'], o['ban'], o['cor'], o['auth'], o['proc'], o['smtp']]
     pasos = [(o['App'], o['ban'], '2. porProcesar', 'call', 'max'),
              (o['ban'], o['App'], 'List<Long>', 'return', ''),
              (o['App'], o['db'], '2.1 enTransaccion', 'call', 'c -> procesarUno(c, nro)'),
              (o['App'], o['ban'], '2.2 tomar', 'call', firma('Bandeja', 'tomar')),
              (o['ban'], o['App'], 'Entrante', 'return', ''),
              (o['App'], o['cor'], '2.3 leer', 'call', 'contenido'),
-             (o['App'], o['proc'], '2.4 interpretar', 'call', firma('CommandProcessor', 'interpretar')),
+             (o['App'], o['ban'], '2.4 cerrar', 'call', 'sin remitente / automático / propio: sin respuesta'),
+             (o['App'], o['db'], '2.5 uno', 'call', 'SELECT EXISTS usuario registrado'),
+             (o['App'], o['auth'], '2.6 verificar', 'call', 'contenido, Instant.now()'),
+             (o['auth'], o['App'], 'Resultado: HMAC y plazo válidos', 'return', ''),
+             (o['App'], o['ban'], '2.7 cerrar', 'call', 'Denegado; autenticidad no acreditada'),
+             (o['App'], o['App'], '2.8 encolar', 'call', 'respuesta de denegación'),
+             (o['App'], o['proc'], '2.9 interpretar', 'call', firma('CommandProcessor', 'interpretar')),
              (o['proc'], o['App'], 'Command', 'return', ''),
-             (o['App'], o['ban'], '2.5 repetido', 'call', firma('Bandeja', 'repetido')),
+             (o['App'], o['db'], '2.10 uno', 'call', 'rol, activo y vigencia actuales'),
+             (o['App'], o['proc'], '2.11 procesadores', 'call', ' '),
+             (o['proc'], o['App'], 'matriz de permisos del rol actual', 'return', ''),
+             (o['App'], o['ban'], '2.12 repetido', 'call', firma('Bandeja', 'repetido')),
              (o['ban'], o['App'], 'Long', 'return', ''),
-             (o['App'], o['ban'], '2.6 reenviar', 'call', firma('Bandeja', 'reenviar')),
-             (o['App'], o['ban'], '2.7 cerrar', 'call', 'c, nro, null, "Repetido", ...'),
-             (o['App'], o['db'], '2.8 aislado', 'call', '() -> procesador.atender(...)'),
-             (o['App'], o['proc'], '2.9 atender', 'call', args_msg(firma('CommandProcessor', 'atender'), 34)),
+             (o['App'], o['ban'], '2.13 reenviar', 'call', firma('Bandeja', 'reenviar')),
+             (o['App'], o['ban'], '2.14 cerrar', 'call', 'c, nro, null, "Repetido", ...'),
+             (o['App'], o['db'], '2.15 aislado', 'call', '() -> procesador.atender(...)'),
+             (o['App'], o['proc'], '2.16 atender', 'call', args_msg(firma('CommandProcessor', 'atender'), 34)),
              (o['proc'], o['App'], 'Atendido', 'return', ''),
-             (o['App'], o['ban'], '2.10 cerrar', 'call', args_msg(firma('Bandeja', 'cerrar'), 34)),
-             (o['App'], o['smtp'], '2.11 preparar', 'call', args_msg(firma('SmtpSender', 'preparar'), 34)),
+             (o['App'], o['ban'], '2.17 cerrar', 'call', args_msg(firma('Bandeja', 'cerrar'), 34)),
+             (o['App'], o['smtp'], '2.18 preparar', 'call', args_msg(firma('SmtpSender', 'preparar'), 34)),
              (o['smtp'], o['App'], 'byte[]', 'return', ''),
-             (o['App'], o['ban'], '2.12 encolar', 'call', args_msg(firma('Bandeja', 'encolar'), 34)),
+             (o['App'], o['ban'], '2.19 encolar', 'call', args_msg(firma('Bandeja', 'encolar'), 34)),
              (o['ban'], o['App'], 'long', 'return', ''),
-             (o['db'], o['App'], 'COMMIT: operación, registro y respuesta en cola juntos', 'return', '')]
-    frags = [(4, [('por cada correo guardado, en orden de llegada', 3, 21)], 0, 5, 0),
-             (1, [('comando de escritura sin adjunto', 9, 10)], 0, 2, 1),
-             (0, [('repetido: ya se ejecutó', 11, 12), ('else', 13, 20)], 0, 5, 1)]
+             (o['db'], o['App'], 'COMMIT: operación, registro y respuesta en cola juntos', 'return', ''),
+             (o['db'], o['App'], 'ROLLBACK; SQLException de conexión', 'return', ''),
+             (o['App'], o['App'], '2.20 falla', 'call', 'BD; conservar Recibido; backoff >= 3000 ms'),
+             (o['db'], o['App'], 'ROLLBACK; excepción interna no relacionada con conexión', 'return', ''),
+             (o['App'], o['db'], '2.21 enTransaccion', 'call', 'respuesta de contingencia'),
+             (o['App'], o['ban'], '2.22 tomar', 'call', 'c, nro'),
+             (o['App'], o['cor'], '2.23 leer', 'call', 'contenido'),
+             (o['App'], o['App'], '2.24 encolar', 'call', 'respuesta de error sin confirmar operación'),
+             (o['App'], o['ban'], '2.25 cerrar', 'call', 'Error; contingencia en cola'),
+             (o['db'], o['App'], 'COMMIT contingencia', 'return', ''),
+             (o['db'], o['App'], 'ROLLBACK contingencia; sigue Recibido para recuperación', 'return', '')]
+    frags = [(4, [('por cada correo guardado; una transacción por solicitud', 3, 40)], 0, 6, 0),
+             (0, [('proceso sin excepción', 4, 30), ('conexión perdida: sigue Recibido', 31, 32),
+                  ('fallo interno: contingencia', 33, 40)], 0, 6, 1),
+             (0, [('sin remitente / automático / propio', 7, 7), ('correo procesable de tamaño permitido', 8, 29)], 0, 6, 2),
+             (1, [('usuario registrado', 9, 10)], 0, 4, 3),
+             (0, [('registrado: firma no válida', 11, 12), ('firma válida o visitante', 13, 29)], 0, 6, 3),
+             (1, [('escritura y permiso actual antes del reintento', 18, 19)], 0, 2, 4),
+             (0, [('repetido autorizado', 20, 21), ('else', 22, 29)], 0, 6, 4),
+             (0, [('respuesta de contingencia confirmable', 34, 39), ('contingencia no confirmable', 40, 40)], 0, 6, 2)]
     dibujar(d, cols, pasos, frags, 'sd-procesar.png', extra_der=60)
 
     # --- Enviar la cola de salida: App.enviarCola(); el envío se reintenta sin repetir la operación
@@ -1035,17 +1104,34 @@ def secuencias(ea, dis):
     # --- Leer rebotes: respuestas que Gmail aceptó y el servidor del destinatario rechazó después (App.revisarRebotes)
     d = ea.diagrama(seq, 'Leer rebotes', 'Sequence'); d.StyleEx = 'SuppressBrackets=1;'; d.Update()
     o3 = {'App': vida('App', ''), 'reb': vida('Rebotes', 'rebotes'), 'ban': vida('Bandeja', 'bandeja'),
-          'log': vida('Logger', 'LOG'), 'proc': vida('CommandProcessor', 'procesador')}
-    cols = [o3['App'], o3['reb'], o3['ban'], o3['log'], o3['proc']]
-    pasos = [(o3['App'], o3['App'], '4. ciclo', 'call', ' '),
+          'log': vida('Logger', 'LOG'), 'seg': vida('SeguimientoService', 'seguimiento'),
+          'db': vida('DatabaseService', 'db'), 'aviso': vida('Message', 'aviso')}
+    cols = [o3['aviso'], o3['reb'], o3['App'], o3['ban'], o3['seg'], o3['db'], o3['log']]
+    pasos = [(o3['App'], o3['App'], '4. revisarRebotesSiCorresponde', 'call', 'this::revisarRebotes'),
              (o3['App'], o3['App'], '4.1 revisarRebotes', 'call', ' '),
-             (o3['App'], o3['reb'], '4.2 nuevos', 'call', ' '),
-             (o3['reb'], o3['App'], 'List<Rebote>', 'return', ''),
-             (o3['App'], o3['ban'], '4.3 rebote', 'call', firma('Bandeja', 'rebote')),
-             (o3['App'], o3['log'], '4.4 warning', 'call', '"REBOTE respuesta a " + destinatario + ...'),
-             (o3['App'], o3['proc'], '4.5 bitacora', 'call', 'destinatario, null, "(rebote)", "Error", motivo')]
-    dibujar(d, cols, pasos, [(1, [('ciclo % 6 == 1 (cada minuto)', 2, 7)], 0, 4, 0),
-                             (4, [('por cada rebote nuevo', 5, 7)], 0, 4, 1)], 'sd-rebotes.png', extra_der=120)
+             (o3['App'], o3['reb'], '4.2 procesar', 'call', 'callback de confirmación'),
+             (o3['reb'], o3['aviso'], '4.3 writeTo', 'call', 'crudo; IMAP peek=true'),
+             (o3['reb'], o3['reb'], '4.4 leer', 'call', 'crudo.toByteArray()'),
+             (o3['reb'], o3['App'], '4.5 registrarRebote', 'call', 'rebote'),
+             (o3['App'], o3['db'], '4.6 enTransaccion', 'call', 'actualización y bitácora juntas'),
+             (o3['App'], o3['ban'], '4.7 rebote', 'call', 'destinatario, motivo, originalMessageId'),
+             (o3['ban'], o3['db'], '4.8 actualizar', 'call', 'UPDATE respuesta con Message-ID exacto'),
+             (o3['App'], o3['seg'], '4.9 registrarComando', 'call', 'DSN correlacionado o aviso sin correlación'),
+             (o3['seg'], o3['db'], '4.10 actualizar', 'call', 'INSERT bitácora del DSN'),
+             (o3['db'], o3['App'], 'COMMIT: resultado y bitácora del DSN', 'return', ''),
+             (o3['App'], o3['App'], 'int: respuestas correlacionadas', 'return', ''),
+             (o3['App'], o3['log'], '4.11 warning', 'call', 'REBOTE registrado; sin datos personales'),
+             (o3['App'], o3['reb'], 'callback confirmado', 'return', ''),
+             (o3['reb'], o3['aviso'], '4.12 setFlag', 'call', 'Flags.Flag.SEEN, true'),
+             (o3['db'], o3['App'], 'ROLLBACK; SQLException', 'return', ''),
+             (o3['App'], o3['reb'], 'callback fallido', 'return', ''),
+             (o3['reb'], o3['App'], 'MessagingException; aviso permanece sin leer', 'return', ''),
+             (o3['App'], o3['App'], '4.13 falla', 'call', 'IMAP; reintento tras el plazo'),
+             (o3['reb'], o3['App'], 'int: avisos procesados', 'return', '')]
+    dibujar(d, cols, pasos, [(1, [('>= 60000 ms desde FIN último intento; también al fallar', 2, 21)], 0, 6, 0),
+                             (4, [('por cada DSN sin leer', 4, 20)], 0, 6, 1),
+                             (0, [('persistencia confirmada', 12, 16), ('falló persistencia: sin SEEN', 17, 20)], 0, 6, 2)],
+            'sd-rebotes.png', extra_der=120)
 
     # --- Una por CU (o por parte): el correo guardado entra por App.atender() y vuelve como Atendido
     for k in CU:
@@ -1141,6 +1227,7 @@ AREAS = [('Modelo conceptual completo', 'conceptual-global', list(tablas_sql()))
 # están en su mapeo. Las relaciones son las claves foráneas; la intermedia N-N pura (orden_pago_descuentos) es una
 # clase de asociación unida con línea punteada a la relación entre sus dos entidades fuertes.
 ESENCIALES = {
+    'persona': ['documento', 'nombres', 'apellidos', 'ocupacion', 'telefono_fijo', 'telefono_celular', 'correo'],
     'roles': ['nombre', 'descripcion'], 'usuarios': ['correo', 'nombre', 'apellido', 'estado', 'fecha_inicio', 'fecha_fin'],
     'api_tokens': ['token_hash', 'expira_en'], 'configuraciones': ['clave', 'valor'],
     'notificaciones': ['tipo', 'mensaje', 'estado'], 'log_comandos': ['remitente', 'asunto', 'resultado', 'fecha'],
@@ -1189,7 +1276,7 @@ def modelo_datos(ea, dis):
         vecinas = list(dict.fromkeys(x for h_, p_ in relaciones for x in ((p_,) if h_ in propias else (h_,) if p_ in propias else ())
                                      if x not in propias))
         d = ea.diagrama(con, f'Modelo conceptual: {titulo}', 'Logical')
-        medidas = {t: caja(t) for t in propias} | {t: (int(50 + 7 * len(t)), 44) for t in vecinas}
+        medidas = {**{t: caja(t) for t in propias}, **{t: (int(50 + 7 * len(t)), 44) for t in vecinas}}
         pos, w, h, at, cr = acomodar(medidas, relaciones, gx=70, gy=80)
         pos, w, h, at, cr = despejar_cajas(pos, relaciones)
         for t, (x, y, ww, hh) in pos.items():
@@ -1217,7 +1304,7 @@ def modelo_datos(ea, dis):
         vecinas = list(dict.fromkeys(x for h_, _, p_, _ in fks for x in ((p_,) if h_ in propias else (h_,) if p_ in propias else ())
                                      if x not in propias))
         d = ea.diagrama(datos, f'Modelo lógico: {titulo}', 'Logical')
-        medidas = {t: medida[t] for t in propias} | {t: (int(50 + 7 * len(t)), 44) for t in vecinas}
+        medidas = {**{t: medida[t] for t in propias}, **{t: (int(50 + 7 * len(t)), 44) for t in vecinas}}
         relaciones = [(h_, p_) for h_, _, p_, _ in fks]
         pos, w, h, at, cr = acomodar(medidas, relaciones, gx=70, gy=80)
         pos, w, h, at, cr = despejar_cajas(pos, relaciones)
@@ -1227,5 +1314,54 @@ def modelo_datos(ea, dis):
         print(f'      {archivo}.png: {w}×{h} → {efectivo(w, h):.1f} pt; líneas sobre cajas {at}, cruces {cr}')
 
 
+def actualizar_secuencias():
+    """Regenera solo las interacciones en el modelo EA existente, preservando el resto del diseño."""
+    ea = EA.__new__(EA)
+    ea.r = win32com.client.Dispatch('EA.Repository')
+    if not ea.r.OpenFile(str(EAPX)): raise SystemExit('EA no abrió ' + str(EAPX))
+    ea.pi = ea.r.GetProjectInterface()
+    ea.exportados = []
+    try:
+        ea.modelo = next(p for p in ea.r.Models if p.Name == 'CRM vía e-mail (P1, Grupo 05 SA)')
+        dis = next(p for p in ea.modelo.Packages if p.Name == '3. Diseño')
+        for i in range(dis.Packages.Count - 1, -1, -1):
+            if dis.Packages.GetAt(i).Name == 'Secuencia': dis.Packages.DeleteAt(i, False)
+        dis.Packages.Refresh()
+        secuencias(ea, dis)
+        print(str(len(ea.exportados)) + ' secuencias actualizadas en EA')
+    finally:
+        ea.cerrar()
+
+
+def actualizar_modelos():
+    """Regenera conceptual/lógico completos y componentes en el modelo EA existente."""
+    ea = EA.__new__(EA)
+    ea.r = win32com.client.Dispatch('EA.Repository')
+    if not ea.r.OpenFile(str(EAPX)): raise SystemExit('EA no abrió ' + str(EAPX))
+    ea.pi = ea.r.GetProjectInterface()
+    ea.exportados = []
+    try:
+        ea.modelo = next(p for p in ea.r.Models if p.Name == 'CRM vía e-mail (P1, Grupo 05 SA)')
+        dis = next(p for p in ea.modelo.Packages if p.Name == '3. Diseño')
+        imp = next(p for p in ea.modelo.Packages if p.Name == '4. Implementación')
+        for i in range(dis.Packages.Count - 1, -1, -1):
+            if dis.Packages.GetAt(i).Name in ('Modelo conceptual', 'Modelo de datos'):
+                dis.Packages.DeleteAt(i, False)
+        dis.Packages.Refresh()
+        for i in range(imp.Diagrams.Count - 1, -1, -1):
+            if imp.Diagrams.GetAt(i).Name == 'Diagrama de componentes': imp.Diagrams.DeleteAt(i, False)
+        imp.Diagrams.Refresh()
+        for i in range(imp.Elements.Count - 1, -1, -1):
+            if imp.Elements.GetAt(i).Type in ('Component', 'Interface'): imp.Elements.DeleteAt(i, False)
+        imp.Elements.Refresh()
+        modelo_datos(ea, dis)
+        componentes(ea, imp, [s for ss in SERVICIOS.values() for s in ss])
+        print(str(len(ea.exportados)) + ' modelos globales actualizados en EA')
+    finally:
+        ea.cerrar()
+
+
 if __name__ == '__main__':
-    main()
+    if sys.argv[1:] == ['--secuencias']: actualizar_secuencias()
+    elif sys.argv[1:] == ['--modelos']: actualizar_modelos()
+    else: main()

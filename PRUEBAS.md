@@ -1,5 +1,42 @@
 # Pruebas de P1 correo
 
+## Ejecución reproducible de la revisión final
+
+```powershell
+python scripts/probar_local.py --java-home RUTA_JDK_21_O_POSTERIOR --defensa
+```
+
+Requiere Maven y PostgreSQL 18; `--pg-bin` permite indicar sus binarios. Crea un clúster exclusivo
+escuchando sólo en 127.0.0.1 y lo detiene al terminar. No lee credenciales privadas; sobrescribe
+las variables P1 de las integraciones para que ninguna suite se dirija al servidor institucional.
+También las clases llamadas ServidorCompartidoTest y CorreoServidorFinancieroTest se ejecutan localmente.
+Los logs de desarrollo se conservan bajo target/qa-local y no se incluyen en el ZIP.
+
+El runner comprueba instalación y referencias repetibles, migración de bandeja, conservación del
+catálogo y rollback de conflictos, y reaplicación de persona. JUnit incluye además el rechazo de
+CHECK debilitados e índices parciales, compuestos o sin normalización de correo, y versión futura.
+
+Las pruebas de persona recorren inserción, consulta posterior, duplicados, tipos y
+longitudes, errores y permisos. PersonaCorreoTest utiliza POP3/SMTP locales, PostgreSQL real y firma
+HMAC válida para recorrer App.ciclo. BandejaCorreoTest incluye caída SMTP, persistencia, relectura,
+suplantación de From, rebotes exactos y contingencia después del rollback de un fallo interno.
+
+ControlSondeoTest y AppTest utilizan relojes/esperas simulados para comprobar fixed delay, ciclo de
+siete segundos más espera de tres, exclusión, cierre, backoff y frecuencia IMAP independiente.
+ReconexionTest verifica la espera institucional mínima y clasificación de credenciales sin abrir red.
+AutenticidadCorreoTest prueba firmas, alteraciones, caducidad y representación hexadecimal canónica.
+El vector HMAC coincide con scripts/firmar_correo.py; ninguna clave de prueba es una credencial real.
+
+Con --defensa se ejecuta el JAR real, con EML firmados y polling de 3000 ms, se corta su proceso y
+se interrumpe PostgreSQL mediante pg_ctl sobre el clúster exclusivo. Al final se comprueba ausencia
+de solicitudes perdidas y operaciones duplicadas y recuperación de las respuestas SMTP.
+Esta prueba no utiliza correo real ni demuestra la política del firewall institucional.
+
+Evidencias actuales: doc/pruebas/local-final.json, defensa-local.json y XML de target/surefire-reports.
+Los números del registro histórico siguiente no sustituyen las pruebas actuales. La corrida inicial
+de esta revisión encontró un fallo de validación telefónica en persona; se corrigió conservando la
+compatibilidad CRM y se repitieron las verificaciones correspondientes.
+
 Requiere Java 21+ y Maven. Desde este repositorio:
 
 ```sh
@@ -112,11 +149,14 @@ Requiere Enterprise Architect por COM, pywin32 y PostgreSQL 18 instalado (opció
 binarios). Crea un clúster nuevo y exclusivo en `127.0.0.1`, instala `sql/esquema.sql` y compara sus metadatos
 con `doc/ea/crm-p1.eapx`. Detiene y elimina el clúster al terminar. No usa credenciales ni datos del CRM real.
 
-Después de normalizar, el esquema propuesto tiene 25 tablas, 209 columnas y 34 FK; el lógico
+La revisión histórica después de normalizar tenía 25 tablas, 209 columnas y 34 FK; el lógico
 representa las columnas que no son FK como atributos (incluyendo las FK que también son PK) y las FK restantes como asociaciones. Se comprueban PK, UNIQUE y
 nulos al determinar las multiplicidades, el conceptual sin tipos ni métodos, la clase de asociación N a N,
 una vista global por nivel y una secuencia y un procedimental completo por cada CU. Evidencia:
 `doc/pruebas/modelos-globales.json`. Esta auditoría es adicional a las pruebas de aplicación.
+La revisión final agrega persona y alcanza 26 tablas, 216 columnas y las mismas 34 FK; la entidad
+docente independiente no inventa relaciones con el CRM. Consultar la fecha y el alcance del informe
+de modelos regenerado antes de atribuir sus comprobaciones a esta revisión.
 
 ## Catálogo normalizado y regresión de P1
 

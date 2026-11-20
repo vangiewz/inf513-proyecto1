@@ -244,17 +244,32 @@ public final class Bandeja {
     return Math.min(60, 1 << Math.min(n - 1, 6));
   }
 
-  /** Gmail aceptó la respuesta pero el servidor del destinatario la rechazó después (DSN). */
+  /** Sin identificador del mensaje original no se atribuye el DSN a una respuesta arbitraria. */
+  @Deprecated
   public int rebote(String destinatario, String motivo) throws SQLException {
-    try (Connection c = db.getConnection()) {
-      return DatabaseService.actualizar(
-          c,
-          "UPDATE correos_salientes SET estado='Rebotado',ultimo_error=? WHERE nro_correo=(SELECT"
-              + " max(nro_correo) FROM correos_salientes WHERE lower(destinatario)=lower(?) AND"
-              + " estado='Enviado')",
-          corto(motivo, 500),
-          destinatario);
-    }
+    return 0;
+  }
+
+  /** Correlaciona destinatario y Message-ID MIME exactos, incluyendo copias de una respuesta. */
+  public int rebote(String destinatario, String motivo, String originalMessageId) throws SQLException {
+    if (originalMessageId == null || !originalMessageId.matches("<[^<>\\s]{3,250}>")) return 0;
+    return db.enTransaccion(c -> {
+      record Candidato(long nro, byte[] mensaje) {}
+      var candidatos = lista(c, rs -> new Candidato(rs.getLong(1), rs.getBytes(2)),
+          "SELECT nro_correo,mensaje FROM correos_salientes WHERE lower(destinatario)=lower(?)"
+              + " AND estado IN ('Enviado','Pendiente','Rebotado')"
+              + " AND position(convert_to(?,'UTF8') in mensaje)>0 FOR UPDATE",
+          destinatario, originalMessageId);
+      int cambios = 0;
+      for (Candidato candidato : candidatos) {
+        if (originalMessageId.equals(Correo.messageIdOriginal(candidato.mensaje()))) {
+          cambios += DatabaseService.actualizar(c,
+              "UPDATE correos_salientes SET estado='Rebotado',ultimo_error=? WHERE nro_correo=?",
+              corto(motivo, 500), candidato.nro());
+        }
+      }
+      return cambios;
+    });
   }
 
   public Estado estado() throws SQLException {

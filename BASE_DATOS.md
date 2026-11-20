@@ -1,5 +1,57 @@
 # Base de datos del CRM
 
+## Revisión final local con contrato docente
+
+La estructura actual de instalación incorpora **26 tablas, 216 columnas y 34 FK**. Se conservan las
+25 tablas CRM y se agrega `public.persona` con siete campos independientes: documento (PK), nombres,
+apellidos, ocupación, teléfono fijo, teléfono celular y correo. No se inventan vínculos con usuarios
+o prospectos. Esta excepción al criterio histórico de tablas relacionadas responde al contrato docente
+de LISPER/INSPER y no elimina ninguna relación CRM.
+
+La nueva migración es `sql/migraciones/2026-11-19_persona.sql`. Es incremental y repetible si la
+estructura existente coincide con el contrato; compara columnas, PK, expresiones CHECK e índice
+UNIQUE global de lower(correo). Rechaza estructuras debilitadas y versiones futuras. Su versión se
+conserva como `schema.persona.version=1` en configuraciones, sin otra tabla de control aislada.
+El instalador para base nueva incluye la misma versión. Los siete campos son NOT NULL; no se
+insertan personas ficticias como referencias de producción.
+
+| Parámetro INSPER / columna | Tipo SQL | Validación del contrato docente |
+|---|---|---|
+| 1. `documento` | varchar(15), PK | CI de 5–10 dígitos, con complemento opcional de hasta tres caracteres alfanuméricos |
+| 2. `nombres` | varchar(120) | Texto no vacío, sin caracteres de control |
+| 3. `apellidos` | varchar(120) | Texto no vacío, sin caracteres de control |
+| 4. `ocupacion` | varchar(80) | Texto no vacío, sin caracteres de control |
+| 5. `telefono_fijo` | varchar(16) | 7–15 dígitos; `+` inicial opcional, sin espacios ni guiones internos |
+| 6. `telefono_celular` | varchar(16) | Mismo formato del teléfono fijo |
+| 7. `correo` | varchar(120) | Formato de correo válido y unicidad global de `lower(correo)` |
+
+Los delimitadores de LISPER/INSPER son comillas dobles ASCII; LISPER exige exactamente `"*"`.
+La inserción no crea cuentas ni permisos. Ambos comandos requieren administrador activo, vigente
+y autenticado por el canal. La tolerancia histórica del teléfono CRM no se aplica a los campos docentes.
+
+Para inspeccionar una base existente está preparado `sql/diagnostico_estructura.sql`, de sólo lectura.
+Compara nombres, tipos, nulabilidad, restricciones e índices; no se deduce el estado por contar tablas.
+Orden previsto: diagnóstico y respaldo recuperable, bandeja, catálogo, persona y diagnóstico posterior.
+Las tres migraciones siguen pendientes de intervención institucional autorizada.
+
+El marcador `schema.persona.version` complementa la verificación de estructura, no la sustituye.
+Una vez confirmada la existencia de configuraciones, se puede consultar su valor con
+`SELECT clave,valor FROM public.configuraciones WHERE clave='schema.persona.version';`.
+La migración no sobrescribe versiones distintas de 1 y compara las expresiones CHECK reales con
+un contrato temporal interpretado por PostgreSQL; un nombre correcto con CHECK debilitado no basta.
+
+En la versión final, `log_comandos.message_id` conserva una clave SHA-256 del contenido y las
+cabeceras esenciales y de firma; no confía únicamente en el Message-ID suministrado por el remitente.
+El Message-ID de protocolo se obtiene por separado para correlacionar respuestas y conversaciones.
+
+La reversión de bandeja ahora rechaza estructuras con datos que pudieran perderse, incluidas salidas
+ya enviadas. La recuperación debe conservar los registros y volver al JAR compatible. No retirar
+persona para revertir una aplicación. Procedimiento completo: [OPERACION.md](OPERACION.md).
+
+`scripts/probar_local.py` verifica migraciones y ejecuta las integraciones exclusivamente contra
+PostgreSQL de 127.0.0.1. Sus resultados actuales se conservan en `doc/pruebas/local-final.json`.
+Las cifras de 23, 24 y 25 tablas de las secciones fechadas siguientes describen revisiones anteriores.
+
 P1 correo es la entrega actual. P2 web sigue en desarrollo: ambos proyectos usaran la misma base y los mismos registros. Aunque se comenzo desarrollando web, ahora se completa correo con los ocho casos de uso aprobados; despues se continuara web sobre esta base.
 
 ## Destino vigente

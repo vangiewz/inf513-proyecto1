@@ -7,8 +7,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Lee el asunto: NOMBRE["param1","param2",...]. Acepta [] y ["*"] sin parámetros (como LISPER["*"]
- * del enunciado), números sin comillas y las comillas tipográficas que ponen los celulares.
+ * Lee NOMBRE["param1",...]. LISPER/INSPER exigen comillas ASCII y contratos docentes exactos.
+ * Los comandos CRM conservan los parámetros sin comillas y las comillas tipográficas históricas.
+ * Dentro de cadenas se admiten comillas duplicadas y escapes de comilla o barra mediante barra.
  */
 public final class CommandParser {
 
@@ -60,12 +61,19 @@ public final class CommandParser {
     }
     List<String> params;
     try {
-      params = parametros(m.group(2));
+      boolean docente = tipo == Comando.LISPER || tipo == Comando.INSPER;
+      if (docente) {
+        // No normalizar delimitadores tipográficos en el contrato obligatorio del docente.
+        m = FORMA.matcher(PREFIJO.matcher(asunto).replaceFirst(""));
+        if (!m.matches()) throw new IllegalArgumentException("Use COMANDO[\"parámetro\",...].");
+      }
+      params = parametros(m.group(2), docente);
     } catch (IllegalArgumentException e) {
       return Command.invalido(
           nombre, e.getMessage() + " Forma correcta: " + tipo.firma(), remitente);
     }
-    if (params.size() == 1 && params.get(0).equals("*")) params = List.of();
+    if (tipo != Comando.LISPER && tipo != Comando.INSPER
+        && params.size() == 1 && params.get(0).equals("*")) params = List.of();
     if (params.size() < tipo.minimos() || params.size() > tipo.parametros.length)
       return Command.invalido(
           nombre,
@@ -88,16 +96,28 @@ public final class CommandParser {
    */
   public static boolean pareceComando(String asunto) {
     String a = limpiar(asunto);
-    return FORMA.matcher(a).matches() || INICIO.matcher(a).find();
+    if (FORMA.matcher(a).matches() || INICIO.matcher(a).find()) return true;
+    // Un comando conocido sin corchetes merece un error; un saludo/publicidad no se responde.
+    try {
+      Comando.valueOf(a.trim().toUpperCase(Locale.ROOT));
+      return true;
+    } catch (IllegalArgumentException e) {
+      return false;
+    }
   }
 
   static List<String> parametros(String texto) {
+    return parametros(texto, false);
+  }
+
+  private static List<String> parametros(String texto, boolean estricto) {
     List<String> out = new ArrayList<>();
     String t = texto.trim();
     if (t.isEmpty()) return out;
     int i = 0, n = t.length();
     while (true) {
       while (i < n && Character.isWhitespace(t.charAt(i))) i++;
+      if (i >= n) throw new IllegalArgumentException("Falta un parámetro después de la coma.");
       StringBuilder sb = new StringBuilder();
       if (i < n && t.charAt(i) == '"') {
         i++;
@@ -105,7 +125,9 @@ public final class CommandParser {
           if (i >= n)
             throw new IllegalArgumentException("Falta cerrar una comilla en los parámetros.");
           char ch = t.charAt(i++);
-          if (ch != '"') sb.append(ch);
+          if (ch == '\\' && i < n && (t.charAt(i) == '"' || t.charAt(i) == '\\'))
+            sb.append(t.charAt(i++));
+          else if (ch != '"') sb.append(ch);
           else if (i < n && t.charAt(i) == '"') {
             sb.append('"');
             i++;
@@ -113,7 +135,16 @@ public final class CommandParser {
         }
         while (i < n && Character.isWhitespace(t.charAt(i))) i++;
       } else {
-        while (i < n && t.charAt(i) != ',') sb.append(t.charAt(i++));
+        if (estricto)
+          throw new IllegalArgumentException("Todos los parámetros deben llevar comillas dobles ASCII.");
+        while (i < n && t.charAt(i) != ',') {
+          char ch = t.charAt(i++);
+          if (ch == '"' || ch == '[' || ch == ']')
+            throw new IllegalArgumentException("Corchetes o comillas fuera de un parámetro válido.");
+          sb.append(ch);
+        }
+        if (sb.toString().isBlank())
+          throw new IllegalArgumentException("Los parámetros vacíos deben escribirse como \"\".");
       }
       out.add(sb.toString().trim());
       if (i >= n) return out;

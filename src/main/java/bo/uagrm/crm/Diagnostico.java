@@ -21,7 +21,7 @@ import javax.net.ssl.SSLException;
 
 /**
  * Traduce una falla de red, de POP3, de SMTP o de PostgreSQL a su causa probable, para el log del
- * servicio. Con --diagnostico (y al arrancar) revisa paso a paso DNS, TCP, POP3, SMTP y la BD.
+ * servicio. Con --diagnostico revisa POP3, SMTP, IMAP y BD una vez, sin sondeos TCP redundantes.
  */
 public final class Diagnostico {
 
@@ -97,23 +97,22 @@ public final class Diagnostico {
     if (m.contains("[AUTH]") || m.contains("PASS") || m.contains("USER"))
       return "POP3 rechazó el login: usuario o contraseña del buzón, o cuenta deshabilitada (" + m + ")";
     if (m.contains("[SYS/PERM]")) return "POP3: error permanente del servidor de correo (" + m + ")";
-    if (m.endsWith("null")) return "POP3: el servidor cerró la conexión sin responder";
+    if (m.endsWith("null") || m.contains("conexión cerrada")) return "POP3: el servidor cerró la conexión sin responder";
     return m;
   }
 
   /** Revisión completa paso a paso; devuelve true si todo está bien. */
   public static boolean revisar(
       Config cfg, SmtpSender smtp, bo.uagrm.crm.presentacion.Rebotes rebotes, DatabaseService db) {
-    boolean ok = red(cfg.pop3Host(), cfg.pop3Puerto());
-    ok &= paso("POP3", cfg.pop3Host(), cfg.pop3Puerto(), () -> {
+    // El saludo real prueba DNS/TCP: no abrir una conexión TCP adicional inmediatamente antes.
+    boolean ok = paso("POP3", cfg.pop3Host(), cfg.pop3Puerto(), () -> {
       try (Pop3Client pop =
-          new Pop3Client(cfg.pop3Host(), cfg.pop3Puerto(), cfg.pop3Usuario(), cfg.pop3Password())) {
+          new Pop3Client(cfg.pop3Host(), cfg.pop3Puerto(), cfg.pop3Usuario(), cfg.pop3Password(), cfg.pop3Seguridad())) {
         String r = "login " + cfg.pop3Usuario() + " OK, " + pop.stat() + " mensaje(s) en el buzón";
         pop.quit();
         return r;
       }
     });
-    ok &= red(cfg.smtpHost(), cfg.smtpPuerto());
     ok &= paso("SMTP", cfg.smtpHost(), cfg.smtpPuerto(), () -> {
       smtp.verificar();
       return "login STARTTLS de " + cfg.smtpUsuario() + " OK";
@@ -122,7 +121,6 @@ public final class Diagnostico {
       rebotes.verificar();
       return "login de " + cfg.smtpUsuario() + " OK (lectura de rebotes)";
     });
-    ok &= red(cfg.dbHost(), cfg.dbPuerto());
     ok &= paso("BD", cfg.dbHost(), cfg.dbPuerto(), () -> String.join(", ", db.diagnostico()));
     LOG.info(ok ? "Diagnóstico: todo en orden." : "Diagnóstico: hay fallas, ver arriba.");
     return ok;

@@ -83,26 +83,42 @@ public record Correo(
   }
 
   /**
-   * Identidad del correo para no registrarlo dos veces: su cabecera Message-ID o, si falta o es
-   * inválida, "sha256:" y el resumen del contenido (una relectura del buzón trae los mismos bytes).
+   * Identidad persistente del contenido y sus cabeceras esenciales. Un Message-ID ajeno no permite
+   * suprimir otro correo con distinto remitente, asunto o cuerpo. Las cabeceras de transporte no
+   * cambian esta identidad al releer o reenviar los mismos bytes MIME.
    */
   public static String idMensaje(byte[] crudo) {
     try {
-      var h = new jakarta.mail.internet.InternetHeaders(new ByteArrayInputStream(crudo));
-      String id = h.getHeader("Message-ID", null);
-      if (id != null) {
-        id = id.replaceAll("\\s+", "");
-        if (id.matches("<[^<>]{3,250}>")) return id;
+      MimeMessage m = new MimeMessage(SESION, new ByteArrayInputStream(crudo));
+      var digest = java.security.MessageDigest.getInstance("SHA-256");
+      digest.update(AutenticidadCorreo.material(m, ""));
+      // Una copia sin firma no puede ocupar la identidad persistente de una solicitud firmada.
+      for (String cabecera : new String[] {AutenticidadCorreo.TIEMPO, AutenticidadCorreo.FIRMA}) {
+        String[] valores = m.getHeader(cabecera);
+        if (valores != null && cabecera.equals(AutenticidadCorreo.FIRMA)) {
+          valores = java.util.Arrays.stream(valores).map(v -> v.toLowerCase(Locale.ROOT)).toArray(String[]::new);
+        }
+        digest.update(("\n" + cabecera + ":" + java.util.Arrays.toString(valores))
+            .getBytes(StandardCharsets.UTF_8));
       }
-    } catch (MessagingException ignored) {
-      // sin cabeceras legibles: se usa el resumen
-    }
-    try {
-      byte[] d = java.security.MessageDigest.getInstance("SHA-256").digest(crudo);
+      byte[] d = digest.digest();
       return "sha256:" + java.util.HexFormat.of().formatHex(d);
-    } catch (java.security.NoSuchAlgorithmException e) {
-      throw new IllegalStateException(e);
+    } catch (Exception e) {
+      try {
+        return "sha256:" + java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(crudo));
+      } catch (java.security.NoSuchAlgorithmException imposible) { throw new IllegalStateException(imposible); }
     }
+  }
+
+  /** Message-ID de protocolo para In-Reply-To, separado de la clave persistente de deduplicación. */
+  public static String messageIdOriginal(byte[] crudo) {
+    try {
+      var h = new jakarta.mail.internet.InternetHeaders(new ByteArrayInputStream(crudo));
+      String[] valores = h.getHeader("Message-ID");
+      if (valores == null || valores.length != 1) return null;
+      String id = valores[0].replaceAll("\\s+", "");
+      return id.matches("<[^<>]{3,250}>") ? id : null;
+    } catch (MessagingException e) { return null; }
   }
 
   /**

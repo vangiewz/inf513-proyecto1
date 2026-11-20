@@ -1,5 +1,22 @@
 # Operacion por correo de los ocho casos de uso
 
+## Identidad y extensión docente de CU1
+
+Los usuarios registrados deben enviar un mensaje con firma HMAC individual válida; From por sí
+solo no autoriza. Preparación del EML y claves privadas: README.md y OPERACION.md. Los visitantes
+conservan los comandos públicos. El sondeo espera al menos tres segundos desde el fin del ciclo.
+
+CU1 incorpora, además de los comandos de usuarios existentes, dos comandos exclusivos del administrador:
+
+```text
+LISPER["*"]
+INSPER["4715292","Juan Carlos","Perez Seras","Estudiante","33554433","71055123","juanperez@uagrm.edu.bo"]
+```
+
+INSPER exige exactamente siete valores: documento, nombres, apellidos, ocupación, teléfono fijo,
+celular y correo. Ambos comandos exigen comillas ASCII y operan sobre persona independiente del CRM.
+No crean cuentas ni sustituyen prospectos. Los ocho CU y sus comandos siguientes se conservan.
+
 Destino: `grupo05sa@tecnoweb.org.bo`. El comando y sus parametros van en el **asunto**.
 Los parametros se escriben entre comillas y se separan con comas. `HELP[]` muestra
 solo los comandos del rol del remitente; `HELP["GENERARORDEN"]` explica uno.

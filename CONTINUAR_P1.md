@@ -1,5 +1,47 @@
 # Continuidad de P1 correo — 19/11/2026
 
+## Revisión final local solicitada después de la auditoría
+
+La instrucción vigente autoriza implementar y probar localmente, pero **prohíbe migraciones,
+despliegues, publicaciones y correos reales sin autorización**. No se ha contactado Tecnoweb en
+esta revisión. Mantener P2 sin cambios y la base institucional existente con todos sus registros.
+
+- Contrato docente incorporado: LISPER["*"] e INSPER de siete parámetros, como extensión de CU1,
+  sin retirar ninguno de los ocho CU. Sólo administrador vigente; autenticidad HMAC en el canal.
+- Esquema nuevo: **26 tablas, 216 columnas, 34 FK**. Persona es independiente por contrato:
+  no inventar FK con usuarios/prospectos. Esto modifica explícitamente la regla histórica de
+  ninguna tabla aislada sólo para persona; el resto del CRM conserva sus relaciones.
+- Migración nueva: `2026-11-19_persona.sql`, validación del contrato e idempotencia, versión en
+  configuraciones. Diagnóstico remoto de sólo lectura: `sql/diagnostico_estructura.sql`.
+  Bandeja y catálogo continúan preparados para producción, sin haberse aplicado remotamente.
+- Sondeo: mail.poll.interval.ms=3000; fixed delay desde el fin, sin solapamiento, backoff temporal
+  3/6/12/24/30 s y errores permanentes 60 s. Intervalo histórico compatible si falta propiedad nueva.
+  IMAP espera 60 s desde el fin de cada intento; no depende de la cantidad de ciclos POP3.
+- Bloqueo local por buzón y cierre ordenado. Entre PC y VPS se requiere coordinación para mantener
+  un solo lector: un bloqueo de archivo no coordina dos máquinas.
+- From ya no autoriza cuentas registradas por sí solo: firma HMAC individual de 32 bytes o más,
+  ventana de 24 h y tolerancia futura de 5 min. Sin clave/firma no se autoriza. Los clientes deben
+  enviar EML firmado conservando cabeceras/MIME; script local `scripts/firmar_correo.py`, sin envío.
+- POP3 admite plain/starttls/tls, sin downgrade. No se presume soporte institucional TLS.
+- Reintentos de conexión diferenciados; contingencia transaccional con respuesta o pendiente
+  recuperable. Recordatorio corregido para incluir `resultado`.
+- Deduplicación por contenido y firma normalizada; Message-ID de protocolo separado para hilos.
+  Rebotes correlacionados por respuesta exacta y persistidos antes de marcar leído en IMAP.
+- Systemd utiliza /var/log/crm-mail y /run/crm-mail con protección estricta y reinicio controlado.
+  Su ejecución Linux se debe validar en un equipo Linux autorizado; no es un despliegue probado.
+- Verificación local reproducible: `scripts/probar_local.py --java-home RUTA_JDK --defensa`.
+  Usa PostgreSQL 18 exclusivo en 127.0.0.1 y firma HMAC real con correo de prueba.
+  Evidencias actuales: `doc/pruebas/local-final.json` y `defensa-local.json`.
+  Un informe con aprobado=false no es una prueba exitosa: consultar el resultado final y XML.
+- La corrida inicial ejecutó 201 casos con un fallo de validación telefónica; fue corregido sin
+  alterar Valida.telefono del CRM. Se ejecuta una corrida final que incluye nuevas regresiones.
+- El empaquetado incluye OPERACION.md y scripts de firma, prueba y verificación de ZIP. La validación
+  de compilación desde el ZIP se conserva en `doc/pruebas/entrega-verificada.json`.
+
+Los apartados siguientes son antecedentes fechados de la revisión anterior; sus cantidades de
+tablas/pruebas y límites de seguridad no describen automáticamente la implementación nueva.
+Las decisiones de organización de diagramas y preservación de datos continúan vigentes.
+
 Leer este archivo antes de retomar. El trabajo actual es P1 correo, con los ocho CU aprobados.
 P2 se continuará después sobre la misma base y registros; no modificar `crm-web/` durante una tarea de correo.
 No dar por terminada la entrega a partir de pruebas locales ni afirmar que el sistema es infalible.

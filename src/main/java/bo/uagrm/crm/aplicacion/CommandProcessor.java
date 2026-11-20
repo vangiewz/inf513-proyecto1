@@ -101,10 +101,11 @@ public final class CommandProcessor {
       else r = porRol.get(u.rol()).procesar(cmd, u);
     } catch (SQLException e) {
       java.util.logging.Logger.getLogger("crm")
-          .severe("Sin acceso a la BD al identificar a " + remitente + ": " + e.getMessage());
+          .severe("Sin acceso a la BD al identificar al remitente: SQLSTATE=" + e.getSQLState());
       r = fmt.error(cmd.getNombre(), Errores.traducir(e));
     } catch (RuntimeException e) {
-      java.util.logging.Logger.getLogger("crm").log(java.util.logging.Level.SEVERE, "Fallo interno con " + asunto, e);
+      java.util.logging.Logger.getLogger("crm").log(java.util.logging.Level.SEVERE,
+          "Fallo interno al atender " + cmd.getNombre(), e);
       r =
           fmt.error(
               cmd.getNombre(),
@@ -132,7 +133,8 @@ public final class CommandProcessor {
           resultado,
           detalle);
     } catch (SQLException | RuntimeException e) {
-      java.util.logging.Logger.getLogger("crm").severe("No se pudo escribir la bitácora (" + resultado + " · " + asunto + "): " + e.getMessage());
+      java.util.logging.Logger.getLogger("crm").severe(
+          "No se pudo escribir la bitácora: resultado=" + resultado + ", tipo=" + e.getClass().getSimpleName());
     }
   }
 

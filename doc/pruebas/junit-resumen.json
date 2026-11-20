@@ -1,19 +1,19 @@
 {
-  "fecha": "2026-11-19",
-  "origen": "144 casos de suite completa local; después una prueba adicional de parser ejecutada en su clase, sin repetir suite completa",
+  "fecha": "2026-11-20",
+  "origen": "214 casos de suite completa local y clase PersonaIntegracionTest de6casos repetida con un caso vacío adicional;215 casos distintos en los últimos XML, no otra corrida completa de215",
   "suites": [
     {
       "clase": "CommandParserTest",
-      "casos": 7,
-      "aprobados": 7,
+      "casos": 24,
+      "aprobados": 24,
       "omitidos": 0,
       "fallas": 0,
       "errores": 0
     },
     {
       "clase": "MatrizAccesoTest",
-      "casos": 51,
-      "aprobados": 51,
+      "casos": 53,
+      "aprobados": 53,
       "omitidos": 0,
       "fallas": 0,
       "errores": 0
@@ -28,24 +28,32 @@
     },
     {
       "clase": "AppTest",
-      "casos": 1,
-      "aprobados": 1,
+      "casos": 3,
+      "aprobados": 3,
       "omitidos": 0,
       "fallas": 0,
       "errores": 0
     },
     {
       "clase": "BandejaCorreoTest",
-      "casos": 8,
-      "aprobados": 8,
+      "casos": 12,
+      "aprobados": 12,
       "omitidos": 0,
       "fallas": 0,
       "errores": 0
     },
     {
       "clase": "ConfigTest",
-      "casos": 13,
-      "aprobados": 13,
+      "casos": 20,
+      "aprobados": 20,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "ControlSondeoTest",
+      "casos": 7,
+      "aprobados": 7,
       "omitidos": 0,
       "fallas": 0,
       "errores": 0
@@ -54,6 +62,14 @@
       "clase": "DiagnosticoTest",
       "casos": 5,
       "aprobados": 5,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "PersonaServiceTest",
+      "casos": 2,
+      "aprobados": 2,
       "omitidos": 0,
       "fallas": 0,
       "errores": 0
@@ -83,6 +99,22 @@
       "errores": 0
     },
     {
+      "clase": "PersonaIntegracionTest",
+      "casos": 6,
+      "aprobados": 6,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "PersonaMigracionTest",
+      "casos": 6,
+      "aprobados": 6,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
       "clase": "RobustezCorreoTest",
       "casos": 1,
       "aprobados": 1,
@@ -99,7 +131,39 @@
       "errores": 0
     },
     {
+      "clase": "LogSeguroTest",
+      "casos": 2,
+      "aprobados": 2,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "ReconexionTest",
+      "casos": 2,
+      "aprobados": 2,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "PersonaCorreoTest",
+      "casos": 1,
+      "aprobados": 1,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
       "clase": "AdjuntoTest",
+      "casos": 8,
+      "aprobados": 8,
+      "omitidos": 0,
+      "fallas": 0,
+      "errores": 0
+    },
+    {
+      "clase": "AutenticidadCorreoTest",
       "casos": 8,
       "aprobados": 8,
       "omitidos": 0,
@@ -124,16 +188,16 @@
     },
     {
       "clase": "Pop3ClientTest",
-      "casos": 6,
-      "aprobados": 6,
+      "casos": 8,
+      "aprobados": 8,
       "omitidos": 0,
       "fallas": 0,
       "errores": 0
     },
     {
       "clase": "RebotesTest",
-      "casos": 3,
-      "aprobados": 3,
+      "casos": 5,
+      "aprobados": 5,
       "omitidos": 0,
       "fallas": 0,
       "errores": 0

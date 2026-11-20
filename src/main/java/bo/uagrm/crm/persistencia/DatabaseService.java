@@ -30,11 +30,19 @@ public final class DatabaseService {
   private final String url;
   private final String usuario;
   private final String password;
+  private final java.util.function.LongSupplier reloj;
+  private volatile long reconectarDespues;
+  private volatile SQLException ultimaConexionFallida;
 
   public DatabaseService(String url, String usuario, String password) {
+    this(url, usuario, password, System::nanoTime);
+  }
+
+  DatabaseService(String url, String usuario, String password, java.util.function.LongSupplier reloj) {
     this.url = url;
     this.usuario = usuario;
     this.password = password;
+    this.reloj = reloj;
   }
 
   /**
@@ -76,13 +84,28 @@ public final class DatabaseService {
             });
   }
 
-  private Connection abrir() throws SQLException {
+  private synchronized Connection abrir() throws SQLException {
+    if (ultimaConexionFallida != null && bo.uagrm.crm.Config.institucional(url) && reloj.getAsLong() < reconectarDespues) {
+      throw new SQLException("Reconexión diferida para respetar el intervalo institucional",
+          ultimaConexionFallida.getSQLState(), ultimaConexionFallida);
+    }
     java.util.Properties props = new java.util.Properties();
     props.setProperty("user", usuario);
     props.setProperty("password", password);
     props.setProperty("connectTimeout", "10");
     props.setProperty("socketTimeout", "30");
-    Connection c = DriverManager.getConnection(url, props);
+    Connection c;
+    try {
+      c = DriverManager.getConnection(url, props);
+      ultimaConexionFallida = null;
+      reconectarDespues = 0;
+    } catch (SQLException e) {
+      if (bo.uagrm.crm.Config.institucional(url)) {
+        ultimaConexionFallida = e;
+        reconectarDespues = reloj.getAsLong() + (tipoFallo(e) == TipoFallo.TEMPORAL ? 3000L : 60000L) * 1_000_000L;
+      }
+      throw e;
+    }
     try {
       try (var ps = c.prepareStatement("SET TIME ZONE 'UTC'")) {
         ps.execute();
@@ -101,7 +124,7 @@ public final class DatabaseService {
           "correos_salientes",
           "descuentos", "exportaciones", "inscripciones_comerciales", "interacciones", "intereses",
           "log_comandos", "motivos_perdida", "movimientos_interes", "notificaciones",
-          "orden_pago_descuentos", "ordenes_pago", "pagos", "programas", "programas_responsables", "prospectos",
+          "orden_pago_descuentos", "ordenes_pago", "pagos", "persona", "programas", "programas_responsables", "prospectos",
           "recordatorios", "roles", "solicitudes_compra", "usuarios");
 
   private static final String VALORES_TABLAS =
@@ -128,6 +151,9 @@ public final class DatabaseService {
                         : "")
                     + (faltan.contains("programas")
                         ? " (falta aplicar sql/migraciones/2026-11-19_normalizar_catalogo.sql)"
+                        : "")
+                    + (faltan.contains("persona")
+                        ? " (falta aplicar sql/migraciones/2026-11-19_persona.sql)"
                         : ""),
             "42P01");
       }
@@ -254,6 +280,21 @@ public final class DatabaseService {
           && (s.getSQLState().startsWith("57P") || s.getSQLState().equals("53300"))) return true;
     }
     return false;
+  }
+
+  /** Distingue recuperación temporal de errores que necesitan intervención de configuración/esquema. */
+  public enum TipoFallo { TEMPORAL, CREDENCIALES, ESQUEMA, SQL_PERMANENTE }
+
+  public static TipoFallo tipoFallo(Throwable e) {
+    for (Throwable t = e; t != null; t = t.getCause()) {
+      if (t instanceof SQLException s && s.getSQLState() != null) {
+        String estado = s.getSQLState();
+        if (estado.startsWith("28") || estado.equals("42501")) return TipoFallo.CREDENCIALES;
+        if (estado.startsWith("42") || estado.startsWith("3D") || estado.startsWith("3F")
+            || estado.equals("55000")) return TipoFallo.ESQUEMA;
+      }
+    }
+    return esDeConexion(e) ? TipoFallo.TEMPORAL : TipoFallo.SQL_PERMANENTE;
   }
 
   public static <T> List<T> lista(Connection c, Mapeo<T> mapeo, String sql, Object... params)

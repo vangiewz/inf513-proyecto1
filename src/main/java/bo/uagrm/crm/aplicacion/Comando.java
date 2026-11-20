@@ -6,6 +6,13 @@ package bo.uagrm.crm.aplicacion;
  * opcional. HELP[] sale de aquí.
  */
 public enum Comando {
+  LISPER(
+      "CU1", "selector", "Consulta las personas registradas (solo administración)",
+      "LISPER[\"*\"]"),
+  INSPER(
+      "CU1", "documento,nombres,apellidos,ocupacion,telefono_fijo,telefono_celular,correo",
+      "Registra una persona con los siete parámetros docentes (solo administración)",
+      "INSPER[\"4715292\",\"Juan Carlos\",\"Perez Seras\",\"Estudiante\",\"33554433\",\"71055123\",\"juanperez@uagrm.edu.bo\"]"),
   HELP(
       "General",
       "comando?",
@@ -242,7 +249,7 @@ public enum Comando {
    */
   public boolean escritura() {
     return switch (this) {
-      case INSERTARUSUARIO, MODIFICARUSUARIO, ELIMINARUSUARIO, REGISTRARINTERES,
+      case INSPER, INSERTARUSUARIO, MODIFICARUSUARIO, ELIMINARUSUARIO, REGISTRARINTERES,
           REGISTRARPROSPECTO, MODIFICARPROSPECTO, ELIMINARPROSPECTO, ASIGNARCOORDINADOR,
           ASIGNARPROSPECTO, ASIGNARAUTOMATICO, MOVERTARJETA, INSERTARMOTIVO, MODIFICARMOTIVO,
           ELIMINARMOTIVO, MARCARPERDIDO, CONVERTIRPROSPECTO, GENERARORDEN, APROBARPAGO,

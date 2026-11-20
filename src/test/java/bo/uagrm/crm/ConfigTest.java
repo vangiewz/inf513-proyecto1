@@ -70,7 +70,7 @@ class ConfigTest {
     try (var in = Files.newBufferedReader(ejemplo(), StandardCharsets.UTF_8)) {
       props.load(in);
     }
-    for (String k : java.util.List.of("pop3.puerto", "smtp.puerto", "intervalo.segundos"))
+    for (String k : java.util.List.of("pop3.puerto", "smtp.puerto", "intervalo.segundos", "mail.poll.interval.ms"))
       props.remove(k);
     Path f = temp.resolve("ficticio.properties");
     try (var out = Files.newBufferedWriter(f, StandardCharsets.UTF_8)) {
@@ -79,6 +79,41 @@ class ConfigTest {
     Config c = Config.cargar(f);
     assertEquals(110, c.pop3Puerto());
     assertEquals(587, c.smtpPuerto());
-    assertEquals(10, c.intervaloSegundos());
+    assertEquals(3, c.intervaloSegundos());
+    assertEquals(3000, c.pollIntervalMs());
+  }
+
+  private Config conPropiedades(String clave, String valor, boolean retirarNueva) throws Exception {
+    Properties props = new Properties();
+    try (var in = Files.newBufferedReader(ejemplo(), StandardCharsets.UTF_8)) { props.load(in); }
+    if (retirarNueva) props.remove("mail.poll.interval.ms");
+    props.setProperty(clave, valor);
+    Path f = temp.resolve("intervalo.properties");
+    try (var out = Files.newBufferedWriter(f, StandardCharsets.UTF_8)) { props.store(out,"QA ficticia"); }
+    return Config.cargar(f);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings={"0","-1","1","2999"})
+  void intervaloInstitucionalInferiorATresSegundosSeRechaza(String valor) {
+    assertThrows(IllegalArgumentException.class, () -> conPropiedades("mail.poll.interval.ms",valor,false));
+  }
+
+  @Test void propiedadNuevaTienePrecedenciaYConservaMilisegundos() throws Exception {
+    Config c = conPropiedades("mail.poll.interval.ms","3500",false);
+    assertEquals(3500,c.pollIntervalMs());
+    assertEquals(4,c.intervaloSegundos());
+  }
+
+  @Test void propiedadHistoricaSigueSiendoCompatible() throws Exception {
+    Config c = conPropiedades("intervalo.segundos","10",true);
+    assertEquals(10000,c.pollIntervalMs());
+    assertThrows(IllegalArgumentException.class, () -> conPropiedades("intervalo.segundos","2",true));
+  }
+
+  @Test void urlJdbcConSecretosNoSeImprime() throws Exception {
+    Config c = conPropiedades("db.url","jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?password=NO_IMPRIMIR",false);
+    assertFalse(c.toString().contains("NO_IMPRIMIR"));
+    assertFalse(c.toString().contains("password="));
   }
 }

@@ -26,7 +26,15 @@ import java.util.regex.Pattern;
 public final class Rebotes {
 
   /** Destinatario que no recibió la respuesta y el motivo que dio su servidor. */
-  public record Rebote(String destinatario, String motivo) {}
+  public record Rebote(String destinatario, String motivo, String originalMessageId) {
+    public Rebote(String destinatario, String motivo) { this(destinatario, motivo, null); }
+  }
+
+  @FunctionalInterface
+  public interface Confirmacion {
+    /** Solo retorna cuando el aviso quedó registrado de forma recuperable. */
+    void confirmar(Rebote rebote) throws Exception;
+  }
 
   private static final Pattern FINAL =
       Pattern.compile("(?im)^(?:Final|Original)-Recipient:\\s*rfc822;\\s*<?([^\\s>]+)");
@@ -50,13 +58,25 @@ public final class Rebotes {
     return host;
   }
 
-  /** Rebotes nuevos desde la última revisión; los deja marcados como leídos. */
+  /** Lectura compatible sin confirmar: no marca avisos como leídos ni modifica la bandeja. */
   public List<Rebote> nuevos() throws MessagingException {
+    List<Rebote> out = new ArrayList<>();
+    recibir(out::add, false);
+    return out;
+  }
+
+  /** Marca cada aviso leído únicamente después de que el consumidor confirmó su persistencia. */
+  public int procesar(Confirmacion confirmacion) throws MessagingException {
+    return recibir(confirmacion, true);
+  }
+
+  private int recibir(Confirmacion confirmacion, boolean confirmarLectura) throws MessagingException {
     Properties p = new Properties();
     p.put("mail.imaps.connectiontimeout", "15000");
     p.put("mail.imaps.timeout", "30000");
     p.put("mail.imaps.ssl.checkserveridentity", "true");
-    List<Rebote> out = new ArrayList<>();
+    p.put("mail.imaps.peek", "true"); // leer el cuerpo no debe adelantar el flag SEEN
+    int procesados = 0;
     Store store = Session.getInstance(p).getStore("imaps");
     store.connect(host, 993, usuario, password);
     try {
@@ -70,13 +90,15 @@ public final class Rebotes {
                     new OrTerm(new FromStringTerm("mailer-daemon"), new FromStringTerm("postmaster"))));
         for (Message m : avisos) {
           ByteArrayOutputStream crudo = new ByteArrayOutputStream();
+          Rebote rebote;
           try {
             m.writeTo(crudo);
-            out.add(leer(crudo.toByteArray()));
+            rebote = leer(crudo.toByteArray());
           } catch (Exception e) { // un aviso dañado no impide leer los demás
-            out.add(new Rebote("(desconocido)", "aviso de rebote ilegible: " + e.getMessage()));
+            rebote = new Rebote("(desconocido)", "aviso de rebote ilegible");
           }
-          m.setFlag(Flags.Flag.SEEN, true);
+          confirmar(m, rebote, confirmacion, confirmarLectura);
+          procesados++;
         }
       } finally {
         inbox.close(false);
@@ -84,14 +106,27 @@ public final class Rebotes {
     } finally {
       store.close();
     }
-    return out;
+    return procesados;
+  }
+
+  static void confirmar(Message mensaje, Rebote rebote, Confirmacion consumidor, boolean marcarLeido)
+      throws MessagingException {
+    try { consumidor.confirmar(rebote); }
+    catch (Exception e) {
+      throw new MessagingException("El rebote no se confirmó; permanece sin leer para recuperación", e);
+    }
+    if (marcarLeido) mensaje.setFlag(Flags.Flag.SEEN, true);
   }
 
   /** Solo se autentica (para el diagnóstico). */
   public void verificar() throws MessagingException {
-    Store store = Session.getInstance(new Properties()).getStore("imaps");
-    store.connect(host, 993, usuario, password);
-    store.close();
+    Properties p = new Properties();
+    p.put("mail.imaps.connectiontimeout", "15000");
+    p.put("mail.imaps.timeout", "30000");
+    p.put("mail.imaps.ssl.checkserveridentity", "true");
+    Store store = Session.getInstance(p).getStore("imaps");
+    try { store.connect(host, 993, usuario, password); }
+    finally { store.close(); }
   }
 
   /** Destinatario y motivo de un aviso de rebote, leídos del texto crudo. */
@@ -103,7 +138,16 @@ public final class Rebotes {
     if (motivo == null) motivo = primero(ESTADO, t);
     return new Rebote(
         destino == null ? "(desconocido)" : destino.toLowerCase(java.util.Locale.ROOT),
-        motivo == null ? "sin motivo en el aviso" : motivo.replaceAll("\\s+", " ").trim());
+        motivo == null ? "sin motivo en el aviso" : motivo.replaceAll("\\s+", " ").trim(),
+        originalId(t));
+  }
+
+  private static String originalId(String t) {
+    String id = primero(Pattern.compile("(?im)^Original-Message-ID:\\s*(<[^<>\\s]{3,250}>)"), t);
+    if (id != null) return id;
+    // Las respuestas propias tienen un dominio y prefijo estables; no usar el ID exterior del DSN.
+    Matcher m = Pattern.compile("(?im)^Message-ID:\\s*(<crm\\.[^<>\\s]+@grupo05sa\\.tecnoweb\\.org\\.bo>)").matcher(t);
+    return m.find() ? m.group(1) : null;
   }
 
   private static String primero(Pattern p, String t) {

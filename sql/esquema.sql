@@ -1418,6 +1418,29 @@ ALTER TABLE ONLY public.catalogo_cache
 ALTER TABLE ONLY public.programas_responsables
     ADD CONSTRAINT programas_responsables_programa_codigo_fk FOREIGN KEY (programa_codigo) REFERENCES public.programas(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
 
+-- Registro docente independiente: no concede acceso al CRM ni inventa relaciones comerciales.
+CREATE TABLE public.persona (
+    documento character varying(15) NOT NULL,
+    nombres character varying(120) NOT NULL,
+    apellidos character varying(120) NOT NULL,
+    ocupacion character varying(80) NOT NULL,
+    telefono_fijo character varying(16) NOT NULL,
+    telefono_celular character varying(16) NOT NULL,
+    correo character varying(120) NOT NULL,
+    CONSTRAINT persona_pkey PRIMARY KEY (documento),
+    CONSTRAINT persona_documento_check CHECK (documento ~ '^[0-9]{5,10}(-?[0-9A-Z]{1,3})?$'),
+    CONSTRAINT persona_nombres_check CHECK (btrim(nombres) <> '' AND nombres !~ '[[:cntrl:]]'),
+    CONSTRAINT persona_apellidos_check CHECK (btrim(apellidos) <> '' AND apellidos !~ '[[:cntrl:]]'),
+    CONSTRAINT persona_ocupacion_check CHECK (btrim(ocupacion) <> '' AND ocupacion !~ '[[:cntrl:]]'),
+    CONSTRAINT persona_fijo_check CHECK (telefono_fijo ~ '^\+?[0-9]{7,15}$'),
+    CONSTRAINT persona_celular_check CHECK (telefono_celular ~ '^\+?[0-9]{7,15}$'),
+    CONSTRAINT persona_correo_check CHECK (correo ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
+);
+CREATE UNIQUE INDEX persona_correo_lower_unique ON public.persona (lower(correo));
+COMMENT ON TABLE public.persona IS 'Registro independiente de los siete campos docentes LISPER/INSPER; no es usuario ni prospecto del CRM';
+
+INSERT INTO public.configuraciones(clave,valor,created_at,updated_at) VALUES ('schema.persona.version','1',now(),now());
+
 -- PostgreSQL database dump complete
 --
 

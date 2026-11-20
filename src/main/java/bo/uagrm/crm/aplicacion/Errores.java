@@ -8,17 +8,19 @@ import org.postgresql.util.PSQLException;
 final class Errores {
 
   private static final Map<String, String> DUPLICADOS =
-      Map.of(
-          "usuarios_pkey", "Ya existe un usuario con ese correo.",
-          "usuarios_correo_lower_unique", "Ya existe un usuario con ese correo.",
-          "prospectos_pkey", "Ya existe un prospecto con ese CI.",
-          "prospectos_correo_lower_unique", "Ya existe un prospecto con ese correo.",
-          "prospectos_correo_unique", "Ya existe un prospecto con ese correo.",
-          "motivos_perdida_pkey", "Ya existe un motivo con ese nombre.",
-          "descuentos_pkey", "Ya existe un descuento con ese código.",
-          "intereses_documento_modulo_codigo_unique",
-              "El prospecto ya tiene registrado su interés en esa oferta.",
-          "inscripciones_comerciales_pkey", "La solicitud ya tiene una inscripción confirmada.");
+      Map.ofEntries(
+          Map.entry("persona_pkey", "Ya existe una persona con ese documento."),
+          Map.entry("persona_correo_lower_unique", "Ya existe una persona con ese correo."),
+          Map.entry("usuarios_pkey", "Ya existe un usuario con ese correo."),
+          Map.entry("usuarios_correo_lower_unique", "Ya existe un usuario con ese correo."),
+          Map.entry("prospectos_pkey", "Ya existe un prospecto con ese CI."),
+          Map.entry("prospectos_correo_lower_unique", "Ya existe un prospecto con ese correo."),
+          Map.entry("prospectos_correo_unique", "Ya existe un prospecto con ese correo."),
+          Map.entry("motivos_perdida_pkey", "Ya existe un motivo con ese nombre."),
+          Map.entry("descuentos_pkey", "Ya existe un descuento con ese código."),
+          Map.entry("intereses_documento_modulo_codigo_unique",
+              "El prospecto ya tiene registrado su interés en esa oferta."),
+          Map.entry("inscripciones_comerciales_pkey", "La solicitud ya tiene una inscripción confirmada."));
 
   private Errores() {}
 
@@ -32,11 +34,11 @@ final class Errores {
       return DUPLICADOS.getOrDefault(restriccion, "Ya existe un registro con esos datos.");
     if (estado.equals("23503"))
       return "El dato está en uso o hace referencia a un registro que no existe.";
-    if (estado.equals("23514") || estado.equals("22001"))
+    if (estado.equals("23514") || estado.equals("22001") || estado.equals("23502"))
       return "Uno de los valores no está permitido o es demasiado largo.";
-    if (estado.startsWith("08"))
+    if (bo.uagrm.crm.persistencia.DatabaseService.esDeConexion(e))
       return "No hay conexión con la base de datos. Intente de nuevo en unos minutos.";
-    java.util.logging.Logger.getLogger("crm").warning("Error SQL no previsto: " + estado + " " + e.getMessage());
+    java.util.logging.Logger.getLogger("crm").warning("Error SQL no previsto: SQLSTATE=" + estado);
     return "No se pudo completar la operación (código " + estado + "). Intente de nuevo.";
   }
 }

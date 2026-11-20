@@ -166,7 +166,7 @@ def _metodos_de(clase_):
     return set(re.findall(r'\b(?:public|private|protected|static)\s[\w<>\[\], .?]*?\b(\w+)\s*\(', t))
 
 
-CAMPOS = {'usuarios': 'UsuarioService', 'prospectos': 'ProspectoService', 'asignacion': 'AsignacionService',
+CAMPOS = {'usuarios': 'UsuarioService', 'personas': 'PersonaService', 'prospectos': 'ProspectoService', 'asignacion': 'AsignacionService',
           'embudo': 'EmbudoService', 'perdidas': 'PerdidaService', 'conversion': 'ConversionService', 'pagos': 'PagoService',
           'exportaciones': 'ExportacionService', 'seguimiento': 'SeguimientoService', 'reportes': 'ReporteService'}
 

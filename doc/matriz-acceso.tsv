@@ -1,4 +1,6 @@
 CU	Comando	Administrador	Coordinador	Vendedor	Público	Ejemplo
+CU1	LISPER["selector"]	Sí	—	—	—	LISPER["*"]
+CU1	INSPER["documento","nombres","apellidos","ocupacion","telefono_fijo","telefono_celular","correo"]	Sí	—	—	—	INSPER["4715292","Juan Carlos","Perez Seras","Estudiante","33554433","71055123","juanperez@uagrm.edu.bo"]
 General	HELP[("comando")]	Sí	Sí	Sí	Sí	HELP["INSERTARUSUARIO"]
 CU1	LISTARUSUARIOS[("rol")]	Sí	Sí	—	—	LISTARUSUARIOS["vendedor"]
 CU1	INSERTARUSUARIO["nombre","apellido","correo","telefono","rol",("fecha_inicio"),("fecha_fin")]	Sí	—	—	—	INSERTARUSUARIO["Ana","Rojas Vaca","ana.rojas@example.com","71234567","vendedor","2026-11-18","2027-06-30"]

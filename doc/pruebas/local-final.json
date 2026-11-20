@@ -1,0 +1,395 @@
+{
+  "fecha": "2026-11-20T03:49:57.199861+00:00",
+  "entorno": "PostgreSQL exclusivo en 127.0.0.1; POP3 y SMTP de prueba; sin servicios institucionales",
+  "comprobaciones": [
+    {
+      "comprobacion": "Instalación nueva rechaza un esquema ocupado sin modificar registros",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Referencias repetibles conservan registros",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Migración de bandeja conserva los registros existentes",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Migración del catálogo conserva todos los datos de referencia",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Conflicto del catálogo rechaza la migración y revierte su transacción",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Migración persona repetible conserva datos y versión",
+      "aprobada": true
+    },
+    {
+      "comprobacion": "Suite completa y compilación sin fallas, errores ni omisiones",
+      "aprobada": true
+    }
+  ],
+  "aprobado": true,
+  "junit": {
+    "tests": 214,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "suites": [
+    {
+      "clase": "bo.uagrm.crm.aplicacion.CommandParserTest",
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.aplicacion.MatrizAccesoTest",
+      "tests": 53,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.aplicacion.ResponseFormatterTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.AppTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.BandejaCorreoTest",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.ConfigTest",
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.ControlSondeoTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.DiagnosticoTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.dominio.personas.PersonaServiceTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.integracion.CasosAprobadosCorreoTest",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.integracion.CatalogoNormalizadoTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.integracion.CorreoServidorFinancieroTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.integracion.PersonaIntegracionTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.integracion.PersonaMigracionTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.integracion.RobustezCorreoTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.integracion.ServidorCompartidoTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.LogSeguroTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.persistencia.ReconexionTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.PersonaCorreoTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.presentacion.AdjuntoTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.presentacion.AutenticidadCorreoTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.presentacion.ColaCorreoTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.presentacion.CorreoTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.presentacion.Pop3ClientTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.presentacion.RebotesTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "clase": "bo.uagrm.crm.presentacion.SmtpSenderTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "compilacion_exit_code": 0,
+  "primera_comprobacion_del_arnes": {
+    "fecha": "2026-11-19 23:58",
+    "semilla": 31,
+    "cortes_forzados": 5,
+    "caidas_de_la_bd": 1,
+    "mensajes_recibidos_durante_caida_bd": 2,
+    "falla_bd_observada_por_lector": true,
+    "recuperacion_bd_observada_por_mismo_proceso": false,
+    "correos_depositados": 35,
+    "comandos_distintos": 30,
+    "relecturas_mismo_message_id": 3,
+    "reintentos_del_usuario": 2,
+    "pop3_quit": {
+      "ok": 7,
+      "perder_respuesta": 0,
+      "sin_aplicar": 1
+    },
+    "smtp_conexiones": {
+      "ok": 31,
+      "caido": 0,
+      "incierto": 2
+    },
+    "registros_por_resultado": {
+      "Éxito": 30,
+      "Repetido": 2
+    },
+    "ejecuciones_por_comando": [
+      1
+    ],
+    "comandos_perdidos": [],
+    "comandos_duplicados": [],
+    "respuestas_recibidas_por_smtp": 33,
+    "message_id_distintos": 30,
+    "copias_repetidas_mismo_message_id": 3,
+    "comandos_sin_respuesta_recibida": [],
+    "registros_sin_respuesta_enviada": [],
+    "quedan_en_buzon": 0,
+    "quedan_recibidos": 0,
+    "quedan_pendientes": 0,
+    "aprobado": false,
+    "log_del_lector": "C:\\Users\\usuario\\AppData\\Local\\Temp\\p1-caidas-qqvevbaf\\consola.txt"
+  },
+  "incidencia_resuelta": "El arnés terminaba el proceso antes de observar el siguiente backoff; la verificación posterior espera y observa RECUPERADO BD en el mismo proceso.",
+  "defensa": {
+    "fecha": "2026-11-20 00:00",
+    "semilla": 31,
+    "cortes_forzados": 5,
+    "caidas_de_la_bd": 1,
+    "mensajes_recibidos_durante_caida_bd": 2,
+    "falla_bd_observada_por_lector": true,
+    "recuperacion_bd_observada_por_mismo_proceso": true,
+    "recuperaciones_observadas_mismo_proceso": 1,
+    "segundos_hasta_cada_corte": [
+      1.25,
+      2.51,
+      0.0,
+      1.54,
+      1.46
+    ],
+    "correos_depositados": 35,
+    "comandos_distintos": 30,
+    "relecturas_mismo_message_id": 3,
+    "reintentos_del_usuario": 2,
+    "pop3_quit": {
+      "ok": 8,
+      "perder_respuesta": 0,
+      "sin_aplicar": 1
+    },
+    "smtp_conexiones": {
+      "ok": 31,
+      "caido": 0,
+      "incierto": 2
+    },
+    "registros_por_resultado": {
+      "Éxito": 30,
+      "Repetido": 2
+    },
+    "ejecuciones_por_comando": [
+      1
+    ],
+    "comandos_perdidos": [],
+    "comandos_duplicados": [],
+    "respuestas_recibidas_por_smtp": 33,
+    "message_id_distintos": 30,
+    "copias_repetidas_mismo_message_id": 3,
+    "comandos_sin_respuesta_recibida": [],
+    "registros_sin_respuesta_enviada": [],
+    "quedan_en_buzon": 0,
+    "quedan_recibidos": 0,
+    "quedan_pendientes": 0,
+    "aprobado": true,
+    "log_del_lector": "C:\\Users\\usuario\\AppData\\Local\\Temp\\p1-caidas-rakaq71k\\consola.txt"
+  },
+  "verificacion_adicional": {
+    "archivo": "lisper-vacio.json",
+    "junit": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "aprobado": true
+  },
+  "criterio_aprobacion": "Corrida completa de214 pruebas más verificación dirigida posterior (6casos, incluye uno nuevo) y repetición exitosa de la defensa. No representa una sola corrida de215.",
+  "fuentes_sha256": {
+    "src/main/java/bo/uagrm/crm/aplicacion/AdministradorCommandProcessor.java": "62719ff1edbf6c178a7ab79ce39d95a9308d857d54058107aa7624ed2841796a",
+    "src/main/java/bo/uagrm/crm/aplicacion/Comando.java": "dd75f439dbac2b82a13384420c065301fc0939d92312ccf72a0c4537bbc324a2",
+    "src/main/java/bo/uagrm/crm/aplicacion/Command.java": "8e8134764e6d4f8473a3797a9dd6aa338232e3acd56c54967db891a30b2f1a55",
+    "src/main/java/bo/uagrm/crm/aplicacion/CommandParser.java": "2a66bd44d6f0ee6b8702f73b1d16581e894369866e22f991625b476b50a86640",
+    "src/main/java/bo/uagrm/crm/aplicacion/CommandProcessor.java": "8a74b2a339a6a742e6d709c484383f6af496a1d74a494c2b0aab67b9255d717e",
+    "src/main/java/bo/uagrm/crm/aplicacion/CoordinadorCommandProcessor.java": "5c9a82a2712809d971ea9fc82cac58073053d1478f360bfcdb25db70d771a279",
+    "src/main/java/bo/uagrm/crm/aplicacion/Errores.java": "08f44653cbefdeb6462a13f479ef17ffa994cd174ee48847c3910648dd5fef32",
+    "src/main/java/bo/uagrm/crm/aplicacion/PublicoCommandProcessor.java": "bcee46e1c02180e9ed4fc569b8c87e8f50e09c4e4cc0fee5dc84171b5b5d93a3",
+    "src/main/java/bo/uagrm/crm/aplicacion/ResponseFormatter.java": "8c4a9b08adb00bc2f0ed0c7d017c2568c5c85ddbe2d0168fb3aec54524485469",
+    "src/main/java/bo/uagrm/crm/aplicacion/Respuesta.java": "a6574116ff5613fb253b6be013061d2e4f48f783f0121bd47e9a648175149547",
+    "src/main/java/bo/uagrm/crm/aplicacion/RolCommandProcessor.java": "00cffd8e2f738db3a23d2b52130cc8eab948fd623dfaf706724def4a19ba2209",
+    "src/main/java/bo/uagrm/crm/aplicacion/VendedorCommandProcessor.java": "ea753f24f13b438da5bb7e2596bea04947243020e35281727217ddab71a05b9d",
+    "src/main/java/bo/uagrm/crm/App.java": "21e10b6f5d33e12b13a070053f7f7b5b44443d7d57a29ed633e22d347b864753",
+    "src/main/java/bo/uagrm/crm/BucleSondeo.java": "becbcbf336483cabde777336ce033b2ebb2d1480f89a881b98b28bbf7541d36e",
+    "src/main/java/bo/uagrm/crm/Config.java": "e234902787722e1e63e5349ab6ddb91180f965dd3e6c1f8203dc3820c3586cdb",
+    "src/main/java/bo/uagrm/crm/ControlSondeo.java": "e695549885a448fe84ac7be980aa0fc35df0db66fa84b71c9704e486b45f0ac5",
+    "src/main/java/bo/uagrm/crm/Diagnostico.java": "674d991203c3757e255d75a5740a48def35699ceb5ac8fb7d57a73d2e382c8ab",
+    "src/main/java/bo/uagrm/crm/dominio/Alcance.java": "d16acf2681ff592bce93fa8de362af5e50480430caa5f6d7383a0f784fded296",
+    "src/main/java/bo/uagrm/crm/dominio/asignacion/AsignacionService.java": "dfd3f24239d993b8ebf90a99cf63d9f7b53a31c499edd81c0cbcb709779425fe",
+    "src/main/java/bo/uagrm/crm/dominio/captacion/Oferta.java": "fa6c52ffc4375e37b0af3ee7e8d8e5bc6320d28854f20f523c6735c1912a0826",
+    "src/main/java/bo/uagrm/crm/dominio/captacion/ProgramaService.java": "34b08a286368c352762741d643a75c9d78daf000a6058d228b9a61e9988e2b59",
+    "src/main/java/bo/uagrm/crm/dominio/captacion/Prospecto.java": "d376f18867bbbbfcfe12e37176f23ed55236992b6b8c8a9a540769f93f9ad818",
+    "src/main/java/bo/uagrm/crm/dominio/captacion/ProspectoService.java": "87bf989c6be5301360600584c4e4a90252f56e14d668631db4b54aec926a5f59",
+    "src/main/java/bo/uagrm/crm/dominio/conversion/ConversionService.java": "884a77c51ac759521244e80b9d3064122961e7dc8f4bd7a4549be03b072c1f22",
+    "src/main/java/bo/uagrm/crm/dominio/conversion/ExportacionService.java": "e629cc1804e545c0e44b71925909e8d6117bc490981cb3077ea6773552e9419e",
+    "src/main/java/bo/uagrm/crm/dominio/conversion/Matricula.java": "61188f7dc8cd7d6b7adf67dbf89597f16c356d18f22f5e3dacde15bffe3d21ae",
+    "src/main/java/bo/uagrm/crm/dominio/CrmException.java": "512a621626a2a42966202864c372f4d28572deacc781bf7f74af2859dcd3dcb1",
+    "src/main/java/bo/uagrm/crm/dominio/embudo/EmbudoService.java": "c663d95d26f108f5c68b88893221f57c0d17b403e5036d0dbe5cf72540851af4",
+    "src/main/java/bo/uagrm/crm/dominio/embudo/Interes.java": "1687fb0180c24b96f7b5b3ba3acdea3162b938aae9ccfe5b191f86cd228a4c57",
+    "src/main/java/bo/uagrm/crm/dominio/pagos/PagoService.java": "d4cf089b71745889122720c78d542382d9f5f82a50f7e14fd8f50a7426d3bba5",
+    "src/main/java/bo/uagrm/crm/dominio/perdidas/MotivoPerdida.java": "e6ce3b3299046c2e515b9872d71517a4b63f0387ddccd8a1a36015735b0065f8",
+    "src/main/java/bo/uagrm/crm/dominio/perdidas/PerdidaService.java": "20723bb97586ba2c6a5eb335e81c2726718fe9f965d2c5ac2ceaaa95a3c1d89a",
+    "src/main/java/bo/uagrm/crm/dominio/personas/Persona.java": "445163cf9a8920d76486233acd49a05c1477a649520f5d1875e3c60ebf83b2b9",
+    "src/main/java/bo/uagrm/crm/dominio/personas/PersonaService.java": "80470480cb8d4597b3cf6c80edf89a148b4b2a38d8802abe42352bd446c9b523",
+    "src/main/java/bo/uagrm/crm/dominio/reportes/ReporteService.java": "ca968459836fbd47c447384168270c126274d513a1464832da2b11e098a4e96f",
+    "src/main/java/bo/uagrm/crm/dominio/seguimiento/Interaccion.java": "37a81e3d7a8c2a440f85e33f3aa4e1b7b325044d0e001cae9048cb091459d7b2",
+    "src/main/java/bo/uagrm/crm/dominio/seguimiento/Recordatorio.java": "2d3c7519dc217245ecf684d4ecf4448b9bbf303f8a1c09d40b8ed0a53c772f5d",
+    "src/main/java/bo/uagrm/crm/dominio/seguimiento/SeguimientoService.java": "38b02771eed6a6547cc40fe6dc3ef6928720e4814423425a0509a84b58f6cb58",
+    "src/main/java/bo/uagrm/crm/dominio/usuarios/Rol.java": "a84059897b8f339bbb43118d1b1d73f7f7a5f530cb70399aefce53dab3065ef2",
+    "src/main/java/bo/uagrm/crm/dominio/usuarios/Usuario.java": "6d8d11b008614b56c351a4504a4be3988fd30bd046527a665e33022eab290e4c",
+    "src/main/java/bo/uagrm/crm/dominio/usuarios/UsuarioService.java": "67f608ae96c06a523fe589ed879e500d7f6bc1883b9194e62c11cb6bd2a57966",
+    "src/main/java/bo/uagrm/crm/dominio/Valida.java": "a4fbaf1eacefc37cd21f2d30d33dc0af19bd23e6d9e6da0e9b2c53538cbf4f25",
+    "src/main/java/bo/uagrm/crm/InstanciaCorreo.java": "356d9bfa8d3d033e44927630df2d1adaf567bb23aa82fdd69e00c9452cd49a0c",
+    "src/main/java/bo/uagrm/crm/persistencia/DatabaseService.java": "3649c9e1fd7d21f4b4cfaa763fea6ca0f0e764746b4a1e10c1456f0cb1e8de41",
+    "src/main/java/bo/uagrm/crm/presentacion/Adjunto.java": "80e8ac44dae1a6f65547976afd65dc3fcb6046bf7a2ef2225e6f6f294dc8e93a",
+    "src/main/java/bo/uagrm/crm/presentacion/AutenticidadCorreo.java": "64b1cf026203d442987a6a20bf724fc6eb0946578c038eb16c40a11a96442639",
+    "src/main/java/bo/uagrm/crm/presentacion/Bandeja.java": "8a882cba1618973bd47c9a8facc4843d78dcc0aad89edca16c2aef699388ed8a",
+    "src/main/java/bo/uagrm/crm/presentacion/Correo.java": "891b2e0d0fe21eaea8dee59f17e9e4ca0d7b40960bdc3875d0b4de0bd1605e32",
+    "src/main/java/bo/uagrm/crm/presentacion/Pop3Client.java": "654ad6fc42ef337e424e6f98a991a1b97bf9243bdca210eaaa83f2fa9d71b72e",
+    "src/main/java/bo/uagrm/crm/presentacion/Rebotes.java": "3fce19950bd72f39753c0d1170f83dabb2e30a51de96c1e70b64fff73126e585",
+    "src/main/java/bo/uagrm/crm/presentacion/SmtpSender.java": "a8f11fdc353087cec7bd64bc12c180ebd49ab2cd6ed2b6c25d627e4b8f2bee67",
+    "sql/diagnostico_estructura.sql": "d700770dcb829310859d821a0b0941fac0adfc982e39cf66dfddefdb695fba92",
+    "sql/esquema.sql": "e071723260e3f832ec81a5ea51baf52f17ad3f1a0a789bfcfe6586c3ac586086",
+    "sql/migraciones/2026-11-17_claves_catalogo.sql": "8dbf1d194278a43dd15249b95ebbabd523bf3d780cc87e8f1532658c4245306e",
+    "sql/migraciones/2026-11-17_claves_diseno.sql": "5929f68de2c9d2563c5231123aed8053e82d136cf7630b651d9ef1b97c0c2c74",
+    "sql/migraciones/2026-11-17_nombres_not_null.sql": "353b4abc30ca4ae0a77a84334c90ddea947d75a9b0eae6c36e062f79b91cd373",
+    "sql/migraciones/2026-11-19_bandeja_correo.sql": "dce62139d7c873c95545afef47b9db8e36c131890a3058cfe81932a159460038",
+    "sql/migraciones/2026-11-19_bandeja_correo_revertir.sql": "11ca31809d402fef847d5aa68175887a0b7977cac239c38ead7a265d009058c7",
+    "sql/migraciones/2026-11-19_normalizar_catalogo.sql": "0ef0ef9a2eb406a2b251738d55d093108eeb7cfe16bb45f20ffcb93259e84228",
+    "sql/migraciones/2026-11-19_normalizar_catalogo_revertir.sql": "f4a571bf3e22db4b89a68fb856a2e3e1d260f5516d3b12cee8a5a57465aec229",
+    "sql/migraciones/2026-11-19_persona.sql": "558325ee81fe06f6169285bfbdb296cff104d779e2b6cbd9b4e38d89308735ae",
+    "sql/referencias.sql": "f48f91d12180714b056c6d45b1e78e20f628680dfc5323364418f53bd39e9929"
+  },
+  "jar_sha256": "729630e5f45f9f65d2f1cc5c59602e04618c7e9bd55afd970b6f7d0a50f7b7f9"
+}
