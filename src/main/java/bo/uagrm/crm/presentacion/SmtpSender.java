@@ -161,7 +161,7 @@ public final class SmtpSender implements AutoCloseable {
     MimeBodyPart parteTexto = new MimeBodyPart();
     parteTexto.setText(texto, "UTF-8");
     MimeBodyPart parteHtml = new MimeBodyPart();
-    parteHtml.setContent(html, "text/html; charset=UTF-8");
+    parteHtml.setContent(AyudaHtml.ajustar(asunto, html), "text/html; charset=UTF-8");
     MimeMultipart alternativas = new MimeMultipart("alternative", parteTexto, parteHtml);
     if (archivos.isEmpty()) m.setContent(alternativas);
     else {
