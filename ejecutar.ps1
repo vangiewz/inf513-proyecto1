@@ -4,7 +4,11 @@
 #   .\ejecutar.ps1 -Diagnostico    solo revisa DNS, puertos, POP3, SMTP y la BD, y termina
 # La configuración con contraseñas no está en el repositorio: por omisión se lee de ..\.secrets\.
 param(
-    [string]$Config = "$PSScriptRoot\..\.secrets\crm-mail.properties",
+    [string]$Config = $(
+        if (Test-Path "$PSScriptRoot\crm-mail.properties") { "$PSScriptRoot\crm-mail.properties" }
+        elseif (Test-Path "$PSScriptRoot\..\.secrets\crm-mail.properties") { "$PSScriptRoot\..\.secrets\crm-mail.properties" }
+        else { "$PSScriptRoot\crm-mail.properties" }
+    ),
     [switch]$Diagnostico
 )
 $ErrorActionPreference = 'Stop'
