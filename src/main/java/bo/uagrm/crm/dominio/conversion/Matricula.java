@@ -18,7 +18,7 @@ public record Matricula(
   public static final String SQL =
       """
 SELECT m.nro_solicitud,i.nro_tarjeta,p.documento,p.nombre || ' ' || p.apellido AS prospecto,
-sc.modulo_codigo AS codigo,sc.precio_acordado AS monto,m.estado,
+sc.modulo_codigo AS codigo,sc.precio_acordado AS monto,'Confirmada' AS estado,
 u.nombre || ' ' || u.apellido AS registrado_por,m.fecha_confirmacion AS fecha
 FROM inscripciones_comerciales m JOIN solicitudes_compra sc ON sc.nro_solicitud=m.nro_solicitud
 JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN intereses origen ON origen.nro_tarjeta=op.nro_tarjeta

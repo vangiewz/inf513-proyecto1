@@ -13,11 +13,9 @@ def main():
     root = p1.parent
     dest = root / 'entrega/2026-2_INF513-P1_grupo05sa.zip'
     files = set()
-    for name in ('.gitignore', 'README.md', 'OPERACION.md', 'BASE_DATOS.md', 'PRUEBAS.md', 'GUIA_CORREO_CASOS_APROBADOS.md',
-                 'REVISION_DOCUMENTO.md', 'AUDITORIA_ENUNCIADO.md', 'AUDITORIA_ADICIONAL.md', 'CONTINUAR_P1.md', 'pom.xml', 'ejecutar.ps1',
-                 'respaldo.ps1', 'crm-mail.properties.example', 'target/crm-mail.jar',
-                 'doc/P1-INF513-GRUPO05SA.doc', 'doc/P1-INF513-GRUPO05SA.docx',
-                 'doc/P1-INF513-GRUPO05SA.pdf', 'doc/P1-LAMINAS-UML-GRUPO05SA.pdf'):
+    for name in ('.gitignore', 'README.md', 'BASE_DATOS.md', 'PRUEBAS.md', 'GUIA_CORREO_CASOS_APROBADOS.md',
+                 'pom.xml', 'ejecutar.ps1', 'respaldo.ps1', 'crm-mail.properties.example', 'target/crm-mail.jar',
+                 'doc/P1-INF513-GRUPO05SA.doc', 'doc/P1-INF513-GRUPO05SA.pdf'):
         path = p1 / name
         if not path.is_file():
             raise FileNotFoundError(path)
@@ -36,9 +34,7 @@ def main():
         assert path.suffix != '.properties' and path.suffix not in {'.dump', '.log', '.key', '.pem'}
         records.append({'archivo': relative.as_posix(), 'bytes': path.stat().st_size,
                         'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
-    manifest = {'fecha': datetime.now().isoformat(timespec='seconds'), 'estado': 'Preparado localmente; no entregado',
-                'pendiente': ['Migraciones y circuito real en servidor', 'Acceso público a GitHub y publicación',
-                              'Fecha del aula, subida e impresión'], 'archivos': records}
+    manifest = {'fecha': datetime.now().isoformat(timespec='seconds'), 'archivos': records}
     dest.parent.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='p1-paquete-') as td:
         temp = Path(td) / dest.name

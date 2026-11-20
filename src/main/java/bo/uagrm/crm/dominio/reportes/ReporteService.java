@@ -28,6 +28,19 @@ public final class ReporteService {
     "Oferta", "Nombre", "Intereses", "Convertidos", "Perdidos", "Matriculado (Bs)"
   };
 
+  /**
+   * Monto matriculado (inscripciones confirmadas, precio acordado ya con descuento) agrupado por la
+   * clave dada. El alcance se aplica a la tarjeta de la orden (i): todos los módulos de una orden son
+   * del mismo programa. Uso: formatted(clave, alcance, clave).
+   */
+  private static final String MATRICULADO =
+      """
+
+LEFT JOIN (SELECT %s AS clave, SUM(sc.precio_acordado) AS monto
+FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.nro_solicitud=ic.nro_solicitud
+JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN intereses i ON i.nro_tarjeta=op.nro_tarjeta
+WHERE %s GROUP BY %s)""";
+
   private final DatabaseService db;
 
   public ReporteService(DatabaseService db) {
@@ -63,23 +76,22 @@ SELECT v.nombre || ' ' || v.apellido || CASE WHEN v.estado = 'inactivo' THEN ' (
        COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Convertido'),
        COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Perdido'),
        COALESCE(ROUND(100.0 * COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Convertido') / NULLIF(COUNT(i.nro_tarjeta), 0), 1), 0.0),
-       COALESCE(SUM(m.monto), 0.00)
+       COALESCE(MAX(m.monto), 0.00)
 FROM usuarios v
 LEFT JOIN (intereses i LEFT JOIN catalogo_cache o ON o.codigo = i.modulo_codigo) ON i.vendedor_correo = v.correo AND\s"""
               + Alcance.propio(u)
+              + MATRICULADO.formatted("op.vendedor_correo", Alcance.propio(u), "op.vendedor_correo")
               + """
-
-LEFT JOIN (SELECT origen.documento,sc.modulo_codigo,SUM(sc.precio_acordado) AS monto
-FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.nro_solicitud=ic.nro_solicitud
-JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN intereses origen ON origen.nro_tarjeta=op.nro_tarjeta
-GROUP BY origen.documento,sc.modulo_codigo) m ON m.documento=i.documento AND m.modulo_codigo=i.modulo_codigo
+ m ON m.clave = v.correo
 WHERE v.rol='vendedor' AND (?::text='' OR v.correo=?)
 GROUP BY v.correo
 ORDER BY COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Convertido') DESC, v.correo""",
           Alcance.params(
               u,
-              u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR ? u.correo() : "",
-              u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR ? u.correo() : ""));
+              Alcance.params(
+                  u,
+                  u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR ? u.correo() : "",
+                  u.rol() == bo.uagrm.crm.dominio.usuarios.Rol.VENDEDOR ? u.correo() : "")));
     }
   }
 
@@ -127,20 +139,19 @@ ORDER BY COUNT(i.nro_tarjeta) DESC, mp.categoria""",
 SELECT i.modulo_codigo, i.modulo_nombre, COUNT(i.nro_tarjeta),
        COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Convertido'),
        COUNT(i.nro_tarjeta) FILTER (WHERE i.estado = 'Perdido'),
-       COALESCE(SUM(m.monto), 0.00)
+       COALESCE(MAX(m.monto), 0.00)
 FROM intereses i
-LEFT JOIN catalogo_cache o ON o.codigo = i.modulo_codigo
-LEFT JOIN (SELECT origen.documento,sc.modulo_codigo,SUM(sc.precio_acordado) AS monto
-FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.nro_solicitud=ic.nro_solicitud
-JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN intereses origen ON origen.nro_tarjeta=op.nro_tarjeta
-GROUP BY origen.documento,sc.modulo_codigo) m ON m.documento=i.documento AND m.modulo_codigo=i.modulo_codigo
+LEFT JOIN catalogo_cache o ON o.codigo = i.modulo_codigo"""
+              + MATRICULADO.formatted("sc.modulo_codigo", Alcance.propio(u), "sc.modulo_codigo")
+              + """
+ m ON m.clave = i.modulo_codigo
 WHERE\s"""
               + Alcance.propio(u)
               + """
 
 GROUP BY i.modulo_codigo, i.modulo_nombre
 ORDER BY COUNT(i.nro_tarjeta) DESC, i.modulo_codigo""",
-          Alcance.params(u));
+          Alcance.params(u, Alcance.params(u)));
     }
   }
 }

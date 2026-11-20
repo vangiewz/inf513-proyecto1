@@ -1,7 +1,7 @@
 -- Separar el programa de sus modulos sin cambiar codigos ni registros comerciales.
 -- Destino: db_grupo05sa.public. Detener el lector y respaldar antes de aplicar.
 -- Ejecutar con psql -X -v ON_ERROR_STOP=1 --single-transaction -f ESTE_ARCHIVO.
--- Independiente de la migracion de bandeja: admite el modelo anterior o posterior a ella.
+-- 3FN: el nombre del programa deja de repetirse en cada modulo (dependencia transitiva programa_codigo -> nombre).
 SET client_encoding = 'UTF8';
 LOCK TABLE public.catalogo_cache, public.programas_responsables IN ACCESS EXCLUSIVE MODE;
 DO $$ BEGIN

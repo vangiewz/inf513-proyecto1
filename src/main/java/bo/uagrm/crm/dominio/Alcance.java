@@ -4,28 +4,16 @@ import bo.uagrm.crm.dominio.usuarios.Rol;
 import bo.uagrm.crm.dominio.usuarios.Usuario;
 
 /**
- * Qué tarjetas (interes i JOIN oferta o) ve cada rol, como condición SQL con parámetros enlazados
- * (?). RF1.2: el vendedor ve su cartera y la bolsa común. RF1.3: el coordinador, solo las ofertas a
- * su cargo. El valor del ? lo dan params()/despues(), en el mismo orden en que aparece la condición
+ * Qué tarjetas (intereses i) ve cada rol, como condición SQL con parámetros enlazados (?). RF1.2:
+ * el vendedor ve solo su cartera (la bolsa común la reparten coordinación y administración). RF1.3:
+ * el coordinador, solo los programas a su cargo. El valor del ? lo dan params()/despues(), en el mismo orden en que aparece la condición
  * en la consulta.
  */
 public final class Alcance {
 
   private Alcance() {}
 
-  /** Para consultar (listados, bolsa común). */
-  public static String visible(Usuario u) {
-    return switch (u.rol()) {
-      case ADMINISTRADOR -> "TRUE";
-      case COORDINADOR ->
-          "EXISTS (SELECT 1 FROM catalogo_cache ac JOIN programas_responsables pr ON"
-              + " pr.programa_codigo=ac.programa_codigo WHERE ac.codigo=i.modulo_codigo"
-              + " AND pr.coordinador_correo=?)";
-      case VENDEDOR -> "i.vendedor_correo = ?";
-    };
-  }
-
-  /** Para modificar y para métricas: sin la bolsa común en el caso del vendedor. */
+  /** Condición SQL del alcance del rol sobre la tarjeta i (para consultar, modificar y medir). */
   public static String propio(Usuario u) {
     return switch (u.rol()) {
       case ADMINISTRADOR -> "TRUE";

@@ -6,13 +6,6 @@ package bo.uagrm.crm.aplicacion;
  * opcional. HELP[] sale de aquí.
  */
 public enum Comando {
-  LISPER(
-      "CU1", "selector", "Consulta las personas registradas (solo administración)",
-      "LISPER[\"*\"]"),
-  INSPER(
-      "CU1", "documento,nombres,apellidos,ocupacion,telefono_fijo,telefono_celular,correo",
-      "Registra una persona con los siete parámetros docentes (solo administración)",
-      "INSPER[\"4715292\",\"Juan Carlos\",\"Perez Seras\",\"Estudiante\",\"33554433\",\"71055123\",\"juanperez@uagrm.edu.bo\"]"),
   HELP(
       "General",
       "comando?",
@@ -43,7 +36,7 @@ public enum Comando {
   LISTAROFERTA(
       "CU2",
       "",
-      "Lista el catálogo simulado del CRM; API SIS pendiente",
+      "Lista el catálogo simulado del CRM; API del SIS pendiente",
       "LISTAROFERTA[]"),
   REGISTRARINTERES(
       "CU2",
@@ -95,14 +88,14 @@ public enum Comando {
   ASIGNARAUTOMATICO(
       "CU3",
       "",
-      "Distribuye por menor carga y mantiene juntos los intereses de cada prospecto",
+      "Reparte la bolsa común en turno rotativo (Round-Robin); las tarjetas de un prospecto van juntas",
       "ASIGNARAUTOMATICO[]"),
 
   VERTABLERO("CU4", "", "Muestra el tablero Kanban del embudo de ventas", "VERTABLERO[]"),
   MOVERTARJETA(
       "CU4",
       "nro_tarjeta,estado",
-      "Mueve a Nuevo, En Contacto o Seguimiento; el pago determina las etapas financieras",
+      "Mueve a Nuevo, Contactado o Interesado; el pago determina las etapas financieras",
       "MOVERTARJETA[\"7\",\"En Contacto\"]"),
 
   LISTARMOTIVOS("CU5", "", "Lista los motivos de pérdida y su categoría", "LISTARMOTIVOS[]"),
@@ -135,22 +128,22 @@ public enum Comando {
   CONVERTIRPROSPECTO(
       "CU6",
       "nro_tarjeta",
-      "Comprueba la inscripción confirmada mediante pago aprobado por APROBARPAGO",
+      "Comprueba la inscripción confirmada mediante el pago aprobado con APROBARPAGO",
       "CONVERTIRPROSPECTO[\"7\"]"),
   LISTARMATRICULAS(
       "CU6",
       "",
-      "Lista inscripciones comerciales confirmadas; el envío al SIS es independiente",
+      "Lista las inscripciones comerciales confirmadas; el envío al SIS es aparte",
       "LISTARMATRICULAS[]"),
 
   GENERARORDEN(
       "CU6",
       "nro_tarjeta,codigos_modulos?,codigos_descuentos?",
-      "Genera una orden y referencia de pago demostrativa; códigos múltiples separados por punto y"
+      "Genera una orden y referencia de pago demostrativa; codigos multiples separados por punto y"
           + " coma",
       "GENERARORDEN[\"7\",\"desarrollo-web-m1;desarrollo-web-m2\"]"),
   LISTARORDENES(
-      "CU6", "estado_pago?", "Lista las órdenes y pagos de su alcance", "LISTARORDENES[]"),
+      "CU6", "estado_pago?", "Lista las ordenes y pagos de su alcance", "LISTARORDENES[]"),
   VERORDEN("CU6", "nro_orden", "Consulta la orden y sus módulos", "VERORDEN[\"1\"]"),
   LISTARDESCUENTOS("CU6", "", "Lista los descuentos activos para una orden", "LISTARDESCUENTOS[]"),
   LISTARPAGOS(
@@ -158,7 +151,7 @@ public enum Comando {
   REGISTRARCOMPROBANTE(
       "CU6",
       "nro_orden,observacion?",
-      "Adjunta un único comprobante PNG, JPEG, GIF, WebP o PDF (hasta 5 MB)",
+      "Adjunta un unico comprobante PNG, JPEG, GIF, WebP o PDF (hasta 5 MB)",
       "REGISTRARCOMPROBANTE[\"1\",\"Deposito realizado\"] con recibo.pdf adjunto"),
   VERCOMPROBANTE(
       "CU6",
@@ -175,6 +168,11 @@ public enum Comando {
       "nro_orden,motivo",
       "Rechaza un comprobante para que el vendedor lo corrija",
       "RECHAZARPAGO[\"1\",\"El monto no coincide\"]"),
+  CONFIGURARCOMISION(
+      "CU6",
+      "porcentaje",
+      "Fija el porcentaje de comisión del vendedor que se aplica al aprobar cada pago",
+      "CONFIGURARCOMISION[\"2.5\"]"),
   EXPORTARMATRICULAS(
       "CU6",
       "nro_solicitud?",
@@ -188,7 +186,7 @@ public enum Comando {
   VEREXPORTACION(
       "CU6",
       "nro_exportacion",
-      "Recupera el CSV de una preparacion sin duplicarla",
+      "Recupera el CSV de una preparación sin duplicarla",
       "VEREXPORTACION[\"1\"]"),
   REGISTRARRESULTADOSIS(
       "CU6",
@@ -240,23 +238,6 @@ public enum Comando {
     this.parametros = parametros.isEmpty() ? new String[0] : parametros.split(",");
     this.descripcion = descripcion;
     this.ejemplo = ejemplo;
-  }
-
-  /**
-   * Comandos que modifican datos sin adjunto: si el mismo remitente repite el mismo asunto, se
-   * trata como reintento y no se vuelve a ejecutar (ver Bandeja.repetido). Los que llevan adjunto
-   * (IMPORTARPROSPECTOS, REGISTRARCOMPROBANTE) se protegen por clave o por estado en su servicio.
-   */
-  public boolean escritura() {
-    return switch (this) {
-      case INSPER, INSERTARUSUARIO, MODIFICARUSUARIO, ELIMINARUSUARIO, REGISTRARINTERES,
-          REGISTRARPROSPECTO, MODIFICARPROSPECTO, ELIMINARPROSPECTO, ASIGNARCOORDINADOR,
-          ASIGNARPROSPECTO, ASIGNARAUTOMATICO, MOVERTARJETA, INSERTARMOTIVO, MODIFICARMOTIVO,
-          ELIMINARMOTIVO, MARCARPERDIDO, CONVERTIRPROSPECTO, GENERARORDEN, APROBARPAGO,
-          RECHAZARPAGO, EXPORTARMATRICULAS, REGISTRARRESULTADOSIS, REGISTRARINTERACCION,
-          PROGRAMARRECORDATORIO, COMPLETARRECORDATORIO -> true;
-      default -> false;
-    };
   }
 
   public int minimos() {

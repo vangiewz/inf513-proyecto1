@@ -30,11 +30,8 @@ public final class SmtpSender {
     p.put("mail.smtp.host", host);
     p.put("mail.smtp.port", String.valueOf(puerto));
     p.put("mail.smtp.auth", "true");
-    // Solo las pruebas locales (servidor SMTP de prueba en 127.0.0.1) pueden omitir STARTTLS.
-    boolean tls =
-        !(host.equals("127.0.0.1") && "false".equals(System.getProperty("crm.smtp.starttls")));
-    p.put("mail.smtp.starttls.enable", String.valueOf(tls));
-    p.put("mail.smtp.starttls.required", String.valueOf(tls));
+    p.put("mail.smtp.starttls.enable", "true");
+    p.put("mail.smtp.starttls.required", "true");
     p.put("mail.smtp.connectiontimeout", "15000");
     p.put("mail.smtp.timeout", "30000");
     p.put("mail.smtp.writetimeout", "30000");
@@ -52,7 +49,18 @@ public final class SmtpSender {
     this.buzonSistema = buzonSistema;
   }
 
-  /** Correo multipart/alternative (texto plano + HTML) y, si hay, los adjuntos. */
+  /** Envía un correo multipart/alternative: texto plano + HTML. */
+  public void enviar(String para, String asunto, String html, String texto)
+      throws MessagingException {
+    enviar(para, asunto, html, texto, java.util.List.of());
+  }
+
+  public void enviar(
+      String para, String asunto, String html, String texto, java.util.List<Adjunto> archivos)
+      throws MessagingException {
+    Transport.send(crearMensaje(para, asunto, html, texto, archivos));
+  }
+
   MimeMessage crearMensaje(String para, String asunto, String html, String texto)
       throws MessagingException {
     return crearMensaje(para, asunto, html, texto, java.util.List.of());
@@ -95,50 +103,6 @@ public final class SmtpSender {
       m.setContent(mixto);
     }
     return m;
-  }
-
-  /**
-   * Arma el correo completo una sola vez, con un Message-ID propio que no cambia al reenviarlo, y
-   * lo devuelve en bytes para guardarlo en la cola (correos_salientes). enRespuestaA es el
-   * Message-ID del correo recibido (hilo de la conversación); puede ser null.
-   */
-  public byte[] preparar(
-      String para,
-      String asunto,
-      String html,
-      String texto,
-      java.util.List<Adjunto> archivos,
-      String enRespuestaA)
-      throws MessagingException {
-    MimeMessage m = crearMensaje(para, asunto, html, texto, archivos);
-    if (enRespuestaA != null && enRespuestaA.startsWith("<")) {
-      m.setHeader("In-Reply-To", enRespuestaA);
-      m.setHeader("References", enRespuestaA);
-    }
-    m.saveChanges();
-    m.setHeader(
-        "Message-ID",
-        "<crm." + java.util.UUID.randomUUID() + "@grupo05sa.tecnoweb.org.bo>");
-    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-    try {
-      fijo(m).writeTo(out);
-    } catch (java.io.IOException e) {
-      throw new MessagingException("No se pudo armar el correo", e);
-    }
-    return out.toByteArray();
-  }
-
-  /** Envía un correo armado con preparar(), sin cambiar su Message-ID. */
-  public void enviarPreparado(byte[] crudo) throws MessagingException {
-    Transport.send(fijo(new MimeMessage(session, new java.io.ByteArrayInputStream(crudo))));
-  }
-
-  /** Copia que conserva el Message-ID al guardarse o enviarse (saveChanges lo regeneraría). */
-  static MimeMessage fijo(MimeMessage m) throws MessagingException {
-    return new MimeMessage(m) {
-      @Override
-      protected void updateMessageID() {}
-    };
   }
 
   /** Abre la conexión con STARTTLS y se autentica, sin enviar nada (para el diagnóstico). */

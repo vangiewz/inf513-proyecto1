@@ -28,25 +28,34 @@ class CommandParserTest {
   }
 
   @Test
-  void espaciosUtf8YComillasEscapadasDentroDelParametro() {
-    Command c = parse("  REGISTRARINTERACCION  [ \"7\" , \"Nota\" , \"Pidió el curso \"\"Web\"\"\" ]  ");
-    assertTrue(c.isValido());
-    assertEquals("Pidió el curso \"Web\"", c.getParam(2));
-    assertEquals(3, c.cantidad());
-  }
-
-  @Test
   void sinParametrosYAsterisco() {
     assertEquals(0, parse("VERTABLERO[]").cantidad());
     assertEquals(0, parse("LISTAROFERTA[\"*\"]").cantidad());
   }
 
   @Test
-  void comillasTipograficasYNumerosSinComillas() {
-    Command c = parse("MOVERTARJETA[7, “En Contacto”]");
+  void comillasTipograficasYComillasObligatorias() {
+    Command c = parse("MOVERTARJETA[“7”, “En Contacto”]");
     assertTrue(c.isValido());
     assertEquals("7", c.getParam(0));
     assertEquals("En Contacto", c.getParam(1));
+    // Enunciado: si faltan comillas, Error, nombrando el parámetro.
+    Command sin = parse("MOVERTARJETA[7,\"En Contacto\"]");
+    assertFalse(sin.isValido());
+    assertTrue(sin.getMensajeError().contains("parámetro 1"), sin.getMensajeError());
+    assertFalse(parse("INSERTARUSUARIO[Ana,Rojas,ana@x.com,71234567,vendedor]").isValido());
+  }
+
+  @Test
+  void comandoSinCorchetesYCorcheteDeMas() {
+    Command sin = parse("listaroferta");
+    assertFalse(sin.isValido());
+    assertTrue(sin.getMensajeError().contains("Faltan los corchetes"), sin.getMensajeError());
+    assertTrue(CommandParser.pareceComando("LISTAROFERTA"));
+    assertFalse(CommandParser.pareceComando("hola, quiero información"));
+    Command extra = parse("VERTABLERO[]]");
+    assertFalse(extra.isValido());
+    assertTrue(extra.getMensajeError().contains("corchete"), extra.getMensajeError());
   }
 
   @Test
@@ -56,6 +65,16 @@ class CommandParserTest {
     assertEquals(Comando.VERTABLERO, parse("Fwd:VERTABLERO[]").getTipo());
     assertTrue(CommandParser.pareceComando("RE: HELP[]"));
     assertFalse(CommandParser.pareceComando("Re: hola"));
+  }
+
+  @Test
+  void espaciosUtf8YComillasEscapadasDentroDelParametro() {
+    Command c =
+        parse("  REGISTRARINTERACCION [ \"7\" ,  \"Llamada\" , \"Dijo \\\"sí\\\", llamar en ñ\\\\ \"\"mañana\"\"\" ]  ");
+    assertTrue(c.isValido());
+    assertEquals("7", c.getParam(0));
+    assertEquals("Dijo \"sí\", llamar en ñ\\ \"mañana\"", c.getParam(2));
+    assertFalse(parse("VERHISTORIAL[\"7\",]").isValido()); // coma sin parámetro
   }
 
   @Test
@@ -76,46 +95,5 @@ class CommandParserTest {
     Command cortado = parse("MOVERTARJETA[\"1"); // sin ] final
     assertEquals("MOVERTARJETA", cortado.getNombre());
     assertTrue(cortado.getMensajeError().contains("MOVERTARJETA[\"nro_tarjeta\",\"estado\"]"));
-  }
-
-  @Test
-  void contratosDocentesExactosYUtf8() {
-    Command lisper = parse("  Re: LISPER [ \"*\" ] ");
-    assertTrue(lisper.isValido());
-    assertEquals(1, lisper.cantidad());
-    assertEquals("*", lisper.getParam(0));
-    Command insper = parse("INSPER[\"4715292\",\"José Carlos\",\"Pérez Seras\",\"Estudiante\","
-        + "\"33554433\",\"71055123\",\"juanperez@uagrm.edu.bo\"]");
-    assertTrue(insper.isValido());
-    assertEquals(7, insper.cantidad());
-    assertEquals("José Carlos", insper.getParam(1));
-    assertTrue(CommandParser.pareceComando("INSPER"));
-  }
-
-  @org.junit.jupiter.params.ParameterizedTest
-  @org.junit.jupiter.params.provider.ValueSource(strings = {
-      "LISPER[]", "LISPER[*]", "LISPER[“*”]", "LISPER[\"*\",]", "LISPER[\"*\",\"*\"]",
-      "LISPER[\"*\"]]", "LISPER[[\"*\"]", "LISPER[\"*\" extra]", "LISPER[\"*]",
-      "INSPER[4715292,\"A\",\"B\",\"C\",\"33554433\",\"71055123\",\"a@b.com\"]",
-      "INSPER[\"1\",\"2\",\"3\",\"4\",\"5\",\"6\"]",
-      "INSPER[\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\"]",
-      "VERORDEN[\"1\",]", "GENERARORDEN[\"1\",,]", "HELP[[]]"
-  })
-  void rechazaGramaticasMalformadasSinExcepcion(String asunto) {
-    assertFalse(parse(asunto).isValido(), asunto);
-  }
-
-  @Test
-  void escapesDocumentadosYCompatibilidadCrm() {
-    Command backslash = parse("INSPER[\"4715292\",\"José \\\"Pepe\\\"\",\"Pérez\",\"Estudiante\","
-        + "\"33554433\",\"71055123\",\"a@b.com\"]");
-    Command duplicada = parse("INSPER[\"4715292\",\"José \"\"Pepe\"\"\",\"Pérez\",\"Estudiante\","
-        + "\"33554433\",\"71055123\",\"a@b.com\"]");
-    assertTrue(backslash.isValido());
-    assertTrue(duplicada.isValido());
-    assertEquals("José \"Pepe\"", backslash.getParam(1));
-    assertEquals(backslash.getParam(1), duplicada.getParam(1));
-    assertTrue(parse("MOVERTARJETA[7, En Contacto]").isValido(), "Compatibilidad CRM explícita");
-    assertTrue(parse("GENERARORDEN[\"7\",\"\"]").isValido());
   }
 }

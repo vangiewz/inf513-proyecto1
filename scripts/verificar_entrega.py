@@ -61,11 +61,9 @@ def main():
             if len(project_dirs) != 1:
                 raise AssertionError('No se encontró un único proyecto Maven')
             project_relative = next(iter(project_dirs))
-            for name in ['README.md', '.gitignore', 'OPERACION.md', 'crm-mail.properties.example',
-                         'sql/esquema.sql', 'sql/diagnostico_estructura.sql',
-                         'sql/migraciones/2026-11-19_persona.sql', 'target/crm-mail.jar',
-                         'doc/P1-INF513-GRUPO05SA.docx', 'doc/P1-INF513-GRUPO05SA.pdf',
-                         'doc/ea/crm-p1.eapx', 'scripts/probar_local.py']:
+            for name in ['README.md', '.gitignore', 'crm-mail.properties.example',
+                         'sql/esquema.sql', 'sql/migraciones/2026-11-19_normalizar_catalogo.sql', 'target/crm-mail.jar',
+                         'doc/P1-INF513-GRUPO05SA.doc', 'doc/P1-INF513-GRUPO05SA.pdf', 'doc/ea/crm-p1.eapx']:
                 if project_relative + '/' + name not in names:
                     raise AssertionError('Falta archivo requerido: ' + name)
             archive.extractall(work)

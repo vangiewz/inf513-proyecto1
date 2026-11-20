@@ -37,7 +37,7 @@ public final class AsignacionService {
           Interes::de,
           Interes.SQL
               + " WHERE i.vendedor_correo IS NULL AND i.estado NOT IN ('Convertido', 'Perdido') AND "
-              + Alcance.visible(u)
+              + Alcance.propio(u)
               + " ORDER BY i.created_at, i.nro_tarjeta",
           Alcance.params(u));
     }
@@ -54,18 +54,19 @@ public final class AsignacionService {
           if (t.cerrada())
             throw new CrmException(
                 "La tarjeta #" + nroTarjeta + " está en " + t.estado() + ": ya no se asigna.");
+          String correoVendedor = bo.uagrm.crm.dominio.Valida.correo(vendedor); // formato antes de buscarlo
           Usuario v =
               uno(
                   c,
                   Usuario::de,
                   Usuario.SQL
                       + " WHERE lower(correo) = lower(?) AND rol = 'vendedor' AND estado = 'activo'"
-                      + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin",
-                  vendedor);
+                      + " AND " + HOY + " BETWEEN fecha_inicio AND fecha_fin",
+                  correoVendedor);
           if (v == null)
             throw new CrmException(
                 "El usuario "
-                    + vendedor
+                    + correoVendedor
                     + " no es un vendedor activo y vigente. Vea LISTARUSUARIOS[\"vendedor\"].");
           if (v.correo().equals(t.vendedorCorreo()))
             throw new CrmException(
@@ -75,9 +76,14 @@ public final class AsignacionService {
         });
   }
 
+  /** Clave de configuraciones con el último vendedor que recibió turno en el Round-Robin (RF2.3). */
+  private static final String TURNO = "asignacion_ultimo_vendedor";
+
+  private static final String HOY = bo.uagrm.crm.persistencia.DatabaseService.HOY;
+
   /**
-   * Reparte la bolsa común en turno rotativo, empezando después del último vendedor que recibió una
-   * tarjeta.
+   * RF2.3. Reparte la bolsa común en Round-Robin: vendedores activos y vigentes ordenados por correo,
+   * empezando después del último que recibió turno; las tarjetas de un mismo prospecto van juntas.
    */
   public List<Asignacion> asignarAutomatico(Usuario u) throws SQLException, CrmException {
     return db.enTransaccion(
@@ -90,7 +96,7 @@ public final class AsignacionService {
                   c,
                   Usuario::de,
                   Usuario.SQL
-                      + " WHERE rol = 'vendedor' AND estado = 'activo' AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin ORDER BY correo");
+                      + " WHERE rol = 'vendedor' AND estado = 'activo' AND " + HOY + " BETWEEN fecha_inicio AND fecha_fin ORDER BY correo");
           if (vendedores.isEmpty())
             throw new CrmException("No hay vendedores activos para repartir.");
           List<Interes> pendientes =
@@ -100,26 +106,26 @@ public final class AsignacionService {
                   Interes.SQL
                       + " WHERE i.vendedor_correo IS NULL AND i.estado NOT IN ('Convertido', 'Perdido')"
                       + " AND "
-                      + Alcance.visible(u)
+                      + Alcance.propio(u)
                       + " ORDER BY i.created_at, i.nro_tarjeta FOR UPDATE OF i",
                   Alcance.params(u));
           if (pendientes.isEmpty())
             throw new CrmException("La bolsa común está vacía: no hay prospectos sin vendedor.");
-          java.util.Map<String, Long> carga = new java.util.LinkedHashMap<>();
-          for (Usuario v : vendedores)
-            carga.put(
-                v.correo(),
-                uno(
-                    c,
-                    rs -> rs.getLong(1),
-                    "SELECT count(*) FROM intereses WHERE vendedor_correo=? AND estado NOT IN"
-                        + " ('Convertido','Perdido')",
-                    v.correo()));
+          // Turno rotativo: el siguiente después del último vendedor que recibió una tarjeta automática.
+          String ultimo =
+              uno(c, rs -> rs.getString(1), "SELECT valor FROM configuraciones WHERE clave=?", TURNO);
+          int turno = 0;
+          for (int k = 0; ultimo != null && k < vendedores.size(); k++)
+            if (vendedores.get(k).correo().compareTo(ultimo) > 0) {
+              turno = k;
+              break;
+            } else if (k == vendedores.size() - 1) turno = 0;
           java.util.Map<String, Usuario> porProspecto = new java.util.HashMap<>();
           List<Asignacion> hechas = new ArrayList<>();
           for (Interes t : pendientes) {
             Usuario v = porProspecto.get(t.prospecto().ci());
             if (v == null) {
+              // Un prospecto que ya tiene vendedor en otra tarjeta abierta sigue con él.
               v =
                   uno(
                       c,
@@ -128,20 +134,23 @@ public final class AsignacionService {
                           + " WHERE correo=(SELECT vendedor_correo FROM intereses WHERE documento=? AND"
                           + " vendedor_correo IS NOT NULL AND estado NOT IN ('Convertido','Perdido')"
                           + " ORDER BY nro_tarjeta LIMIT 1) AND estado='activo' AND rol='vendedor'"
-                          + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin",
+                          + " AND " + HOY + " BETWEEN fecha_inicio AND fecha_fin",
                       t.prospecto().ci());
               if (v == null) {
-                String elegido =
-                    carga.entrySet().stream()
-                        .min(java.util.Map.Entry.comparingByValue())
-                        .orElseThrow()
-                        .getKey();
-                v = vendedores.stream().filter(x -> x.correo().equals(elegido)).findFirst().orElseThrow();
+                v = vendedores.get(turno % vendedores.size());
+                turno++;
+                actualizar(
+                    c,
+                    "INSERT INTO configuraciones(clave,valor,created_at,updated_at,actualizado_por)"
+                        + " VALUES(?,?,now(),now(),?) ON CONFLICT (clave) DO UPDATE SET valor=EXCLUDED.valor,"
+                        + " updated_at=now(), actualizado_por=EXCLUDED.actualizado_por",
+                    TURNO,
+                    v.correo(),
+                    u.correo());
               }
               porProspecto.put(t.prospecto().ci(), v);
             }
-            hechas.add(asignarA(c, u, t, v, "Distribucion equitativa a " + v.getNombreCompleto()));
-            carga.put(v.correo(), carga.get(v.correo()) + 1);
+            hechas.add(asignarA(c, u, t, v, "Round-Robin: turno de " + v.getNombreCompleto()));
           }
           return hechas;
         });

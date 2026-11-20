@@ -72,7 +72,7 @@ def main():
             report[name] = {k: data[k] for k in ['aprobado', 'junit', 'tablas', 'columnas', 'claves_foraneas'] if k in data}
     report['sha256'] = {}
     for key, name in [('doc', 'doc/P1-INF513-GRUPO05SA.doc'), ('docx', 'doc/P1-INF513-GRUPO05SA.docx'),
-                      ('pdf', 'doc/P1-INF513-GRUPO05SA.pdf'), ('laminas', 'doc/P1-LAMINAS-UML-GRUPO05SA.pdf'),
+                      ('pdf', 'doc/P1-INF513-GRUPO05SA.pdf'),
                       ('ea', 'doc/ea/crm-p1.eapx'), ('jar', 'target/crm-mail.jar')]:
         report['sha256'][key] = hashlib.sha256((root / name).read_bytes()).hexdigest()
     if args.render:

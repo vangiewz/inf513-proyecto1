@@ -24,7 +24,6 @@ public final class PagoService {
       BigDecimal subtotal,
       BigDecimal descuento,
       BigDecimal total,
-      String estado,
       String estadoPago,
       String fecha) {
     public static final String[] COLUMNAS = {
@@ -45,7 +44,7 @@ public final class PagoService {
       String estado,
       String observacion) {
     public static final String[] COLUMNAS = {
-      "Nro.", "Orden", "Archivo", "Tipo", "Fecha", "Estado", "Observacion"
+      "Nro.", "Orden", "Archivo", "Tipo", "Fecha", "Estado", "Observación"
     };
 
     public String[] fila() {
@@ -59,7 +58,7 @@ public final class PagoService {
       List.of("Pendiente de pago", "En revision", "Pago aprobado", "Pago rechazado");
   private static final String ORDEN_SQL =
       """
-      SELECT op.nro_orden,op.nro_tarjeta,op.vendedor_correo,op.subtotal,op.descuento_total,op.total,op.estado,
+      SELECT op.nro_orden,op.nro_tarjeta,op.vendedor_correo,op.subtotal,op.descuento_total,op.total,
       pg.codigo_qr,pg.estado AS estado_pago,op.fecha_generacion,
       p.nombre || ' ' || p.apellido AS prospecto
       FROM ordenes_pago op JOIN intereses i ON i.nro_tarjeta=op.nro_tarjeta
@@ -81,7 +80,6 @@ public final class PagoService {
         r.getBigDecimal("subtotal"),
         r.getBigDecimal("descuento_total"),
         r.getBigDecimal("total"),
-        r.getString("estado"),
         r.getString("estado_pago"),
         texto(r.getTimestamp("fecha_generacion")));
   }
@@ -106,10 +104,10 @@ public final class PagoService {
             c,
             r -> 1,
             "SELECT 1 FROM usuarios WHERE correo=? AND estado='activo' AND rol=?"
-                + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin",
+                + " AND " + bo.uagrm.crm.persistencia.DatabaseService.HOY + " BETWEEN fecha_inicio AND fecha_fin",
             u.correo(),
             u.rol().nombre())
-        == null) throw new CrmException("Su usuario o rol cambio; se requiere una cuenta activa.");
+        == null) throw new CrmException("Su usuario o rol cambió; se requiere una cuenta activa y vigente.");
   }
 
   private static Orden porPago(Connection c, Usuario u, int nro, boolean bloquear)
@@ -120,8 +118,43 @@ public final class PagoService {
             PagoService::de,
             ORDEN_SQL + " WHERE pg.nro_orden=? AND " + alcance(u) + (bloquear ? " FOR UPDATE OF pg" : ""),
             args(u, nro));
-    if (o == null) throw new CrmException("El pago no existe o no pertenece a su alcance.");
+    if (o == null) fueraDeAlcance(c, nro, "El pago");
     return o;
+  }
+
+  /** RF3.6: la comisión es configurable por administración (pedido de la clienta). Devuelve la anterior. */
+  public String configurarComision(Usuario u, String porcentaje) throws SQLException, CrmException {
+    if (u.rol() != Rol.ADMINISTRADOR)
+      throw new AccesoDenegado("Solo administración configura la comisión.");
+    BigDecimal pct;
+    try {
+      pct = new BigDecimal(porcentaje.trim().replace(',', '.'));
+    } catch (NumberFormatException | NullPointerException e) {
+      throw new CrmException("El porcentaje \"" + porcentaje + "\" debe ser un número, por ejemplo 2.5.");
+    }
+    if (pct.signum() < 0 || pct.compareTo(new BigDecimal("100")) > 0)
+      throw new CrmException("El porcentaje debe estar entre 0 y 100.");
+    BigDecimal valor = pct.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros();
+    return db.enTransaccion(
+        c -> {
+          String anterior =
+              uno(c, r -> r.getString(1), "SELECT valor FROM configuraciones WHERE clave='comision_porcentaje'");
+          actualizar(
+              c,
+              "INSERT INTO configuraciones(clave,valor,created_at,updated_at,actualizado_por)"
+                  + " VALUES('comision_porcentaje',?,now(),now(),?) ON CONFLICT (clave) DO UPDATE SET"
+                  + " valor=EXCLUDED.valor, updated_at=now(), actualizado_por=EXCLUDED.actualizado_por",
+              valor.toPlainString(),
+              u.correo());
+          return anterior == null ? "0" : anterior;
+        });
+  }
+
+  /** Error si la orden no existe; Denegado si existe pero es de otra cartera o programa. */
+  private static void fueraDeAlcance(Connection c, int nro, String que) throws SQLException, CrmException {
+    if (uno(c, r -> 1, "SELECT 1 FROM ordenes_pago WHERE nro_orden=?", nro) == null)
+      throw new CrmException(que + " #" + nro + " no existe.");
+    throw new AccesoDenegado(que + " #" + nro + " no pertenece a su cartera ni a sus programas.");
   }
 
   public List<Orden> listar(Usuario u, String estado) throws SQLException, CrmException {
@@ -139,7 +172,7 @@ public final class PagoService {
     try (Connection c = db.getConnection()) {
       Orden o =
           uno(c, PagoService::de, ORDEN_SQL + " WHERE op.nro_orden=? AND " + alcance(u), args(u, orden));
-      if (o == null) throw new CrmException("La orden no existe o no pertenece a su alcance.");
+      if (o == null) fueraDeAlcance(c, orden, "La orden");
       return o;
     }
   }
@@ -149,8 +182,9 @@ public final class PagoService {
     try (Connection c = db.getConnection()) {
       return filas(
           c,
-          "SELECT modulo_codigo,programa_nombre,modulo_nombre,precio_acordado,estado FROM"
-              + " solicitudes_compra WHERE nro_orden=? ORDER BY nro_solicitud",
+          "SELECT sc.modulo_codigo,sc.programa_nombre,sc.modulo_nombre,sc.precio_acordado,CASE WHEN EXISTS(SELECT 1"
+              + " FROM inscripciones_comerciales ic WHERE ic.nro_solicitud=sc.nro_solicitud) THEN 'confirmada' ELSE"
+              + " 'pendiente' END FROM solicitudes_compra sc WHERE sc.nro_orden=? ORDER BY sc.nro_solicitud",
           orden);
     }
   }
@@ -170,12 +204,23 @@ public final class PagoService {
           Interes t = EmbudoService.tarjeta(c, u, tarjeta, true);
           if (t.cerrada())
             throw new CrmException("No se generan órdenes sobre intereses cerrados.");
+          Object[] abierta =
+              uno(
+                  c,
+                  r -> new Object[] {r.getInt(1), r.getString(2)},
+                  "SELECT op.nro_orden,pg.estado FROM ordenes_pago op JOIN pagos pg ON pg.nro_orden=op.nro_orden"
+                      + " WHERE op.nro_tarjeta=? AND pg.estado IN ('Pendiente de pago','En revision') LIMIT 1",
+                  t.nro());
+          if (abierta != null)
+            throw new CrmException(
+                "La tarjeta #" + t.nro() + " ya tiene la orden #" + abierta[0] + " (" + abierta[1]
+                    + "). Registre su comprobante con REGISTRARCOMPROBANTE o espere su revisión.");
           if (t.vendedorCorreo() == null
               || uno(
                       c,
                       r -> 1,
                       "SELECT 1 FROM usuarios WHERE correo=? AND rol='vendedor' AND estado='activo'"
-                          + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin",
+                          + " AND " + bo.uagrm.crm.persistencia.DatabaseService.HOY + " BETWEEN fecha_inicio AND fecha_fin",
                       t.vendedorCorreo())
                   == null) throw new CrmException("Asigne primero un vendedor activo.");
           Oferta base = uno(c, Oferta::de, Oferta.SQL + " WHERE o.codigo=?", t.ofertaCodigo());
@@ -195,7 +240,7 @@ public final class PagoService {
               throw new CrmException(
                   "Los módulos de una orden deben corresponder al programa de la tarjeta.");
             if (u.rol() == Rol.COORDINADOR && !Objects.equals(f.coordinadorCorreo(), u.correo()))
-              throw new CrmException("El programa no está a su cargo.");
+              throw new AccesoDenegado("El programa no está a su cargo.");
             ofertas.add(f);
           }
           BigDecimal subtotal =
@@ -213,10 +258,10 @@ public final class PagoService {
                     "SELECT codigo,porcentaje FROM descuentos WHERE upper(codigo)=upper(?) AND estado='activo'",
                     codigo);
             if (f == null)
-              throw new CrmException("No existe un descuento activo con codigo " + codigo);
+              throw new CrmException("No existe un descuento activo con código " + codigo);
             BigDecimal pct = (BigDecimal) f[1];
             if (pct.signum() < 0 || pct.compareTo(new BigDecimal("100")) > 0)
-              throw new CrmException("El descuento tiene un porcentaje invalido.");
+              throw new CrmException("El descuento tiene un porcentaje inválido.");
             porcentaje = porcentaje.add(pct);
             BigDecimal monto =
                 subtotal.multiply(pct).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
@@ -231,8 +276,8 @@ public final class PagoService {
                   c,
                   "nro_orden",
                   """
-INSERT INTO ordenes_pago(nro_tarjeta,vendedor_correo,subtotal,descuento_total,total,estado,fecha_generacion,created_at,updated_at)
-VALUES(?,?,?,?,?,'Pendiente de pago',now(),now(),now())
+INSERT INTO ordenes_pago(nro_tarjeta,vendedor_correo,subtotal,descuento_total,total,fecha_generacion,created_at,updated_at)
+VALUES(?,?,?,?,?,now(),now(),now())
 """,
                   t.nro(),
                   t.vendedorCorreo(),
@@ -249,12 +294,27 @@ VALUES(?,?,?,?,?,'Pendiente de pago',now(),now(),now())
                 f[0],
                 f[1],
                 f[2]);
-          for (Oferta f : ofertas)
+          // Precio acordado de cada módulo = precio de lista con el descuento de la orden; el último absorbe el
+          // redondeo para que la suma sea exactamente el total cobrado (matrícula y comisión sobre lo pagado).
+          List<BigDecimal> acordados = new ArrayList<>();
+          BigDecimal acumulado = BigDecimal.ZERO;
+          for (int k = 0; k < ofertas.size(); k++) {
+            BigDecimal precio =
+                k == ofertas.size() - 1
+                    ? total.subtract(acumulado)
+                    : subtotal.signum() == 0
+                        ? BigDecimal.ZERO
+                        : ofertas.get(k).precio().multiply(total).divide(subtotal, 2, RoundingMode.HALF_UP);
+            acordados.add(precio);
+            acumulado = acumulado.add(precio);
+          }
+          for (int k = 0; k < ofertas.size(); k++) {
+            Oferta f = ofertas.get(k);
             actualizar(
                 c,
                 """
-INSERT INTO solicitudes_compra(nro_orden,anuncio_codigo,modulo_codigo,programa_nombre,modulo_nombre,modulo_descripcion,precio_acordado,estado,fecha,created_at,updated_at)
-VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
+INSERT INTO solicitudes_compra(nro_orden,anuncio_codigo,modulo_codigo,programa_nombre,modulo_nombre,modulo_descripcion,precio_acordado,fecha,created_at,updated_at)
+VALUES(?,?,?,?,?,?,?,now(),now(),now())
 """,
                 orden,
                 f.anuncioId(),
@@ -262,7 +322,8 @@ VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
                 f.programa(),
                 f.nombre(),
                 f.descripcion(),
-                f.precio());
+                acordados.get(k));
+          }
           String codigo =
               "CRM-QR-ORD-"
                   + orden
@@ -275,10 +336,9 @@ VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
           actualizar(
                   c,
                   "INSERT INTO"
-                      + " pagos(nro_orden,monto,codigo_qr,estado,fecha_generacion,created_at,updated_at)"
-                      + " VALUES(?,?,?,'Pendiente de pago',now(),now(),now())",
+                      + " pagos(nro_orden,codigo_qr,estado,created_at,updated_at)"
+                      + " VALUES(?,?,'Pendiente de pago',now(),now())",
                   orden,
-                  total,
                   codigo);
           evento(
               c,
@@ -309,18 +369,19 @@ VALUES(?,?,?,?,?,?,?,'pendiente',now(),now(),now())
           if (!List.of("Pendiente de pago", "Pago rechazado").contains(o.estadoPago()))
             throw new CrmException("El pago ya está en revisión o fue aprobado.");
           if (t.cerrada())
-            throw new CrmException("La tarjeta esta cerrada; no admite otro comprobante.");
+            throw new CrmException("La tarjeta está cerrada; no admite otro comprobante.");
           actualizar(
               c,
               """
-INSERT INTO comprobantes_pago(nro_orden,archivo,nombre_archivo,mime,fecha_envio,observacion,estado_revision,created_at,updated_at)
-VALUES(?,?,?,?,now(),?,'En revision',now(),now())
+INSERT INTO comprobantes_pago(nro_orden,archivo,nombre_archivo,mime,fecha_envio,observacion,estado_revision,remitente,created_at,updated_at)
+VALUES(?,?,?,?,now(),?,'En revision',?,now(),now())
 """,
               pago,
               valido.dataUrl(),
               valido.nombre(),
               valido.mime(),
-              nota);
+              nota,
+              u.correo());
           estados(c, o, "En revision", null);
           evento(
               c,
@@ -410,7 +471,7 @@ VALUES(?,?,?,?,now(),?,'En revision',now(),now())
           uno(c, r -> r.getString(1), "SELECT documento FROM prospectos WHERE documento=? FOR UPDATE", prospecto);
           Interes t = EmbudoService.tarjeta(c, u, o.nroTarjeta(), true);
           if (t.cerrada())
-            throw new CrmException("La tarjeta esta cerrada; revise su estado antes de aprobar.");
+            throw new CrmException("La tarjeta está cerrada; revise su estado antes de aprobar.");
           List<String> faltan = faltantes(c, t);
           if (!faltan.isEmpty())
             throw new CrmException(
@@ -457,12 +518,8 @@ WHERE i.documento=? AND sc.modulo_codigo=? LIMIT 1
             actualizar(
                 c,
                 "INSERT INTO"
-                    + " inscripciones_comerciales(nro_solicitud,fecha_confirmacion,estado,created_at,updated_at)"
-                    + " VALUES(?,now(),'Confirmada',now(),now())",
-                venta[0]);
-            actualizar(
-                c,
-                "UPDATE solicitudes_compra SET estado='confirmada',updated_at=now() WHERE nro_solicitud=?",
+                    + " inscripciones_comerciales(nro_solicitud,fecha_confirmacion,created_at,updated_at)"
+                    + " VALUES(?,now(),now(),now())",
                 venta[0]);
             BigDecimal comision =
                 ((BigDecimal) venta[2])
@@ -558,7 +615,7 @@ WHERE i.documento=? AND sc.modulo_codigo=? LIMIT 1
         estado,
         nota,
         o.nro());
-    actualizar(c, "UPDATE ordenes_pago SET estado=?,updated_at=now() WHERE nro_orden=?", estado, o.nro());
+    actualizar(c, "UPDATE ordenes_pago SET updated_at=now() WHERE nro_orden=?", o.nro());
   }
 
   private static void evento(

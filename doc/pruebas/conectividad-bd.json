@@ -1,6 +1,0 @@
-{
-  "fecha": "2026-11-19",
-  "host": "db.tecnoweb.org.bo",
-  "puerto": 5432,
-  "error": "[Errno 11002] getaddrinfo failed"
-}

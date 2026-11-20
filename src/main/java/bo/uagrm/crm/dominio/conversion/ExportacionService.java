@@ -77,7 +77,7 @@ public final class ExportacionService {
                   r -> r.getInt(1),
                   "SELECT m.nro_solicitud "
                       + FROM
-                      + " WHERE (?::int IS NULL OR m.nro_solicitud=?) AND m.estado='Confirmada' AND"
+                      + " WHERE (?::int IS NULL OR m.nro_solicitud=?) AND "
                       + " pg.estado='Pago aprobado' AND NOT EXISTS(SELECT 1 FROM exportaciones e"
                       + " WHERE e.nro_solicitud=m.nro_solicitud AND e.estado IN"
                       + " ('preparada','exportada','recibida')) AND "
@@ -104,11 +104,10 @@ public final class ExportacionService {
                     c,
                     "nro_exportacion",
                     """
-INSERT INTO exportaciones(usuario_correo,documento,nro_solicitud,fecha_exportacion,estado,respuesta,created_at,updated_at)
-VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object('nro_solicitud',?::int),'origen','correo','envio_SIS','pendiente de API')::text,now(),now())
+INSERT INTO exportaciones(usuario_correo,nro_solicitud,fecha_exportacion,estado,respuesta,created_at,updated_at)
+VALUES(?,?,now(),'preparada',json_build_object('inscripcion',json_build_object('nro_solicitud',?::int),'origen','correo','envio_SIS','pendiente de API')::text,now(),now())
 """,
                     u.correo(),
-                    data[0],
                     nro,
                     nro);
             rows.add(
@@ -128,6 +127,13 @@ VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object
         });
   }
 
+  /** Error si la exportación no existe; Denegado si existe pero es de un programa ajeno (RF1.3). */
+  private static void fueraDeAlcance(Connection c, int nro) throws SQLException, CrmException {
+    if (uno(c, r -> 1, "SELECT 1 FROM exportaciones WHERE nro_exportacion=?", nro) == null)
+      throw new CrmException("No existe la exportación #" + nro + ".");
+    throw new bo.uagrm.crm.dominio.AccesoDenegado("La exportación #" + nro + " es de un programa que no está a su cargo.");
+  }
+
   public Preparacion recuperar(Usuario u, int nro) throws SQLException, CrmException {
     rol(u);
     try (Connection c = db.getConnection()) {
@@ -139,7 +145,7 @@ VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object
                   + " JOIN exportaciones e ON e.nro_solicitud=m.nro_solicitud WHERE e.nro_exportacion=? AND "
                   + alcance(u),
               args(u, nro));
-      if (rows.isEmpty()) throw new CrmException("No existe esa exportación en su alcance.");
+      if (rows.isEmpty()) fueraDeAlcance(c, nro);
       int inscripcion = Integer.parseInt(rows.get(0)[1]);
       return new Preparacion(
           rows,
@@ -171,9 +177,9 @@ VALUES(?,?,?,now(),'preparada',json_build_object('inscripcion',json_build_object
                       + alcance(u)
                       + " FOR UPDATE OF e",
                   args(u, nro));
-          if (anterior == null) throw new CrmException("No existe esa exportación en su alcance.");
+          if (anterior == null) fueraDeAlcance(c, nro);
           if (anterior.equals("recibida") && !e.equals("recibida"))
-            throw new CrmException("Una recepcion confirmada no se revierte manualmente.");
+            throw new CrmException("Una recepción confirmada no se revierte manualmente.");
           actualizar(
               c,
               "UPDATE exportaciones SET"

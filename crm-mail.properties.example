@@ -1,4 +1,4 @@
-# Copiar a /etc/crm-mail/crm-mail.properties (chmod 600, dueño crmmail) y completar las contraseñas.
+# Copiar como crm-mail.properties (en la PC del grupo: ..\.secrets\crm-mail.properties) y completar las contraseñas.
 # Este archivo de ejemplo no lleva datos reales.
 
 # Lector POP3: buzón del sistema en el servidor de la facultad (Dovecot)
@@ -6,9 +6,6 @@ pop3.host=mail.tecnoweb.org.bo
 pop3.puerto=110
 pop3.usuario=grupo05sa
 pop3.password=__PASSWORD_GRUPO__
-# plain conserva el protocolo institucional conocido; starttls exige STLS; tls exige TLS implícito.
-# No cambiar puerto ni afirmar soporte TLS sin comprobarlo con autorización.
-pop3.seguridad=plain
 
 # Emisor SMTP: Gmail con STARTTLS y contraseña de aplicación
 # (mail.tecnoweb.org.bo responde 550 Relaying denied a dominios externos)
@@ -25,15 +22,5 @@ db.url=jdbc:postgresql://db.tecnoweb.org.bo:5432/db_grupo05sa?currentSchema=publ
 db.usuario=grupo05sa
 db.password=__PASSWORD_GRUPO__
 
-# Espera DESPUÉS de terminar cada ciclo. Tecnoweb rechaza valores menores a 3000 ms.
-mail.poll.interval.ms=3000
-mail.poll.backoff.max.ms=30000
-mail.poll.permanent.retry.ms=60000
-# Compatibilidad: si falta mail.poll.interval.ms, se admite intervalo.segundos (mínimo 3).
-
-# Claves HMAC personales privadas: correo=base64(32 bytes aleatorios o más).
-# Nunca publicar el archivo; chmod 600 en Linux. Sin clave/firma no se autoriza al usuario registrado.
-auth.keys.file=__RUTA_PRIVADA_CLAVES_HMAC__
-# En systemd se fijan con -Dcrm.log.dir y -Dcrm.lock.dir. No sobrescribir aquí esas rutas.
-# log.directory=logs
-# lock.directory=__DIRECTORIO_COMPARTIDO_ENTRE_LECTORES_DEL_MISMO_BUZON__
+# Cada cuántos segundos se revisa el buzón
+intervalo.segundos=10

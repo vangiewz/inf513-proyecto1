@@ -47,7 +47,7 @@ public record Adjunto(String nombre, String mime, byte[] contenido) {
             .contains("%%EOF")) real = "application/pdf";
     if (real == null)
       throw new CrmException(
-          "Adjunte un comprobante PNG, JPEG, GIF, WebP o PDF válido; no se admiten SVG ni"
+          "Adjunte un comprobante PNG, JPEG, GIF, WebP o PDF valido; no se admiten SVG ni"
               + " ejecutables.");
     String extension =
         switch (real) {
@@ -87,7 +87,7 @@ public record Adjunto(String nombre, String mime, byte[] contenido) {
               Base64.getDecoder().decode(data.substring(coma + 1)))
           .comoComprobante();
     } catch (RuntimeException e) {
-      throw new CrmException("El comprobante almacenado no tiene un formato válido.");
+      throw new CrmException("El comprobante almacenado no tiene un formato valido.");
     }
   }
 }

@@ -46,38 +46,20 @@ public final class CommandProcessor {
       String csv,
       bo.uagrm.crm.presentacion.Adjunto archivo,
       String errorArchivo) {
-    Atendido a = atender(remitente, asunto, csv, archivo, errorArchivo);
-    bitacora(remitente, a.usuarioCorreo(), asunto, a.resultado(), a.detalle());
-    return a.respuesta();
-  }
-
-  /** Resultado de atender un correo, antes de registrarlo en la bitácora. */
-  public record Atendido(Respuesta respuesta, String usuarioCorreo, String resultado, String detalle) {}
-
-  /** Comando que trae el asunto (sin consultar la BD). */
-  public Command interpretar(String asunto, String remitente, String csv) {
-    return parser.parse(asunto, remitente, csv);
-  }
-
-  /**
-   * Atiende el correo sin escribir la bitácora: quien llama la registra (la bandeja la escribe en
-   * la misma transacción que la operación y su respuesta en cola). respuesta es null cuando no
-   * corresponde responder.
-   */
-  public Atendido atender(
-      String remitente,
-      String asunto,
-      String csv,
-      bo.uagrm.crm.presentacion.Adjunto archivo,
-      String errorArchivo) {
     Command cmd = parser.parse(asunto, remitente, csv).conArchivo(archivo, errorArchivo);
     Usuario u = null;
     Respuesta r;
     try {
       u = usuarios.buscarPorCorreo(remitente);
-      if (u == null && !CommandParser.pareceComando(asunto))
-        return new Atendido(
-            null, null, "Ignorado", "Remitente no registrado y asunto sin forma de comando");
+      if (u == null && !CommandParser.pareceComando(asunto)) {
+        bitacora(
+            remitente,
+            null,
+            asunto,
+            "Ignorado",
+            "Remitente no registrado y asunto sin forma de comando");
+        return null;
+      }
       // Orden de control: formato del comando → identidad del remitente → permiso del rol →
       // dominio.
       if (!cmd.isValido()) r = fmt.error(cmd.getNombre(), cmd.getMensajeError());
@@ -100,23 +82,22 @@ public final class CommandProcessor {
                         + ". Pida a un administrador que amplíe su vigencia.");
       else r = porRol.get(u.rol()).procesar(cmd, u);
     } catch (SQLException e) {
-      java.util.logging.Logger.getLogger("crm")
-          .severe("Sin acceso a la BD al identificar al remitente: SQLSTATE=" + e.getSQLState());
-      r = fmt.error(cmd.getNombre(), Errores.traducir(e));
+      r = fmt.error(cmd.getNombre(), Errores.traducir(e)); // traducir() deja la causa en error.log
     } catch (RuntimeException e) {
-      java.util.logging.Logger.getLogger("crm").log(java.util.logging.Level.SEVERE,
-          "Fallo interno al atender " + cmd.getNombre(), e);
+      java.util.logging.Logger.getLogger("crm").log(java.util.logging.Level.SEVERE, "Fallo interno con " + asunto, e);
       r =
           fmt.error(
               cmd.getNombre(),
               "Ocurrió un error interno al procesar el comando. Quedó registrado; intente de"
                   + " nuevo.");
     }
-    return new Atendido(
-        r,
+    bitacora(
+        remitente,
         u == null ? null : u.correo(),
+        asunto,
         r.resultado(),
         r.resultado().equals("Éxito") ? r.titulo() : r.mensaje());
+    return r;
   }
 
   /**
@@ -133,8 +114,7 @@ public final class CommandProcessor {
           resultado,
           detalle);
     } catch (SQLException | RuntimeException e) {
-      java.util.logging.Logger.getLogger("crm").severe(
-          "No se pudo escribir la bitácora: resultado=" + resultado + ", tipo=" + e.getClass().getSimpleName());
+      java.util.logging.Logger.getLogger("crm").severe("No se pudo escribir la bitácora (" + resultado + " · " + asunto + "): " + e.getMessage());
     }
   }
 

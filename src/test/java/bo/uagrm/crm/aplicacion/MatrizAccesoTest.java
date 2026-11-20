@@ -42,10 +42,6 @@ class MatrizAccesoTest {
         resultado(
             v, "INSERTARUSUARIO[\"A\",\"B\",\"a@b.com\",\"70000000\",\"vendedor\"]", vendedor));
     assertEquals("Denegado", resultado(v, "VERBITACORA[]", vendedor));
-    assertEquals("Denegado", resultado(v, "LISPER[\"*\"]", vendedor));
-    assertEquals("Denegado", resultado(new PublicoCommandProcessor(sinBd, fmt), "LISPER[\"*\"]", null));
-    assertEquals("Denegado", resultado(new CoordinadorCommandProcessor(sinBd, fmt),
-        "INSPER[\"4715292\",\"A\",\"B\",\"Estudiante\",\"33554433\",\"71055123\",\"a@b.com\"]", coordinador));
     assertEquals(
         "Denegado",
         resultado(
@@ -64,8 +60,6 @@ class MatrizAccesoTest {
         new PublicoCommandProcessor(sinBd, fmt).comandos());
     var admin = new AdministradorCommandProcessor(sinBd, fmt).comandos();
     var vend = new VendedorCommandProcessor(sinBd, fmt).comandos();
-    assertTrue(admin.contains(Comando.LISPER));
-    assertTrue(admin.contains(Comando.INSPER));
     assertFalse(admin.contains(Comando.REGISTRARINTERES));
     assertFalse(vend.contains(Comando.LISTARBOLSA));
     for (Comando k :

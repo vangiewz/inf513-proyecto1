@@ -25,7 +25,7 @@ public final class SeguimientoService {
       List.of("Llamada", "WhatsApp", "Correo electronico", "Reunion", "Nota comercial");
   public static final String[] COLUMNAS_HISTORIAL = {"Fecha", "Tipo", "Detalle", "Usuario"};
   public static final String[] COLUMNAS_BITACORA = {
-    "Fecha", "Remitente", "Rol", "Comando", "Resultado", "Respuesta", "Detalle"
+    "Fecha", "Remitente", "Rol", "Comando", "Resultado", "Detalle"
   };
   private static final List<DateTimeFormatter> FORMATOS =
       List.of(
@@ -56,7 +56,10 @@ public final class SeguimientoService {
         d = Valida.texto(descripcion, "descripción", 500);
     return db.enTransaccion(
         c -> {
-          EmbudoService.tarjeta(c, u, nroTarjeta, true);
+          var tarjeta = EmbudoService.tarjeta(c, u, nroTarjeta, true);
+          if (tarjeta.estado().equals("Nuevo")) // RF4.1: el paso a En Contacto también queda en el historial
+            EmbudoService.registrarMovimiento(
+                c, nroTarjeta, u.correo(), "Nuevo", "Contactado", "Primera interacción registrada");
           int nro =
               DatabaseService.insertar(
                   c,
@@ -81,7 +84,7 @@ public final class SeguimientoService {
       throws SQLException, CrmException {
     LocalDateTime cuando = fecha(fechaHora);
     if (!cuando.isAfter(LocalDateTime.now(java.time.ZoneId.of("America/La_Paz"))))
-      throw new CrmException("La fecha " + fechaHora + " ya pasó: indique una fecha futura.");
+      throw new CrmException("La fecha_programada " + fechaHora + " ya pasó: indique una fecha futura.");
     String d = Valida.texto(descripcion, "descripción", 300);
     return db.enTransaccion(
         c -> {
@@ -168,7 +171,7 @@ SELECT h.fecha, h.tipo, h.detalle, COALESCE(u.nombre || ' ' || u.apellido, 'Sist
 FROM (
     SELECT m.fecha, CASE WHEN m.estado_anterior IS DISTINCT FROM m.estado_nuevo THEN 'Movimiento' ELSE 'Asignación' END AS tipo,
            CASE WHEN m.estado_anterior IS DISTINCT FROM m.estado_nuevo
-                THEN COALESCE(m.estado_anterior || ' → ', '') || m.estado_nuevo || COALESCE('. ' || m.detalle, '')
+                THEN COALESCE(%s || ' → ', '') || %s || COALESCE('. ' || m.detalle, '')
                 ELSE m.detalle END AS detalle,
            m.usuario_correo
     FROM movimientos_interes m WHERE m.nro_tarjeta = ?
@@ -177,7 +180,9 @@ FROM (
     UNION ALL
     SELECT r.fecha_programada, 'Recordatorio (' || r.estado || ')', r.descripcion, r.usuario_correo FROM recordatorios r WHERE r.nro_tarjeta = ?
 ) h LEFT JOIN usuarios u ON u.correo = h.usuario_correo
-ORDER BY h.fecha""",
+ORDER BY h.fecha"""
+                  .formatted(
+                      EmbudoService.etapaSql("m.estado_anterior"), EmbudoService.etapaSql("m.estado_nuevo")),
               nroTarjeta,
               nroTarjeta,
               nroTarjeta);
@@ -208,31 +213,28 @@ ORDER BY h.fecha""",
       return filas(
           c,
           """
-SELECT l.fecha, l.remitente, COALESCE(l.rol_registrado,u.rol, 'público'), l.asunto, l.resultado,
-       COALESCE((SELECT s.estado FROM correos_salientes s WHERE s.nro_registro = l.nro_registro
-                 ORDER BY s.nro_correo DESC LIMIT 1), '—'), COALESCE(l.detalle, '')
+SELECT l.fecha, l.remitente, COALESCE(l.rol_registrado,u.rol, 'público'), l.asunto, l.resultado, COALESCE(l.detalle, '')
 FROM log_comandos l LEFT JOIN usuarios u ON u.correo = l.usuario_correo
 ORDER BY l.nro_registro DESC LIMIT ?""",
           Math.min(cantidad, 200));
     }
   }
 
-  /**
-   * Recordatorios que ya vencieron y aún no se avisaron por correo. Dentro de una transacción
-   * quedan bloqueados hasta marcarlos (otra instancia del lector los salta).
-   */
+  /** Recordatorios que ya vencieron y aún no se avisaron por correo. */
   public List<Recordatorio> vencidos() throws SQLException {
     try (Connection c = db.getConnection()) {
       return lista(
           c,
           Recordatorio::de,
           Recordatorio.SQL
-              + " WHERE r.estado IN ('Pendiente','Atrasada') AND u.estado='activo' AND (u.rol <>"
+              + " WHERE r.estado IN ('Pendiente','Atrasada') AND u.estado='activo' AND "
+              + DatabaseService.HOY
+              + " BETWEEN u.fecha_inicio AND u.fecha_fin AND (u.rol <>"
               + " 'vendedor' OR i.vendedor_correo=u.correo) AND NOT r.notificado AND r.fecha_programada <="
               + " now() AND (u.rol <> 'coordinador' OR EXISTS (SELECT 1 FROM catalogo_cache ac JOIN"
               + " programas_responsables pr ON pr.programa_codigo=ac.programa_codigo WHERE"
               + " ac.codigo=i.modulo_codigo AND pr.coordinador_correo=u.correo)) ORDER BY"
-              + " r.fecha_programada FOR UPDATE OF r SKIP LOCKED");
+              + " r.fecha_programada");
     }
   }
 

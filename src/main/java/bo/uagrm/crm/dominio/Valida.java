@@ -30,11 +30,11 @@ public final class Valida {
     String v = normal(valor == null ? "" : valor);
     for (String o : opciones) if (normal(o).equals(v)) return o;
     throw new CrmException(
-        "El "
-            + campo
-            + " \""
+        "El valor \""
             + valor
-            + "\" no es válido. Use uno de: "
+            + "\" no es válido para el campo "
+            + campo
+            + ". Use uno de: "
             + String.join(", ", opciones)
             + ".");
   }

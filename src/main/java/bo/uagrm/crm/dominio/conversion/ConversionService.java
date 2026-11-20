@@ -21,6 +21,9 @@ public final class ConversionService {
     }
   }
 
+  /** Requisito de pago (CU6); los demás son los datos que RF3.4 exige antes de la matrícula. */
+  public static final String PAGO = "Pago aprobado (APROBARPAGO)";
+
   private final DatabaseService db;
 
   public ConversionService(DatabaseService db) {
@@ -74,7 +77,7 @@ public final class ConversionService {
 SELECT 1 FROM inscripciones_comerciales ic JOIN solicitudes_compra sc ON sc.nro_solicitud=ic.nro_solicitud
 JOIN ordenes_pago op ON op.nro_orden=sc.nro_orden JOIN pagos pg ON pg.nro_orden=op.nro_orden
 JOIN intereses origen ON origen.nro_tarjeta=op.nro_tarjeta
-WHERE origen.documento=? AND sc.modulo_codigo=? AND pg.estado='Pago aprobado' AND op.estado='Pago aprobado' AND sc.estado='confirmada' AND ic.estado='Confirmada' LIMIT 1
+WHERE origen.documento=? AND sc.modulo_codigo=? AND pg.estado='Pago aprobado' LIMIT 1
 """,
                 p.ci(),
                 t.ofertaCodigo())
@@ -91,14 +94,7 @@ WHERE origen.documento=? AND sc.modulo_codigo=? AND pg.estado='Pago aprobado' AN
                 new Requisito("Teléfono válido", p.telefono(), Valida.esTelefono(p.telefono())),
                 new Requisito("Correo válido", p.correo(), Valida.esCorreo(p.correo())),
                 new Requisito("Vendedor asignado", t.nombreVendedor(), t.vendedorCorreo() != null),
-                new Requisito(
-                    "Pago aprobado e inscripción confirmada",
-                    pagado ? "Confirmada" : "Pendiente",
-                    pagado),
-                new Requisito(
-                    "Inscripción comercial confirmada",
-                    t.estado(),
-                    "Convertido".equals(t.estado()))));
+                new Requisito(PAGO, pagado ? "Aprobado" : "Pendiente", pagado)));
     var faltan = bo.uagrm.crm.dominio.pagos.PagoService.faltantes(c, t);
     requisitos.add(
         new Requisito(

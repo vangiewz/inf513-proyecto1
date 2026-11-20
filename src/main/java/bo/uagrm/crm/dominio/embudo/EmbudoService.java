@@ -41,6 +41,13 @@ public final class EmbudoService {
     };
   }
 
+  /** La misma traducción que etapaCorreo, como expresión SQL sobre la columna dada. */
+  public static String etapaSql(String columna) {
+    return "CASE " + columna + " WHEN 'Contactado' THEN 'En Contacto' WHEN 'Interesado' THEN 'Seguimiento'"
+        + " WHEN 'Pago enviado' THEN 'Promesa de Pago' WHEN 'En revision' THEN 'Promesa de Pago'"
+        + " ELSE " + columna + " END";
+  }
+
   private final DatabaseService db;
 
   public EmbudoService(DatabaseService db) {
@@ -62,35 +69,39 @@ public final class EmbudoService {
    * Mueve la tarjeta entre las columnas abiertas. Perdido y Convertido tienen su propio comando.
    */
   public Interes mover(Usuario u, int nro, String estado) throws SQLException, CrmException {
-    String entrada =
-        switch (Valida.normal(estado == null ? "" : estado)) {
-          case "en contacto" -> "Contactado";
-          case "seguimiento" -> "Interesado";
-          case "promesa de pago" -> "Pago enviado";
-          default -> estado;
-        };
-    String nuevo = Valida.elegir(entrada, ESTADOS_BD, "estado");
-    if (nuevo.equals("Perdido"))
+    // El usuario usa las etapas de RF3.2; en intereses.estado se guarda su equivalente (ver etapaCorreo).
+    String etapa = Valida.elegir(estado, ESTADOS, "etapa");
+    if (etapa.equals("Perdido"))
       throw new CrmException(
           "Para marcar una tarjeta como Perdido use MARCARPERDIDO[\""
               + nro
               + "\",\"motivo\",\"detalle\"]: el motivo es obligatorio. Vea LISTARMOTIVOS[].");
-    if (nuevo.equals("Convertido"))
+    if (etapa.equals("Convertido"))
       throw new CrmException(
           "Para convertir use CONVERTIRPROSPECTO[\""
               + nro
               + "\"]: antes se validan los datos para la matrícula.");
-    if (nuevo.equals("Pago enviado") || nuevo.equals("En revision"))
+    if (etapa.equals("Promesa de Pago"))
       throw new CrmException(
-          "Las etapas financieras se actualizan al registrar y revisar pagos con GENERARORDEN,"
-              + " REGISTRARCOMPROBANTE y APROBARPAGO.");
+          "Promesa de Pago se fija al generar la orden de pago (GENERARORDEN) y se cierra al revisar el"
+              + " comprobante (APROBARPAGO o RECHAZARPAGO).");
+    String nuevo =
+        switch (etapa) {
+          case "En Contacto" -> "Contactado";
+          case "Seguimiento" -> "Interesado";
+          default -> etapa;
+        };
     return db.enTransaccion(
         c -> {
           Interes t = tarjeta(c, u, nro, true);
           if (t.estado().equals("Convertido"))
             throw new CrmException("La tarjeta #" + nro + " ya fue convertida en matrícula.");
+          if (etapaCorreo(t.estado()).equals("Promesa de Pago"))
+            throw new CrmException(
+                "La tarjeta #" + nro + " tiene una orden de pago en curso: se mueve al aprobar o rechazar"
+                    + " el pago.");
           if (t.estado().equals(nuevo))
-            throw new CrmException("La tarjeta #" + nro + " ya está en " + nuevo + ".");
+            throw new CrmException("La tarjeta #" + nro + " ya está en " + etapa + ".");
           actualizar(
               c,
               "UPDATE intereses SET estado = ?, motivo_perdida = NULL, observacion = NULL,"
@@ -125,7 +136,7 @@ public final class EmbudoService {
           case VENDEDOR -> Objects.equals(t.vendedorCorreo(), u.correo());
         };
     if (!puede)
-      throw new CrmException(
+      throw new bo.uagrm.crm.dominio.AccesoDenegado(
           u.rol() == Rol.VENDEDOR
               ? "La tarjeta #"
                   + nro

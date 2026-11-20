@@ -211,7 +211,11 @@ class CasosAprobadosCorreoTest {
                 "SELECT pg.nro_orden FROM pagos pg JOIN ordenes_pago op ON op.nro_orden=pg.nro_orden WHERE"
                     + " op.nro_tarjeta=?",
                 nro);
-    assertEquals("2873.00", str("SELECT monto::text FROM pagos WHERE nro_orden=?", pago));
+    assertEquals("2873.00", str("SELECT total::text FROM ordenes_pago WHERE nro_orden=?", pago));
+    // El precio acordado de cada módulo ya lleva el descuento: su suma es el total cobrado.
+    assertEquals(
+        "2873.00",
+        str("SELECT sum(precio_acordado)::text FROM solicitudes_compra WHERE nro_orden=?", pago));
     r =
         cp.procesarEmail(
             v1.correo(),
@@ -224,7 +228,8 @@ class CasosAprobadosCorreoTest {
     assertEquals(1, r.archivos().size());
     assertArrayEquals(PNG, r.archivos().get(0).contenido());
     assertEquals("Denegado", ejecutar(v1, "APROBARPAGO", "" + pago).resultado());
-    assertEquals("Error", ejecutar(c2, "APROBARPAGO", "" + pago).resultado());
+    // RF1.3: el pago existe pero es de un programa ajeno al coordinador → Denegado (no Error).
+    assertEquals("Denegado", ejecutar(c2, "APROBARPAGO", "" + pago).resultado());
     ok(c1, "APROBARPAGO", "" + pago, "Verificacion de prueba");
     ok(v1, "CONVERTIRPROSPECTO", "" + nro);
     ok(c1, "LISTARMATRICULAS");
@@ -279,9 +284,66 @@ class CasosAprobadosCorreoTest {
   }
 
   @Test
+  void correccionesDeLaAuditoriaDel20Nov() throws Exception {
+    // GENERARORDEN no duplica una orden abierta de la misma tarjeta.
+    Interes t = nueva("datos-bi-m1", true);
+    ok(v1, "GENERARORDEN", "" + t.nro());
+    var dup = ejecutar(v1, "GENERARORDEN", "" + t.nro());
+    assertEquals("Error", dup.resultado());
+    assertTrue(dup.mensaje().contains("ya tiene la orden"), dup.mensaje());
+    // MARCARPERDIDO con la orden sin pagar la cierra (no queda pendiente para siempre).
+    String motivo = "Precio " + doc();
+    ok(c1, "INSERTARMOTIVO", motivo, "Económico");
+    ok(v1, "MARCARPERDIDO", "" + t.nro(), motivo, "No pagó");
+    assertEquals(
+        0,
+        count(
+            "SELECT count(*) FROM pagos pg JOIN ordenes_pago op ON op.nro_orden=pg.nro_orden WHERE"
+                + " op.nro_tarjeta=? AND pg.estado='Pendiente de pago'",
+            t.nro()));
+    // RF3.2: el usuario ve las etapas aprobadas, nunca los nombres internos.
+    Interes m = nueva("datos-bi-m2", true);
+    var mov = ok(v1, "MOVERTARJETA", "" + m.nro(), "Seguimiento");
+    assertTrue(mov.mensaje().contains("Seguimiento"), mov.mensaje());
+    assertFalse(mov.mensaje().contains("Interesado"), mov.mensaje());
+    var mala = ejecutar(v1, "MOVERTARJETA", "" + m.nro(), "Interesado");
+    assertEquals("Error", mala.resultado());
+    assertTrue(mala.mensaje().contains("Parámetro 2"), mala.mensaje());
+    // RF1.2: tarjeta de otro vendedor → Denegado.
+    assertEquals("Denegado", ejecutar(v2, "VERHISTORIAL", "" + m.nro()).resultado());
+    // ELIMINARPROSPECTO quita un registro sin actividad comercial.
+    String ci = doc();
+    ok(admin, "REGISTRARPROSPECTO", ci, "Borrar", "QA", "70000002", ci + "@example.test", "Correo", "datos-bi-m3");
+    ok(admin, "ELIMINARPROSPECTO", ci);
+    assertEquals(0, count("SELECT count(*) FROM prospectos WHERE documento=?", ci));
+    // CONFIGURARCOMISION (administración) y su uso al aprobar.
+    ok(admin, "CONFIGURARCOMISION", "3");
+    assertEquals("Denegado", ejecutar(c1, "CONFIGURARCOMISION", "4").resultado());
+    assertEquals("3", str("SELECT valor FROM configuraciones WHERE clave='comision_porcentaje'"));
+    ok(admin, "CONFIGURARCOMISION", "2");
+    // Round-Robin: dos prospectos nuevos en la bolsa van a vendedores distintos y consecutivos.
+    for (int k = 0; k < 2; k++) {
+      String d = doc();
+      ok(admin, "REGISTRARPROSPECTO", d, "Turno", "QA", "70000003", d + "@example.test", "Correo", "datos-bi-m4");
+    }
+    ok(admin, "ASIGNARAUTOMATICO");
+    assertEquals(
+        2,
+        count(
+            "SELECT count(DISTINCT vendedor_correo) FROM intereses i JOIN prospectos p ON p.documento=i.documento"
+                + " WHERE p.nombre='Turno' AND i.created_at > now() - interval '1 minute'"));
+  }
+
+  @Test
   void credencialFueraDeVigenciaQuedaDenegada() throws Exception {
     String correo = doc() + "@example.test";
-    ok(admin, "INSERTARUSUARIO", "Vigencia", "QA", correo, "70000001", "vendedor", "2026-01-01", "2026-01-31");
+    // Una credencial no puede nacer vencida; se crea vigente y luego se acorta su vigencia.
+    assertEquals(
+        "Error",
+        ejecutar(admin, "INSERTARUSUARIO", "Vigencia", "QA", correo, "70000001", "vendedor", "2026-01-01", "2026-01-31")
+            .resultado());
+    ok(admin, "INSERTARUSUARIO", "Vigencia", "QA", correo, "70000001", "vendedor");
+    ok(admin, "MODIFICARUSUARIO", correo, "Vigencia", "QA", "70000001", "vendedor", "activo", "2026-01-01", "2026-01-31");
     var r = cp.procesarEmail(correo, "HELP[]", null);
     assertEquals("Denegado", r.resultado());
     assertTrue(r.mensaje().contains("venció el 31/01/2026"), r.mensaje());

@@ -30,7 +30,7 @@ public final class PublicoCommandProcessor extends RolCommandProcessor {
     return "El correo "
         + cmd.getRemitente()
         + " no está registrado como usuario del CRM. Como visitante puede usar HELP[],"
-        + " LISTAROFERTA[] e"
+        + " LISTAROFERTA[] y"
         + " REGISTRARINTERES[\"codigo_oferta\",\"documento\",\"nombre\",\"apellido\",\"telefono\"].";
   }
 }

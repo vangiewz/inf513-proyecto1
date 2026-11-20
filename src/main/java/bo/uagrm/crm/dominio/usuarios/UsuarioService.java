@@ -62,6 +62,9 @@ public final class UsuarioService {
     LocalDate ini = opcionalFecha(fechaInicio, "fecha_inicio", LocalDate.now());
     LocalDate fin = opcionalFecha(fechaFin, "fecha_fin", ini.plusYears(1));
     vigenciaValida(ini, fin);
+    if (fin.isBefore(LocalDate.now()))
+      throw new CrmException(
+          "La fecha_fin (" + fin.format(Usuario.DIA) + ") ya pasó: la credencial nacería vencida.");
     return db.enTransaccion(
         c -> {
           actualizar(
@@ -133,6 +136,7 @@ public final class UsuarioService {
           if (e.equals("inactivo") || !r.equals(anterior.rol().nombre()))
             actualizar(c, "DELETE FROM api_tokens WHERE usuario_correo=?", nuevo);
           if (e.equals("inactivo") || !r.equals("vendedor")) liberarCartera(c, actor, nuevo);
+          if (e.equals("inactivo") || !r.equals("coordinador")) soltarProgramas(c, nuevo);
           return porCorreo(c, nuevo);
         });
   }
@@ -152,8 +156,14 @@ public final class UsuarioService {
           actualizar(
               c, "UPDATE usuarios SET estado = 'inactivo', updated_at = now() WHERE correo = ?", u.correo());
           actualizar(c, "DELETE FROM api_tokens WHERE usuario_correo=?", u.correo());
+          soltarProgramas(c, u.correo());
           return liberarCartera(c, actor, u.correo());
         });
+  }
+
+  /** Un coordinador que deja de serlo ya no es responsable de programas (RF1.3): se reasignan con ASIGNARCOORDINADOR. */
+  private static void soltarProgramas(Connection c, String correo) throws SQLException {
+    actualizar(c, "DELETE FROM programas_responsables WHERE coordinador_correo=?", correo);
   }
 
   private static LocalDate opcionalFecha(String valor, String campo, LocalDate omision)
@@ -193,7 +203,7 @@ public final class UsuarioService {
                 c,
                 rs -> 1,
                 "SELECT 1 FROM usuarios WHERE rol='administrador' AND estado='activo'"
-                    + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin AND correo<>? LIMIT 1",
+                    + " AND " + bo.uagrm.crm.persistencia.DatabaseService.HOY + " BETWEEN fecha_inicio AND fecha_fin AND correo<>? LIMIT 1",
                 objetivo.correo())
             == null) throw new CrmException("Debe conservar al menos un administrador activo.");
   }

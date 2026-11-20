@@ -16,40 +16,57 @@ import java.nio.charset.StandardCharsets;
  * Lector de correos POP3 con sockets propios (RFC 1939), contra mail.tecnoweb.org.bo:110 (Dovecot).
  * Diálogo: USER, PASS, STAT, RETR n, DELE n, QUIT. Los DELE solo se confirman con QUIT: si la
  * sesión se corta antes, el servidor conserva los mensajes y se vuelven a leer en el siguiente
- * ciclo.
+ * ciclo. Además del timeout por lectura (60 s) la sesión tiene un plazo total.
  */
 public final class Pop3Client implements Closeable {
 
-  private Socket socket;
-  private BufferedReader in;
-  private Writer out;
+  /**
+   * Plazo total de la sesión: un servidor que manda un byte cada pocos segundos nunca dispara el
+   * timeout por lectura; al vencer este plazo se cierra el socket y la lectura en curso falla.
+   */
+  static final long PLAZO_SESION_MS = 10 * 60_000;
+
+  private static final java.util.Timer VIGIA = new java.util.Timer("pop3-plazo", true);
+  private final Socket socket;
+  private final BufferedReader in;
+  private final Writer out;
+  private final java.util.TimerTask cierre;
+  private volatile boolean vencida;
 
   public Pop3Client(String host, int puerto, String usuario, String password) throws IOException {
-    this(host, puerto, usuario, password, "plain");
+    this(host, puerto, usuario, password, PLAZO_SESION_MS);
   }
 
-  /** plain conserva compatibilidad; starttls exige STLS y tls exige TLS desde el primer byte. */
-  public Pop3Client(String host, int puerto, String usuario, String password, String seguridad) throws IOException {
-    String modo = seguridad == null ? "plain" : seguridad.toLowerCase(java.util.Locale.ROOT);
-    if (!java.util.Set.of("plain", "starttls", "tls").contains(modo))
-      throw new IllegalArgumentException("pop3.seguridad debe ser plain, starttls o tls");
-    if (usuario == null || password == null || usuario.matches("(?s).*[\\r\\n].*") || password.matches("(?s).*[\\r\\n].*"))
-      throw new IllegalArgumentException("Credenciales POP3 inválidas");
+  Pop3Client(String host, int puerto, String usuario, String password, long plazoMs) throws IOException {
     socket = new Socket();
+    cierre =
+        new java.util.TimerTask() {
+          @Override
+          public void run() {
+            vencida = true;
+            try {
+              socket.close();
+            } catch (IOException ignorado) {
+              // el ciclo ya informa la lectura interrumpida
+            }
+          }
+        };
+    VIGIA.schedule(cierre, plazoMs);
     try {
       socket.connect(new InetSocketAddress(host, puerto), 15_000);
       socket.setSoTimeout(60_000);
-      if (modo.equals("tls")) asegurarTls(host, puerto);
-      flujos();
+      // ISO-8859-1 pasa cada byte tal cual: el MIME se decodifica después con su propio charset.
+      in =
+          new BufferedReader(
+              new InputStreamReader(socket.getInputStream(), StandardCharsets.ISO_8859_1));
+      out =
+          new BufferedWriter(
+              new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.ISO_8859_1));
       ok(in.readLine(), "saludo");
-      if (modo.equals("starttls")) {
-        comando("STLS"); // el rechazo termina la sesión: nunca se envían credenciales en claro
-        asegurarTls(host, puerto);
-        flujos();
-      }
       comando("USER " + usuario);
       comando("PASS " + password);
     } catch (IOException | RuntimeException e) {
+      cierre.cancel();
       try {
         socket.close();
       } catch (IOException closeError) {
@@ -57,22 +74,6 @@ public final class Pop3Client implements Closeable {
       }
       throw e;
     }
-  }
-
-  private void flujos() throws IOException {
-    // ISO-8859-1 preserva bytes; MIME decodifica después su charset.
-    in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.ISO_8859_1));
-    out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.ISO_8859_1));
-  }
-
-  private void asegurarTls(String host, int puerto) throws IOException {
-    var ssl = (javax.net.ssl.SSLSocket) ((javax.net.ssl.SSLSocketFactory) javax.net.ssl.SSLSocketFactory.getDefault())
-        .createSocket(socket, host, puerto, true);
-    socket = ssl;
-    var parametros = ssl.getSSLParameters();
-    parametros.setEndpointIdentificationAlgorithm("HTTPS");
-    ssl.setSSLParameters(parametros);
-    ssl.startHandshake();
   }
 
   /** Cantidad de mensajes en el buzón. */
@@ -108,7 +109,23 @@ public final class Pop3Client implements Closeable {
     return multilinea();
   }
 
+  /** Si el plazo total cerró el socket, la causa es la lentitud del servidor, no un corte suyo. */
+  private IOException causa(IOException e) {
+    return vencida
+        ? new IOException("POP3: la sesión superó el plazo de " + PLAZO_SESION_MS / 60_000
+            + " min (el servidor responde demasiado lento)", e)
+        : e;
+  }
+
   private byte[] multilinea() throws IOException {
+    try {
+      return leerMultilinea();
+    } catch (IOException e) {
+      throw causa(e);
+    }
+  }
+
+  private byte[] leerMultilinea() throws IOException {
     ByteArrayOutputStream buf = new ByteArrayOutputStream();
     for (String linea = in.readLine(); ; linea = in.readLine()) {
       if (linea == null)
@@ -116,8 +133,6 @@ public final class Pop3Client implements Closeable {
       if (linea.equals(".")) break;
       if (linea.startsWith("..")) linea = linea.substring(1); // byte-stuffing del protocolo
       buf.writeBytes((linea + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
-      if (buf.size() > 8 * 1024 * 1024 + 65536)
-        throw new IOException("El mensaje excede el límite de recepción; no se confirma DELE");
     }
     return buf.toByteArray();
   }
@@ -133,24 +148,23 @@ public final class Pop3Client implements Closeable {
 
   @Override
   public void close() throws IOException {
+    cierre.cancel();
     socket.close();
   }
 
   private String comando(String linea) throws IOException {
-    out.write(linea + "\r\n");
-    out.flush();
-    return ok(in.readLine(), linea.startsWith("PASS") ? "PASS" : linea.startsWith("USER") ? "USER" : linea);
+    try {
+      out.write(linea + "\r\n");
+      out.flush();
+      return ok(in.readLine(), linea.startsWith("PASS") ? "PASS" : linea);
+    } catch (IOException e) {
+      throw causa(e);
+    }
   }
 
   private static String ok(String respuesta, String paso) throws IOException {
-    if (respuesta == null || !respuesta.startsWith("+OK")) {
-      String codigo = "";
-      if (respuesta != null) {
-        var m = java.util.regex.Pattern.compile("\\[(AUTH|IN-USE|SYS/TEMP|LOGIN-DELAY|SYS/PERM)\\]").matcher(respuesta);
-        if (m.find()) codigo = " " + m.group();
-      }
-      throw new IOException("POP3 rechazó " + paso + (respuesta == null ? ": conexión cerrada" : ": respuesta negativa" + codigo));
-    }
+    if (respuesta == null || !respuesta.startsWith("+OK"))
+      throw new IOException("POP3 rechazó " + paso + ": " + respuesta);
     return respuesta;
   }
 }

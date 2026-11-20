@@ -21,7 +21,7 @@ import javax.net.ssl.SSLException;
 
 /**
  * Traduce una falla de red, de POP3, de SMTP o de PostgreSQL a su causa probable, para el log del
- * servicio. Con --diagnostico revisa POP3, SMTP, IMAP y BD una vez, sin sondeos TCP redundantes.
+ * servicio. Con --diagnostico (y al arrancar) revisa paso a paso DNS, TCP, POP3, SMTP y la BD.
  */
 public final class Diagnostico {
 
@@ -32,6 +32,15 @@ public final class Diagnostico {
 
   /** Causa probable de la falla de una etapa contra host:puerto, en una línea. */
   public static String explicar(String host, int puerto, Throwable e) {
+    return unaLinea(causa(host, puerto, e));
+  }
+
+  /** Une en una línea los mensajes de varias líneas (servidores SMTP, PostgreSQL) para el log. */
+  public static String unaLinea(String texto) {
+    return texto == null ? "" : texto.replaceAll("\\s*[\\r\\n]+\\s*", " ").trim();
+  }
+
+  private static String causa(String host, int puerto, Throwable e) {
     String destino = host + ":" + puerto;
     // Primero la causa de red más profunda: suele venir envuelta (PSQLException, MessagingException).
     for (Throwable t = e; t != null; t = t.getCause()) {
@@ -51,10 +60,16 @@ public final class Diagnostico {
       if (t instanceof SSLException)
         return "falla TLS con " + destino + ": " + t.getMessage();
       if (t instanceof AuthenticationFailedException)
-        return "SMTP " + destino + " rechazó el login: contraseña de aplicación de Gmail revocada o"
-            + " cuenta bloqueada";
-      if (t instanceof SendFailedException)
-        return "SMTP rechazó el destinatario: " + t.getMessage();
+        return "rechazó el login: contraseña de aplicación de Gmail revocada o cuenta bloqueada";
+      if (t instanceof SendFailedException f) {
+        // El detalle útil (550 5.1.1, 550 5.4.5 cuota diaria...) viene en la excepción anidada.
+        String detalle = f.getNextException() != null ? f.getNextException().getMessage() : f.getMessage();
+        return f.getInvalidAddresses() != null && f.getInvalidAddresses().length > 0
+            ? "SMTP rechazó el destinatario: " + detalle
+            : "SMTP rechazó el envío (¿cuota diaria de Gmail o remitente bloqueado?): " + detalle;
+      }
+      if (String.valueOf(t.getMessage()).contains(" 421"))
+        return "SMTP " + destino + " no disponible temporalmente (421); se reintenta en el próximo ciclo";
     }
     for (Throwable t = e; t != null; t = t.getCause())
       if (t instanceof SQLException s && s.getSQLState() != null) return postgres(s);
@@ -97,32 +112,30 @@ public final class Diagnostico {
     if (m.contains("[AUTH]") || m.contains("PASS") || m.contains("USER"))
       return "POP3 rechazó el login: usuario o contraseña del buzón, o cuenta deshabilitada (" + m + ")";
     if (m.contains("[SYS/PERM]")) return "POP3: error permanente del servidor de correo (" + m + ")";
-    if (m.endsWith("null") || m.contains("conexión cerrada")) return "POP3: el servidor cerró la conexión sin responder";
+    if (m.endsWith("null")) return "POP3: el servidor cerró la conexión sin responder";
     return m;
   }
 
   /** Revisión completa paso a paso; devuelve true si todo está bien. */
-  public static boolean revisar(
-      Config cfg, SmtpSender smtp, bo.uagrm.crm.presentacion.Rebotes rebotes, DatabaseService db) {
-    // El saludo real prueba DNS/TCP: no abrir una conexión TCP adicional inmediatamente antes.
-    boolean ok = paso("POP3", cfg.pop3Host(), cfg.pop3Puerto(), () -> {
+  public static boolean revisar(Config cfg, SmtpSender smtp, DatabaseService db) {
+    boolean ok = red(cfg.pop3Host(), cfg.pop3Puerto());
+    ok &= paso("POP3", cfg.pop3Host(), cfg.pop3Puerto(), () -> {
       try (Pop3Client pop =
-          new Pop3Client(cfg.pop3Host(), cfg.pop3Puerto(), cfg.pop3Usuario(), cfg.pop3Password(), cfg.pop3Seguridad())) {
+          new Pop3Client(cfg.pop3Host(), cfg.pop3Puerto(), cfg.pop3Usuario(), cfg.pop3Password())) {
         String r = "login " + cfg.pop3Usuario() + " OK, " + pop.stat() + " mensaje(s) en el buzón";
         pop.quit();
         return r;
       }
     });
+    ok &= red(cfg.smtpHost(), cfg.smtpPuerto());
     ok &= paso("SMTP", cfg.smtpHost(), cfg.smtpPuerto(), () -> {
       smtp.verificar();
-      return "login STARTTLS de " + cfg.smtpUsuario() + " OK";
+      return "login STARTTLS de " + Config.oculto(cfg.smtpUsuario()) + " OK";
     });
-    ok &= paso("IMAP", rebotes.host(), 993, () -> {
-      rebotes.verificar();
-      return "login de " + cfg.smtpUsuario() + " OK (lectura de rebotes)";
-    });
+    ok &= red(cfg.dbHost(), cfg.dbPuerto());
     ok &= paso("BD", cfg.dbHost(), cfg.dbPuerto(), () -> String.join(", ", db.diagnostico()));
-    LOG.info(ok ? "Diagnóstico: todo en orden." : "Diagnóstico: hay fallas, ver arriba.");
+    if (ok) LOG.info("Diagnóstico: todo en orden.");
+    else LOG.warning("Diagnóstico: hay fallas, ver las líneas FALLA anteriores.");
     return ok;
   }
 

@@ -4,10 +4,9 @@ import bo.uagrm.crm.aplicacion.Respuesta.Aviso;
 import bo.uagrm.crm.aplicacion.Respuesta.Bloque;
 import bo.uagrm.crm.aplicacion.Respuesta.Carril;
 import bo.uagrm.crm.aplicacion.Respuesta.Tabla;
+import bo.uagrm.crm.dominio.AccesoDenegado;
 import bo.uagrm.crm.dominio.CrmException;
 import bo.uagrm.crm.dominio.Valida;
-import bo.uagrm.crm.dominio.personas.Persona;
-import bo.uagrm.crm.dominio.personas.PersonaService;
 import bo.uagrm.crm.dominio.asignacion.AsignacionService;
 import bo.uagrm.crm.dominio.asignacion.AsignacionService.Asignacion;
 import bo.uagrm.crm.dominio.captacion.Oferta;
@@ -48,7 +47,6 @@ public abstract class RolCommandProcessor {
 
   protected final ResponseFormatter fmt;
   protected final UsuarioService usuarios;
-  protected final PersonaService personas;
   protected final ProspectoService prospectos;
   protected final AsignacionService asignacion;
   protected final EmbudoService embudo;
@@ -62,7 +60,6 @@ public abstract class RolCommandProcessor {
   protected RolCommandProcessor(DatabaseService db, ResponseFormatter fmt) {
     this.fmt = fmt;
     this.usuarios = new UsuarioService(db);
-    this.personas = new PersonaService(db);
     this.prospectos = new ProspectoService(db);
     this.asignacion = new AsignacionService(db);
     this.embudo = new EmbudoService(db);
@@ -98,8 +95,10 @@ public abstract class RolCommandProcessor {
       return fmt.denegado(cmd.getNombre(), mensajeDenegado(cmd));
     try {
       return ejecutar(cmd, u);
+    } catch (AccesoDenegado e) {
+      return fmt.denegado(cmd.getNombre(), e.getMessage());
     } catch (CrmException e) {
-      return fmt.error(cmd.getNombre(), e.getMessage());
+      return fmt.error(cmd.getNombre(), conParametro(cmd, e.getMessage()));
     } catch (SQLException e) {
       return fmt.error(cmd.getNombre(), Errores.traducir(e));
     } catch (RuntimeException e) {
@@ -113,20 +112,32 @@ public abstract class RolCommandProcessor {
     }
   }
 
+  /**
+   * Antepone "Parámetro N (campo): " cuando el error es de un parámetro concreto: el mensaje cita el
+   * valor recibido entre comillas o nombra el campo (clase 28: "el parámetro 7 no es un correo").
+   */
+  static String conParametro(Command cmd, String mensaje) {
+    String[] nombres = cmd.getTipo().parametros;
+    // Los comandos sugeridos dentro del mensaje (p. ej. CONVERTIRPROSPECTO["1"]) no cuentan como valor citado.
+    String sinEjemplos = mensaje.replaceAll("[A-Z]{3,}\\[[^\\]]*\\]", "");
+    String m = Valida.normal(sinEjemplos);
+    List<Integer> porValor = new ArrayList<>(), porNombre = new ArrayList<>();
+    for (int i = 0; i < nombres.length && i < cmd.cantidad(); i++) {
+      String v = cmd.getParam(i);
+      if (v != null && !v.isBlank() && sinEjemplos.contains("\"" + v + "\"")) porValor.add(i);
+      String nombre = Valida.normal(nombres[i].replace("?", "").replace('_', ' '));
+      if (java.util.regex.Pattern.compile("\\b(campo|el|la) " + java.util.regex.Pattern.quote(nombre) + "\\b")
+          .matcher(m)
+          .find()) porNombre.add(i);
+    }
+    List<Integer> elegido = porValor.size() == 1 ? porValor : porNombre;
+    if (elegido.size() != 1) return mensaje;
+    int i = elegido.get(0);
+    return "Parámetro " + (i + 1) + " (" + nombres[i].replace("?", "") + "): " + mensaje;
+  }
+
   private Respuesta ejecutar(Command c, Usuario u) throws SQLException, CrmException {
     return switch (c.getTipo()) {
-      case LISPER -> {
-        List<Persona> registros = personas.listar(u, c.getParam(0));
-        yield fmt.successTable("Listado de personas",
-            registros.isEmpty() ? "No hay personas registradas." : registros.size() + " persona(s).",
-            Persona.COLUMNAS, filas(registros, Persona::fila));
-      }
-      case INSPER -> {
-        Persona persona = personas.insertar(u, c.getParam(0), c.getParam(1), c.getParam(2),
-            c.getParam(3), c.getParam(4), c.getParam(5), c.getParam(6));
-        yield fmt.successTable("Éxito: persona registrada", "El registro quedó confirmado en PostgreSQL.",
-            Persona.COLUMNAS, List.<String[]>of(persona.fila()));
-      }
       case HELP -> ayuda(c.getParam(0), u);
 
       // CU1. Gestión de Usuarios
@@ -134,7 +145,7 @@ public abstract class RolCommandProcessor {
         if (u.rol() == Rol.COORDINADOR
             && c.getParam(0) != null
             && !"vendedor".equalsIgnoreCase(c.getParam(0)))
-          throw new CrmException("Coordinacion solo puede listar vendedores.");
+          throw new CrmException("Coordinación solo puede listar vendedores.");
         List<Usuario> l = usuarios.listar(u.rol() == Rol.COORDINADOR ? "vendedor" : c.getParam(0));
         yield fmt.successTable(
             "Listando usuarios " + u.getNombreCompleto(),
@@ -154,8 +165,9 @@ public abstract class RolCommandProcessor {
                 c.getParam(6));
         yield fmt.successTable(
             "Éxito: usuario registrado",
-            n.getNombreCompleto()
-                + " quedó registrado como "
+            "Se registró a "
+                + n.getNombreCompleto()
+                + " con el rol "
                 + n.rol().nombre()
                 + ". El administrador debe asignarle una clave desde web para habilitar su acceso"
                 + " web. Ya puede enviar comandos desde "
@@ -208,7 +220,7 @@ public abstract class RolCommandProcessor {
         }
         yield fmt.successTable(
             "Listando la oferta académica",
-            "Catálogo simulado compartido con web (API SIS pendiente). "
+            "Catálogo simulado compartido con web (API del SIS pendiente). "
                 + (u == null
                     ? "Para inscribirse envíe"
                           + " REGISTRARINTERES[\"codigo_oferta\",\"documento\",\"nombre\",\"apellido\",\"telefono\"]."
@@ -375,7 +387,7 @@ public abstract class RolCommandProcessor {
         yield fmt.successTable(
                 "Éxito: distribución equitativa",
                 l.size()
-                    + " prospecto(s) repartidos en turno rotativo. Cada vendedor recibió un"
+                    + " prospecto(s) repartidos en turno rotativo (Round-Robin). Cada vendedor recibió un"
                     + " aviso.",
                 new String[] {"Tarjeta", "Prospecto", "Oferta", "Vendedor"},
                 f)
@@ -388,7 +400,7 @@ public abstract class RolCommandProcessor {
         Interes t = embudo.mover(u, nro(c, 0), c.getParam(1));
         yield fmt.successTable(
             "Éxito: tarjeta movida",
-            "La tarjeta #" + t.nro() + " pasó a la etapa " + EmbudoService.etapaCorreo(t.estado()) + ".",
+            "La tarjeta #" + t.nro() + " está ahora en " + EmbudoService.etapaCorreo(t.estado()) + ".",
             Interes.COLUMNAS,
             List.<String[]>of(t.fila()));
       }
@@ -445,14 +457,14 @@ public abstract class RolCommandProcessor {
             "Orden de pago generada",
             "Referencia demostrativa. Registre el comprobante con REGISTRARCOMPROBANTE[\""
                 + o.nro()
-                + "\"]. No se ejecutó un cobro bancario.",
+                + "\"]. No se realiza un cobro bancario.",
             bo.uagrm.crm.dominio.pagos.PagoService.Orden.COLUMNAS,
             List.<String[]>of(o.fila()));
       }
       case LISTARORDENES, LISTARPAGOS -> {
         var l = pagos.listar(u, c.getParam(0));
         yield fmt.successTable(
-            "Órdenes y pagos",
+            "Ordenes y pagos",
             l.size() + " registro(s) dentro de su alcance.",
             bo.uagrm.crm.dominio.pagos.PagoService.Orden.COLUMNAS,
             filas(l, bo.uagrm.crm.dominio.pagos.PagoService.Orden::fila));
@@ -467,7 +479,7 @@ public abstract class RolCommandProcessor {
                 bo.uagrm.crm.dominio.pagos.PagoService.Orden.COLUMNAS,
                 List.<String[]>of(o.fila())),
             new Tabla(
-                "Modulos",
+                "Módulos",
                 new String[] {"Código", "Programa", "Módulo", "Precio (Bs)", "Estado"},
                 pagos.items(u, o.nro())));
       }
@@ -475,13 +487,13 @@ public abstract class RolCommandProcessor {
           fmt.successTable(
               "Descuentos activos",
               "Use sus codigos al generar una orden.",
-              new String[] {"Código", "Descuento", "Porcentaje"},
+              new String[] {"Codigo", "Descuento", "Porcentaje"},
               pagos.descuentos());
       case REGISTRARCOMPROBANTE -> {
         if (c.getErrorArchivo() != null) throw new CrmException(c.getErrorArchivo());
         var o = pagos.registrarComprobante(u, nro(c, 0), c.getArchivo(), c.getParam(1));
         yield fmt.successTable(
-            "Comprobante en revisión",
+            "Comprobante en revision",
             "El coordinador responsable debe revisar el adjunto con VERCOMPROBANTE y aprobarlo o"
                 + " rechazarlo.",
             bo.uagrm.crm.dominio.pagos.PagoService.Orden.COLUMNAS,
@@ -492,7 +504,7 @@ public abstract class RolCommandProcessor {
         var archivo = pagos.archivo(u, pago, c.getParam(1) == null ? null : nro(c, 1));
         yield fmt.successTable(
                 "Comprobante del pago de la orden #" + pago,
-                "Revise el archivo adjunto antes de tomar una decision.",
+                "Revise el archivo adjunto antes de tomar una decisión.",
                 bo.uagrm.crm.dominio.pagos.PagoService.Comprobante.COLUMNAS,
                 filas(
                     pagos.comprobantes(u, pago),
@@ -504,7 +516,7 @@ public abstract class RolCommandProcessor {
         yield fmt.successTable(
             "Pago aprobado e inscripción confirmada",
             "Se validaron los datos y registraron las inscripciones y comisiones sin abrir web. El"
-                + " envío al SIS es un paso independiente.",
+                + " envio al SIS es un paso independiente.",
             bo.uagrm.crm.dominio.pagos.PagoService.Orden.COLUMNAS,
             List.<String[]>of(o.fila()));
       }
@@ -515,6 +527,16 @@ public abstract class RolCommandProcessor {
             "Motivo: " + c.getParam(1) + ". Puede adjuntarse un comprobante corregido.",
             bo.uagrm.crm.dominio.pagos.PagoService.Orden.COLUMNAS,
             List.<String[]>of(o.fila()));
+      }
+      case CONFIGURARCOMISION -> {
+        String anterior = pagos.configurarComision(u, c.getParam(0));
+        yield fmt.success(
+            "Éxito: comisión configurada",
+            "La comisión de los vendedores pasa de "
+                + anterior
+                + " % a "
+                + c.getParam(0).trim()
+                + " %. Se aplica a los pagos que se aprueben desde ahora.");
       }
       case EXPORTARMATRICULAS -> {
         var e = exportaciones.preparar(u, c.getParam(0) == null ? null : nro(c, 0));
@@ -537,7 +559,7 @@ public abstract class RolCommandProcessor {
       case VEREXPORTACION -> {
         var e = exportaciones.recuperar(u, nro(c, 0));
         yield fmt.successTable(
-                "Preparacion academica",
+                "Preparación académica",
                 "CSV recuperado sin crear otro registro.",
                 bo.uagrm.crm.dominio.conversion.ExportacionService.COLUMNAS,
                 e.filas())
@@ -553,14 +575,18 @@ public abstract class RolCommandProcessor {
       case VALIDARCONVERSION -> {
         int nro = nro(c, 0);
         List<Requisito> l = conversion.validar(u, nro);
-        long faltan = l.stream().filter(r -> !r.cumple()).count();
+        long faltan =
+            l.stream().filter(r -> !r.cumple() && !r.nombre().equals(ConversionService.PAGO)).count();
+        boolean pagado = l.stream().anyMatch(r -> r.nombre().equals(ConversionService.PAGO) && r.cumple());
         yield fmt.successTable(
             "Validación de la tarjeta #" + nro,
-            faltan == 0
-                ? "Requisitos completos: consulte la inscripción con CONVERTIRPROSPECTO[\""
-                    + nro
-                    + "\"]."
-                : "Faltan " + faltan + " requisito(s) para la matrícula.",
+            faltan > 0
+                ? "Faltan " + faltan + " dato(s) para la matrícula; complételos con MODIFICARPROSPECTO."
+                : pagado
+                    ? "Datos completos y pago aprobado: la inscripción está confirmada. Consúltela con"
+                        + " CONVERTIRPROSPECTO[\"" + nro + "\"]."
+                    : "Datos completos para la matrícula. Falta el pago: GENERARORDEN[\"" + nro
+                        + "\"], REGISTRARCOMPROBANTE y APROBARPAGO.",
             Requisito.COLUMNAS,
             filas(l, Requisito::fila));
       }
@@ -572,10 +598,9 @@ public abstract class RolCommandProcessor {
                 + m.nro()
                 + " por Bs "
                 + DatabaseService.texto(m.monto())
-                + ", estado "
-                + m.estado()
-                + ". La exportación al SIS se prepara aparte con EXPORTARMATRICULAS (administración o"
-                + " coordinación).",
+                + " confirmada. Para enviarla al SIS use EXPORTARMATRICULAS[\""
+                + m.nro()
+                + "\"].",
             Matricula.COLUMNAS,
             List.<String[]>of(m.fila()));
       }
@@ -635,7 +660,7 @@ public abstract class RolCommandProcessor {
                 + " · "
                 + t.nombreVendedor(),
             SeguimientoService.COLUMNAS_HISTORIAL,
-            h.eventos().stream().map(RolCommandProcessor::conEtapasCorreo).toList());
+            h.eventos());
       }
       case VERBITACORA -> {
         int n = c.getParam(0) == null ? 30 : Valida.entero(c.getParam(0), "cantidad");
@@ -657,11 +682,11 @@ public abstract class RolCommandProcessor {
                 ? "Aún no hay tarjetas cerradas."
                 : "Tasa de conversión de las tarjetas cerradas: "
                     + Math.round(100.0 * conv / (conv + perd))
-                    + " % (convertidas: "
+                    + " % ("
                     + conv
-                    + "; perdidas: "
+                    + " convertidas, "
                     + perd
-                    + ").",
+                    + " perdidas).",
             ReporteService.COLUMNAS_EMBUDO,
             l);
       }
@@ -766,7 +791,7 @@ public abstract class RolCommandProcessor {
                 new Aviso(
                     v.correo(),
                     fmt.aviso(
-                        "Nuevos prospecto asignados",
+                        "Nuevos prospectos asignados",
                         "Hola, "
                             + v.nombre()
                             + ". Se le asignaron "
@@ -774,17 +799,6 @@ public abstract class RolCommandProcessor {
                             + " prospecto(s). Revise su tablero con VERTABLERO[].",
                         new Tabla(null, Interes.COLUMNAS, f)))));
     return out;
-  }
-
-  /** Movimientos del historial con las etapas del tablero; el detalle financiero (Pago enviado, En revisión) se conserva. */
-  private static String[] conEtapasCorreo(String[] e) {
-    if (!"Movimiento".equals(e[1])) return e;
-    String[] r = e.clone();
-    r[2] =
-        r[2].replace("Contactado", "En Contacto")
-            .replace("Interesado", "Seguimiento")
-            .replace("En revision", "En revisión");
-    return r;
   }
 
   private static int nro(Command c, int i) throws CrmException {

@@ -145,7 +145,7 @@ public final class ProspectoService {
           Interes::de,
           Interes.SQL
               + " WHERE "
-              + Alcance.visible(u)
+              + Alcance.propio(u)
               + " AND (? = '' OR p.documento = upper(?) OR p.nombre || ' ' || p.apellido ILIKE '%'"
               + " || ? || '%') ORDER BY i.nro_tarjeta",
           Alcance.params(u, t, t, t));
@@ -178,7 +178,7 @@ public final class ProspectoService {
                       "SELECT 1 FROM intereses i WHERE i.documento = ? AND " + Alcance.propio(u),
                       Alcance.despues(u, p.ci()))
                   == null)
-            throw new CrmException("El prospecto " + c1 + " no tiene tarjetas a su cargo.");
+            throw new bo.uagrm.crm.dominio.AccesoDenegado("El prospecto " + c1 + " no tiene tarjetas a su cargo.");
           actualizar(
               c,
               "UPDATE prospectos SET nombre = ?, apellido = ?, telefono = ?, correo = ?, origen ="
@@ -200,10 +200,25 @@ public final class ProspectoService {
     return db.enTransaccion(
         c -> {
           Prospecto p = porCi(c, Valida.ci(ci));
-          if (uno(c, rs -> 1, "SELECT 1 FROM intereses WHERE documento = ?", p.ci()) != null)
+          // Se elimina un registro equivocado (sin trabajo comercial); con actividad se conserva.
+          if (uno(
+                  c,
+                  rs -> 1,
+                  "SELECT 1 FROM intereses i WHERE i.documento = ? AND (EXISTS(SELECT 1 FROM interacciones x"
+                      + " WHERE x.nro_tarjeta=i.nro_tarjeta) OR EXISTS(SELECT 1 FROM recordatorios r WHERE"
+                      + " r.nro_tarjeta=i.nro_tarjeta) OR EXISTS(SELECT 1 FROM ordenes_pago o WHERE"
+                      + " o.nro_tarjeta=i.nro_tarjeta)) LIMIT 1",
+                  p.ci())
+              != null)
             throw new CrmException(
-                "El prospecto tiene intereses o historial comercial: se conserva y no se puede"
-                    + " eliminar.");
+                "El prospecto tiene interacciones, recordatorios u órdenes de pago: su historial se"
+                    + " conserva y no se elimina. Si ya no interesa, use MARCARPERDIDO.");
+          actualizar(
+              c,
+              "DELETE FROM movimientos_interes WHERE nro_tarjeta IN (SELECT nro_tarjeta FROM intereses"
+                  + " WHERE documento = ?)",
+              p.ci());
+          actualizar(c, "DELETE FROM intereses WHERE documento = ?", p.ci());
           actualizar(c, "DELETE FROM prospectos WHERE documento = ?", p.ci());
           return p;
         });
@@ -232,7 +247,7 @@ public final class ProspectoService {
     String tel = Valida.telefono(telefono),
         email = Valida.correo(correo),
         fuente = Valida.elegir(origen, ORIGENES, "origen");
-    String codigo = Valida.texto(codigoOferta, "codigo de oferta", 255);
+    String codigo = Valida.texto(codigoOferta, "código de oferta", 255);
     List<Oferta> ofertas =
         lista(
             c,
@@ -244,11 +259,11 @@ public final class ProspectoService {
       throw new CrmException(
           "No existe la oferta. Vea LISTAROFERTA[] o consulte a administración para actualizar el catálogo.");
     if (ofertas.stream().anyMatch(o -> !o.abierta()))
-      throw new CrmException("La oferta esta cerrada y no recibe inscripciones.");
+      throw new CrmException("La oferta está cerrada y no recibe inscripciones.");
     if (actor != null
         && actor.rol() == Rol.COORDINADOR
         && ofertas.stream().anyMatch(of -> !actor.correo().equalsIgnoreCase(Objects.toString(of.coordinadorCorreo(), ""))))
-      throw new CrmException("El programa no está a su cargo.");
+      throw new bo.uagrm.crm.dominio.AccesoDenegado("El programa no está a su cargo.");
     Prospecto p =
         uno(
             c,
@@ -309,7 +324,7 @@ VALUES(?,?,?,?,?,?,?,'Nuevo',now(),now(),now())
       if (primero == 0) primero = nro;
       creados++;
     }
-    if (creados == 0) throw new CrmException("El prospecto ya tiene registrado ese interes.");
+    if (creados == 0) throw new CrmException("El prospecto ya tiene registrado ese interés.");
     return new Alta(uno(c, Interes::de, Interes.SQL + " WHERE i.nro_tarjeta=?", primero), nuevo, creados);
   }
 

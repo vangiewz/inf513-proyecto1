@@ -12,10 +12,9 @@ END $$;
 -- PostgreSQL database dump
 --
 
-\restrict GCat3zyqvNXd2Ej6faxbCDDDLe0u9p3prB0Rc2t8NfUTcxO2ABhUSP493Q9Tc3m
 
--- Dumped from database version 18.4
--- Dumped by pg_dump version 18.4
+-- Dumped from database version 18.6
+-- Dumped by pg_dump version 18.6
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -117,17 +116,18 @@ CREATE TABLE public.catalogo_cache (
 
 
 --
--- Name: comisiones; Type: TABLE; Schema: public; Owner: -
+-- Name: programas; Type: TABLE; Schema: public; Owner: -
 --
 
--- Programas normalizados: su nombre no se repite en cada modulo de catalogo_cache.
 CREATE TABLE public.programas (
     codigo character varying(255) NOT NULL,
     nombre character varying(255) NOT NULL
 );
-ALTER TABLE ONLY public.programas ADD CONSTRAINT programas_pkey PRIMARY KEY (codigo);
-COMMENT ON TABLE public.programas IS 'Programas del catalogo: codigo natural y nombre, sin repeticion por modulo';
-COMMENT ON TABLE public.catalogo_cache IS 'Modulos del catalogo local; su programa y nombre se consultan en programas';
+
+
+--
+-- Name: comisiones; Type: TABLE; Schema: public; Owner: -
+--
 
 CREATE TABLE public.comisiones (
     nro_solicitud bigint NOT NULL,
@@ -196,54 +196,6 @@ CREATE TABLE public.configuraciones (
 
 
 --
--- Name: correos_salientes; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.correos_salientes (
-    nro_correo bigint NOT NULL,
-    nro_registro bigint,
-    nro_recordatorio bigint,
-    destinatario character varying(160) NOT NULL,
-    asunto character varying(300) NOT NULL,
-    mensaje bytea NOT NULL,
-    estado character varying(20) DEFAULT 'Pendiente'::character varying NOT NULL,
-    intentos integer DEFAULT 0 NOT NULL,
-    proximo_intento timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    ultimo_error text,
-    enviado_en timestamp(0) without time zone,
-    created_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT correos_salientes_estado_check CHECK (((estado)::text = ANY (ARRAY[('Pendiente'::character varying)::text, ('Enviado'::character varying)::text, ('Fallido'::character varying)::text, ('Rebotado'::character varying)::text]))),
-    CONSTRAINT correos_salientes_origen_check CHECK (((nro_registro IS NOT NULL) OR (nro_recordatorio IS NOT NULL)))
-);
-
-
---
--- Name: TABLE correos_salientes; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.correos_salientes IS 'Cola de respuestas y avisos por correo: se envían y reintentan sin repetir la operación que los originó';
-
-
---
--- Name: correos_salientes_nro_correo_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.correos_salientes_nro_correo_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: correos_salientes_nro_correo_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.correos_salientes_nro_correo_seq OWNED BY public.correos_salientes.nro_correo;
-
-
---
 -- Name: descuentos; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -270,7 +222,6 @@ CREATE TABLE public.exportaciones (
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
     usuario_correo character varying(255),
-    documento character varying(255),
     nro_solicitud bigint NOT NULL,
     CONSTRAINT exportaciones_estado_check CHECK (((estado)::text = ANY (ARRAY[('preparada'::character varying)::text, ('exportada'::character varying)::text, ('recibida'::character varying)::text, ('error'::character varying)::text])))
 );
@@ -302,10 +253,8 @@ ALTER SEQUENCE public.exportaciones_nro_exportacion_seq OWNED BY public.exportac
 CREATE TABLE public.inscripciones_comerciales (
     nro_solicitud bigint NOT NULL,
     fecha_confirmacion timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    estado character varying(255) DEFAULT 'Confirmada'::character varying NOT NULL,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone,
-    CONSTRAINT inscripciones_comerciales_estado_check CHECK (((estado)::text = 'Confirmada'::text))
+    updated_at timestamp(0) without time zone
 );
 
 
@@ -404,33 +353,8 @@ CREATE TABLE public.log_comandos (
     detalle text,
     fecha timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     rol_registrado character varying(40),
-    usuario_correo character varying(255),
-    message_id character varying(255),
-    contenido bytea,
-    bytes integer,
-    procesado_en timestamp(0) without time zone
+    usuario_correo character varying(255)
 );
-
-
---
--- Name: COLUMN log_comandos.message_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.log_comandos.message_id IS 'Cabecera Message-ID del correo recibido (o sha256 del contenido si no la trae)';
-
-
---
--- Name: COLUMN log_comandos.contenido; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.log_comandos.contenido IS 'Correo crudo mientras espera proceso (resultado Recibido); se vacía al procesarlo';
-
-
---
--- Name: COLUMN log_comandos.bytes; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.log_comandos.bytes IS 'Tamaño informado por POP3 LIST';
 
 
 --
@@ -558,12 +482,10 @@ CREATE TABLE public.ordenes_pago (
     subtotal numeric(12,2) NOT NULL,
     descuento_total numeric(12,2) DEFAULT '0'::numeric NOT NULL,
     total numeric(12,2) NOT NULL,
-    estado character varying(255) DEFAULT 'Pendiente de pago'::character varying NOT NULL,
     fecha_generacion timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
-    vendedor_correo character varying(255) NOT NULL,
-    CONSTRAINT ordenes_pago_estado_check CHECK (((estado)::text = ANY (ARRAY[('Pendiente de pago'::character varying)::text, ('En revision'::character varying)::text, ('Pago aprobado'::character varying)::text, ('Pago rechazado'::character varying)::text])))
+    vendedor_correo character varying(255) NOT NULL
 );
 
 
@@ -591,10 +513,8 @@ ALTER SEQUENCE public.ordenes_pago_nro_orden_seq OWNED BY public.ordenes_pago.nr
 --
 
 CREATE TABLE public.pagos (
-    monto numeric(12,2) NOT NULL,
     codigo_qr character varying(255) NOT NULL,
     estado character varying(255) DEFAULT 'Pendiente de pago'::character varying NOT NULL,
-    fecha_generacion timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     fecha_validacion timestamp(0) without time zone,
     observacion_validacion text,
     created_at timestamp(0) without time zone,
@@ -694,7 +614,6 @@ CREATE TABLE public.roles (
 CREATE TABLE public.solicitudes_compra (
     nro_solicitud bigint NOT NULL,
     precio_acordado numeric(12,2),
-    estado character varying(255) DEFAULT 'pendiente'::character varying NOT NULL,
     fecha timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
@@ -704,8 +623,7 @@ CREATE TABLE public.solicitudes_compra (
     modulo_nombre character varying(255) NOT NULL,
     modulo_descripcion text,
     anuncio_titulo character varying(255),
-    nro_orden bigint NOT NULL,
-    CONSTRAINT solicitudes_compra_estado_check CHECK (((estado)::text = ANY (ARRAY[('pendiente'::character varying)::text, ('confirmada'::character varying)::text])))
+    nro_orden bigint NOT NULL
 );
 
 
@@ -754,13 +672,6 @@ CREATE TABLE public.usuarios (
 --
 
 ALTER TABLE ONLY public.comprobantes_pago ALTER COLUMN nro_comprobante SET DEFAULT nextval('public.comprobantes_pago_nro_comprobante_seq'::regclass);
-
-
---
--- Name: correos_salientes nro_correo; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.correos_salientes ALTER COLUMN nro_correo SET DEFAULT nextval('public.correos_salientes_nro_correo_seq'::regclass);
 
 
 --
@@ -867,14 +778,6 @@ ALTER TABLE ONLY public.configuraciones
 
 
 --
--- Name: correos_salientes correos_salientes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.correos_salientes
-    ADD CONSTRAINT correos_salientes_pkey PRIMARY KEY (nro_correo);
-
-
---
 -- Name: descuentos descuentos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -920,14 +823,6 @@ ALTER TABLE ONLY public.intereses
 
 ALTER TABLE ONLY public.intereses
     ADD CONSTRAINT intereses_pkey PRIMARY KEY (nro_tarjeta);
-
-
---
--- Name: log_comandos log_comandos_message_id_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.log_comandos
-    ADD CONSTRAINT log_comandos_message_id_unique UNIQUE (message_id);
 
 
 --
@@ -1003,6 +898,14 @@ ALTER TABLE ONLY public.programas_responsables
 
 
 --
+-- Name: programas programas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.programas
+    ADD CONSTRAINT programas_pkey PRIMARY KEY (codigo);
+
+
+--
 -- Name: prospectos prospectos_correo_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1051,20 +954,6 @@ ALTER TABLE ONLY public.usuarios
 
 
 --
--- Name: correos_salientes_nro_registro_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX correos_salientes_nro_registro_idx ON public.correos_salientes USING btree (nro_registro);
-
-
---
--- Name: correos_salientes_pendientes_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX correos_salientes_pendientes_idx ON public.correos_salientes USING btree (proximo_intento) WHERE ((estado)::text = 'Pendiente'::text);
-
-
---
 -- Name: exportaciones_estado_fecha_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1076,13 +965,6 @@ CREATE INDEX exportaciones_estado_fecha_idx ON public.exportaciones USING btree 
 --
 
 CREATE INDEX interacciones_usuario_fecha_idx ON public.interacciones USING btree (usuario_correo, fecha);
-
-
---
--- Name: log_comandos_recibidos_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX log_comandos_recibidos_idx ON public.log_comandos USING btree (nro_registro) WHERE ((resultado)::text = 'Recibido'::text);
 
 
 --
@@ -1100,10 +982,10 @@ CREATE INDEX notificaciones_usuario_estado_fecha_idx ON public.notificaciones US
 
 
 --
--- Name: pagos_estado_fecha_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: pagos_estado_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX pagos_estado_fecha_idx ON public.pagos USING btree (estado, fecha_generacion);
+CREATE INDEX pagos_estado_idx ON public.pagos USING btree (estado);
 
 
 --
@@ -1194,29 +1076,6 @@ ALTER TABLE ONLY public.comprobantes_pago
 ALTER TABLE ONLY public.configuraciones
     ADD CONSTRAINT configuraciones_actualizado_por_fk FOREIGN KEY (actualizado_por) REFERENCES public.usuarios(correo) ON UPDATE CASCADE ON DELETE SET NULL;
 
-
---
--- Name: correos_salientes correos_salientes_nro_recordatorio_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.correos_salientes
-    ADD CONSTRAINT correos_salientes_nro_recordatorio_fk FOREIGN KEY (nro_recordatorio) REFERENCES public.recordatorios(nro_recordatorio) ON DELETE CASCADE;
-
-
---
--- Name: correos_salientes correos_salientes_nro_registro_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.correos_salientes
-    ADD CONSTRAINT correos_salientes_nro_registro_fk FOREIGN KEY (nro_registro) REFERENCES public.log_comandos(nro_registro) ON DELETE RESTRICT;
-
-
---
--- Name: exportaciones exportaciones_documento_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.exportaciones
-    ADD CONSTRAINT exportaciones_documento_fk FOREIGN KEY (documento) REFERENCES public.prospectos(documento) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
@@ -1372,6 +1231,22 @@ ALTER TABLE ONLY public.programas_responsables
 
 
 --
+-- Name: programas_responsables programas_responsables_programa_codigo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.programas_responsables
+    ADD CONSTRAINT programas_responsables_programa_codigo_fk FOREIGN KEY (programa_codigo) REFERENCES public.programas(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: catalogo_cache catalogo_cache_programa_codigo_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.catalogo_cache
+    ADD CONSTRAINT catalogo_cache_programa_codigo_fk FOREIGN KEY (programa_codigo) REFERENCES public.programas(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
 -- Name: recordatorios recordatorios_nro_tarjeta_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1412,37 +1287,7 @@ ALTER TABLE ONLY public.usuarios
 
 
 --
--- Relaciones del catalogo normalizado.
-ALTER TABLE ONLY public.catalogo_cache
-    ADD CONSTRAINT catalogo_cache_programa_codigo_fk FOREIGN KEY (programa_codigo) REFERENCES public.programas(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
-ALTER TABLE ONLY public.programas_responsables
-    ADD CONSTRAINT programas_responsables_programa_codigo_fk FOREIGN KEY (programa_codigo) REFERENCES public.programas(codigo) ON UPDATE CASCADE ON DELETE RESTRICT;
-
--- Registro docente independiente: no concede acceso al CRM ni inventa relaciones comerciales.
-CREATE TABLE public.persona (
-    documento character varying(15) NOT NULL,
-    nombres character varying(120) NOT NULL,
-    apellidos character varying(120) NOT NULL,
-    ocupacion character varying(80) NOT NULL,
-    telefono_fijo character varying(16) NOT NULL,
-    telefono_celular character varying(16) NOT NULL,
-    correo character varying(120) NOT NULL,
-    CONSTRAINT persona_pkey PRIMARY KEY (documento),
-    CONSTRAINT persona_documento_check CHECK (documento ~ '^[0-9]{5,10}(-?[0-9A-Z]{1,3})?$'),
-    CONSTRAINT persona_nombres_check CHECK (btrim(nombres) <> '' AND nombres !~ '[[:cntrl:]]'),
-    CONSTRAINT persona_apellidos_check CHECK (btrim(apellidos) <> '' AND apellidos !~ '[[:cntrl:]]'),
-    CONSTRAINT persona_ocupacion_check CHECK (btrim(ocupacion) <> '' AND ocupacion !~ '[[:cntrl:]]'),
-    CONSTRAINT persona_fijo_check CHECK (telefono_fijo ~ '^\+?[0-9]{7,15}$'),
-    CONSTRAINT persona_celular_check CHECK (telefono_celular ~ '^\+?[0-9]{7,15}$'),
-    CONSTRAINT persona_correo_check CHECK (correo ~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
-);
-CREATE UNIQUE INDEX persona_correo_lower_unique ON public.persona (lower(correo));
-COMMENT ON TABLE public.persona IS 'Registro independiente de los siete campos docentes LISPER/INSPER; no es usuario ni prospecto del CRM';
-
-INSERT INTO public.configuraciones(clave,valor,created_at,updated_at) VALUES ('schema.persona.version','1',now(),now());
-
 -- PostgreSQL database dump complete
 --
 
-\unrestrict GCat3zyqvNXd2Ej6faxbCDDDLe0u9p3prB0Rc2t8NfUTcxO2ABhUSP493Q9Tc3m
 

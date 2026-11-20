@@ -24,8 +24,6 @@ __pycache__/
 *.pem
 *.key
 *.eml
-*.hmac
-auth-keys.properties
 *.properties
 !*.properties.example
 *.local.md

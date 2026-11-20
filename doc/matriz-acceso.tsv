@@ -1,6 +1,4 @@
 CU	Comando	Administrador	Coordinador	Vendedor	Público	Ejemplo
-CU1	LISPER["selector"]	Sí	—	—	—	LISPER["*"]
-CU1	INSPER["documento","nombres","apellidos","ocupacion","telefono_fijo","telefono_celular","correo"]	Sí	—	—	—	INSPER["4715292","Juan Carlos","Perez Seras","Estudiante","33554433","71055123","juanperez@uagrm.edu.bo"]
 General	HELP[("comando")]	Sí	Sí	Sí	Sí	HELP["INSERTARUSUARIO"]
 CU1	LISTARUSUARIOS[("rol")]	Sí	Sí	—	—	LISTARUSUARIOS["vendedor"]
 CU1	INSERTARUSUARIO["nombre","apellido","correo","telefono","rol",("fecha_inicio"),("fecha_fin")]	Sí	—	—	—	INSERTARUSUARIO["Ana","Rojas Vaca","ana.rojas@example.com","71234567","vendedor","2026-11-18","2027-06-30"]
@@ -36,6 +34,7 @@ CU6	REGISTRARCOMPROBANTE["nro_orden",("observacion")]	Sí	Sí	Sí	—	REGISTRARC
 CU6	VERCOMPROBANTE["nro_orden",("nro_comprobante")]	Sí	Sí	Sí	—	VERCOMPROBANTE["1"]
 CU6	APROBARPAGO["nro_orden",("observacion")]	Sí	Sí	—	—	APROBARPAGO["1","Comprobante verificado"]
 CU6	RECHAZARPAGO["nro_orden","motivo"]	Sí	Sí	—	—	RECHAZARPAGO["1","El monto no coincide"]
+CU6	CONFIGURARCOMISION["porcentaje"]	Sí	—	—	—	CONFIGURARCOMISION["2.5"]
 CU6	EXPORTARMATRICULAS[("nro_solicitud")]	Sí	Sí	—	—	EXPORTARMATRICULAS[]
 CU6	LISTAREXPORTACIONES[]	Sí	Sí	—	—	LISTAREXPORTACIONES[]
 CU6	VEREXPORTACION["nro_exportacion"]	Sí	Sí	—	—	VEREXPORTACION["1"]

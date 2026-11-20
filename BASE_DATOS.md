@@ -1,57 +1,5 @@
 # Base de datos del CRM
 
-## Revisión final local con contrato docente
-
-La estructura actual de instalación incorpora **26 tablas, 216 columnas y 34 FK**. Se conservan las
-25 tablas CRM y se agrega `public.persona` con siete campos independientes: documento (PK), nombres,
-apellidos, ocupación, teléfono fijo, teléfono celular y correo. No se inventan vínculos con usuarios
-o prospectos. Esta excepción al criterio histórico de tablas relacionadas responde al contrato docente
-de LISPER/INSPER y no elimina ninguna relación CRM.
-
-La nueva migración es `sql/migraciones/2026-11-19_persona.sql`. Es incremental y repetible si la
-estructura existente coincide con el contrato; compara columnas, PK, expresiones CHECK e índice
-UNIQUE global de lower(correo). Rechaza estructuras debilitadas y versiones futuras. Su versión se
-conserva como `schema.persona.version=1` en configuraciones, sin otra tabla de control aislada.
-El instalador para base nueva incluye la misma versión. Los siete campos son NOT NULL; no se
-insertan personas ficticias como referencias de producción.
-
-| Parámetro INSPER / columna | Tipo SQL | Validación del contrato docente |
-|---|---|---|
-| 1. `documento` | varchar(15), PK | CI de 5–10 dígitos, con complemento opcional de hasta tres caracteres alfanuméricos |
-| 2. `nombres` | varchar(120) | Texto no vacío, sin caracteres de control |
-| 3. `apellidos` | varchar(120) | Texto no vacío, sin caracteres de control |
-| 4. `ocupacion` | varchar(80) | Texto no vacío, sin caracteres de control |
-| 5. `telefono_fijo` | varchar(16) | 7–15 dígitos; `+` inicial opcional, sin espacios ni guiones internos |
-| 6. `telefono_celular` | varchar(16) | Mismo formato del teléfono fijo |
-| 7. `correo` | varchar(120) | Formato de correo válido y unicidad global de `lower(correo)` |
-
-Los delimitadores de LISPER/INSPER son comillas dobles ASCII; LISPER exige exactamente `"*"`.
-La inserción no crea cuentas ni permisos. Ambos comandos requieren administrador activo, vigente
-y autenticado por el canal. La tolerancia histórica del teléfono CRM no se aplica a los campos docentes.
-
-Para inspeccionar una base existente está preparado `sql/diagnostico_estructura.sql`, de sólo lectura.
-Compara nombres, tipos, nulabilidad, restricciones e índices; no se deduce el estado por contar tablas.
-Orden previsto: diagnóstico y respaldo recuperable, bandeja, catálogo, persona y diagnóstico posterior.
-Las tres migraciones siguen pendientes de intervención institucional autorizada.
-
-El marcador `schema.persona.version` complementa la verificación de estructura, no la sustituye.
-Una vez confirmada la existencia de configuraciones, se puede consultar su valor con
-`SELECT clave,valor FROM public.configuraciones WHERE clave='schema.persona.version';`.
-La migración no sobrescribe versiones distintas de 1 y compara las expresiones CHECK reales con
-un contrato temporal interpretado por PostgreSQL; un nombre correcto con CHECK debilitado no basta.
-
-En la versión final, `log_comandos.message_id` conserva una clave SHA-256 del contenido y las
-cabeceras esenciales y de firma; no confía únicamente en el Message-ID suministrado por el remitente.
-El Message-ID de protocolo se obtiene por separado para correlacionar respuestas y conversaciones.
-
-La reversión de bandeja ahora rechaza estructuras con datos que pudieran perderse, incluidas salidas
-ya enviadas. La recuperación debe conservar los registros y volver al JAR compatible. No retirar
-persona para revertir una aplicación. Procedimiento completo: [OPERACION.md](OPERACION.md).
-
-`scripts/probar_local.py` verifica migraciones y ejecuta las integraciones exclusivamente contra
-PostgreSQL de 127.0.0.1. Sus resultados actuales se conservan en `doc/pruebas/local-final.json`.
-Las cifras de 23, 24 y 25 tablas de las secciones fechadas siguientes describen revisiones anteriores.
-
 P1 correo es la entrega actual. P2 web sigue en desarrollo: ambos proyectos usaran la misma base y los mismos registros. Aunque se comenzo desarrollando web, ahora se completa correo con los ocho casos de uso aprobados; despues se continuara web sobre esta base.
 
 ## Destino vigente
@@ -74,7 +22,7 @@ Clase 03: toda credencial lleva fecha de inicio, fecha de fin y rol.
 
 | Tipo de clave | Tablas |
 |---|---|
-| Natural | `usuarios(correo)`, `prospectos(documento)`, `descuentos(codigo)`, `motivos_perdida(nombre)`, `roles(nombre)`, `catalogo_cache(codigo)`, `configuraciones(clave)`, `api_tokens(token_hash)`, `programas_responsables(programa_codigo)` |
+| Natural | `usuarios(correo)`, `prospectos(documento)`, `descuentos(codigo)`, `motivos_perdida(nombre)`, `roles(nombre)`, `programas(codigo)`, `catalogo_cache(codigo)`, `configuraciones(clave)`, `api_tokens(token_hash)`, `programas_responsables(programa_codigo)` |
 | La del dueño (1 a 1) | `pagos(nro_orden)`, `comisiones(nro_solicitud)`, `inscripciones_comerciales(nro_solicitud)` |
 | Correlativo con nombre | `intereses.nro_tarjeta`, `ordenes_pago.nro_orden`, `solicitudes_compra.nro_solicitud`, `interacciones.nro_interaccion`, `movimientos_interes.nro_movimiento`, `recordatorios.nro_recordatorio`, `notificaciones.nro_notificacion`, `log_comandos.nro_registro`, `exportaciones.nro_exportacion`, `comprobantes_pago.nro_comprobante` |
 | Compuesta (N-N con campos propios) | `orden_pago_descuentos(nro_orden, descuento_codigo)` con `porcentaje` y `monto` |
@@ -84,38 +32,80 @@ Clase 03: toda credencial lleva fecha de inicio, fecha de fin y rol.
   `ON UPDATE CASCADE`: cambiar un correo o el nombre de un motivo se propaga solo.
 - `usuarios.fecha_inicio` y `usuarios.fecha_fin` (CHECK `fecha_fin >= fecha_inicio`): fuera de vigencia, todo comando se
   responde "Denegado".
-- Resultado: 23 tablas y 30 claves foraneas; ninguna tabla aislada. La tabla `migrations` de Laravel se elimino del
+- Resultado al 17/11: 23 tablas y 30 claves foraneas; ninguna tabla aislada (con la normalización de abajo: 24 y 32). La tabla `migrations` de Laravel se elimino del
   servidor el 17/11 (respaldo en `.secrets/respaldos/public_20261117_233046.dump`): el P2 debe recrear su control de
   migraciones sin dejar una tabla suelta en `public` (por ejemplo, en otro esquema).
 - **P2 web debe replicar estas claves** en sus migraciones y modelos (`$primaryKey`, `$incrementing`, `$keyType`).
 
-## Bandeja de entrada y salida del correo (19/11/2026) — PENDIENTE DE APLICAR
+## Normalización del catálogo (20/11/2026) — aplicar en el servidor antes de la defensa
 
-Migracion para revision: `sql/migraciones/2026-11-19_bandeja_correo.sql` (reversion:
-`2026-11-19_bandeja_correo_revertir.sql`). **No esta aplicada en produccion.** El JAR nuevo exige
-estos cambios: sin ellos, `verificarModelo()` informa la migracion que falta y **no retira mensajes
-del buzon**. Orden para aplicarla: detener el lector, `.\respaldo.ps1`, aplicar con
-`psql -X -v ON_ERROR_STOP=1 --single-transaction`, `.\ejecutar.ps1 -Diagnostico`, arrancar.
+En `catalogo_cache` (módulos), `programa_codigo → programa_nombre` era una dependencia transitiva (el nombre del
+programa se repetía en cada uno de sus módulos: no está en 3FN). `sql/migraciones/2026-11-19_normalizar_catalogo.sql`
+crea `programas(codigo, nombre)`, copia cada nombre una sola vez, agrega las FK `catalogo_cache.programa_codigo` y
+`programas_responsables.programa_codigo` hacia `programas` y retira `catalogo_cache.programa_nombre`. Valida antes
+de tocar nada (código o nombre vacío, un código con dos nombres, responsable sin programa) y no cambia los registros
+comerciales. Reversión: `2026-11-19_normalizar_catalogo_revertir.sql` (exige volver al JAR anterior).
 
-- `log_comandos` (solo la usa el correo; la web no la toca) agrega `message_id` (cabecera Message-ID,
-  UNIQUE), `contenido` (correo crudo mientras espera proceso), `bytes` y `procesado_en`. Cada correo se
-  guarda con resultado `Recibido` **antes** del DELE; al procesarlo pasa a `Éxito`, `Error`,
-  `Denegado`, `Ignorado` o `Repetido` y su contenido se vacia.
-- `correos_salientes` (nueva): `nro_correo` (correlativo), FK `nro_registro` → `log_comandos` y FK
-  `nro_recordatorio` → `recordatorios` (al menos una), `destinatario`, `asunto`, `mensaje` (correo MIME
-  completo con su Message-ID fijo), `estado` (`Pendiente`, `Enviado`, `Fallido`, `Rebotado`),
-  `intentos`, `proximo_intento`, `ultimo_error`, `enviado_en`, `created_at`.
-- Resultado: 24 tablas y 32 claves foraneas; ninguna tabla aislada. `notificaciones` (avisos internos
-  de la web) no cambia.
-- Garantias y su prueba: `p1/PRUEBAS.md` § Caidas.
+Resultado de esta migración: **24 tablas y 32 claves foráneas** (31 después de la siguiente), ninguna aislada. Los `programa_nombre` de `intereses` y
+`solicitudes_compra` se conservan: son el nombre **al momento de la venta** (dato histórico de la transacción, como su
+precio), no una copia del catálogo.
+
+Orden para aplicarla (dejar **al menos 3,2 s entre cada conexión al servidor**):
+1. Detener el lector (`Ctrl+C` en `ejecutar.ps1`).
+2. `.\respaldo.ps1` y comprobar que el `.dump` existe.
+3. `psql -X -v ON_ERROR_STOP=1 --single-transaction -f sql/migraciones/2026-11-19_normalizar_catalogo.sql`.
+4. `.\ejecutar.ps1 -Diagnostico` y arrancar el lector.
+
+**P2 web** debe leer el nombre del programa desde `programas` (JOIN por `programa_codigo`) en vez de
+`catalogo_cache.programa_nombre` antes de volver a usarse sobre esta base.
+
+## Columnas redundantes (20/11/2026) — aplicar después de la normalización
+
+Clase 46: *"si hay un campo de más en una tabla ya está mal"*. Se revisó cada columna en P1 y en P2 (`crm-web`) y se
+quitan solo las que repiten un dato que ya está en otra columna o que es constante.
+`sql/migraciones/2026-11-20_quitar_redundancias.sql` antes de borrar comprueba con los datos que coinciden; si una fila
+difiere, aborta sin tocar nada.
+
+| Columna quitada | Por qué sobraba | Dónde queda el dato |
+|---|---|---|
+| `ordenes_pago.estado` | P1 y P2 la escribían siempre igual a `pagos.estado` (pago 1 a 1 con su orden) | `pagos.estado` |
+| `pagos.monto` | Igual a `ordenes_pago.total` | `ordenes_pago.total` |
+| `pagos.fecha_generacion` | Igual a `ordenes_pago.fecha_generacion` | `ordenes_pago.fecha_generacion` |
+| `inscripciones_comerciales.estado` | Su CHECK solo admitía `'Confirmada'`: constante | La fila existe = confirmada |
+| `exportaciones.documento` (y su FK) | Dependencia transitiva: sale de `nro_solicitud` | `solicitudes_compra → ordenes_pago → intereses.documento` |
+| `solicitudes_compra.estado` | `'confirmada'` si y solo si existe su inscripción | `EXISTS` en `inscripciones_comerciales` |
+
+Se conservan, revisadas: `prospectos.estado` (la web lo edita), `fecha`/`fecha_registro` frente a `created_at` (fecha del
+negocio frente al sello de Laravel), `catalogo_cache.sincronizado_en` (fecha de la réplica del catálogo del SIS) y las
+copias de nombre y precio en `intereses` y `solicitudes_compra` (datos históricos de cada operación).
+
+Resultado con ambas migraciones: **24 tablas y 31 FK**, ninguna aislada. **P2 web** debe leer el estado del pago desde
+`pagos`, el total desde `ordenes_pago` y dejar de escribir las columnas quitadas.
+
+**Estado del servidor:** el 19/11/2026 22:50 se aplicaron allí `2026-11-19_bandeja_correo.sql` y
+`2026-11-19_normalizar_catalogo.sql` (25 tablas, 34 FK; respaldo previo en `.secrets/respaldos/`). El lector actual no usa la
+bandeja: `2026-11-20_retirar_bandeja.sql` quita `correos_salientes` y las 4 columnas agregadas a `log_comandos` (conserva
+todas las filas de la bitácora; se rechaza si hay un correo guardado sin procesar o una respuesta pendiente de envío).
+
+Orden en el servidor, con el lector detenido, un respaldo comprobado y **al menos 3,2 s entre cada conexión**:
+`.\respaldo.ps1` → `2026-11-20_retirar_bandeja.sql` → `2026-11-20_quitar_redundancias.sql` → `.\ejecutar.ps1 -Diagnostico`
+(la de catálogo **no** se repite: ya está aplicada y se rechaza sola si se vuelve a correr).
+Cada una con `psql -X -v ON_ERROR_STOP=1 --single-transaction -f ARCHIVO`. Ensayo local sobre el respaldo real del 19/11:
+estructura final idéntica a `sql/esquema.sql`, ninguna fila perdida y el JAR respondiendo sobre esos datos.
+
+## Primer administrador de una base nueva
+
+`sql/referencias.sql` no crea usuarios. El primero se inserta a mano (después, los demás con `INSERTARUSUARIO`):
+
+```sql
+INSERT INTO usuarios(correo, nombre, apellido, telefono, password, rol, estado, fecha_inicio, fecha_fin, created_at, updated_at)
+VALUES ('admin@ejemplo.com', 'Nombre', 'Apellido', '70000000', '(clave web, la asigna P2)', 'administrador', 'activo',
+        CURRENT_DATE, CURRENT_DATE + INTERVAL '1 year', now(), now());
+```
 
 ## Estructura y referencias
 
-`sql/esquema.sql` describe la estructura propuesta con bandeja y catálogo normalizado, sin usuarios ni datos comerciales.
-La migración de la bandeja sigue pendiente en el servidor vigente; no confundir esa propuesta con la estructura
-ya desplegada. `sql/referencias.sql` contiene roles, motivos, descuentos, porcentaje de comision y las 25 ofertas
-del catalogo simulado. Son archivos para preparar una base nueva de desarrollo o pruebas; no son una migracion
-para aplicar sobre produccion.
+`sql/esquema.sql` describe la estructura instalada, sin usuarios ni datos comerciales. `sql/referencias.sql` contiene roles, motivos, descuentos, porcentaje de comision, los 5 programas y sus 25 modulos del catalogo simulado. Son archivos para preparar una base nueva de desarrollo o pruebas; no son una migracion para aplicar sobre produccion.
 
 ```sh
 psql -X -v ON_ERROR_STOP=1 --single-transaction -d BASE_NUEVA -f sql/esquema.sql
@@ -123,30 +113,6 @@ psql -X -v ON_ERROR_STOP=1 --single-transaction -d BASE_NUEVA -f sql/referencias
 ```
 
 El esquema SQL rechaza una instalacion sobre un `public` que ya contiene tablas, vistas o secuencias. Las cuentas se crean aparte: estos archivos no incluyen contrasenas ni cuentas reales. Los entornos QA son temporales y se eliminan al finalizar.
-
-## Normalizacion del catalogo (19/11/2026) — PENDIENTE DE APLICAR
-
-`sql/migraciones/2026-11-19_normalizar_catalogo.sql` separa `programas(codigo, nombre)` de
-`catalogo_cache` (modulos). Conserva todos los codigos y los nombres de programa, precios y datos de los
-modulos. Solo retira `catalogo_cache.programa_nombre` despues de copiarlo a `programas`; las instantaneas
-en intereses y solicitudes no cambian. Agrega FK desde modulos y responsables hacia programas.
-La estructura propuesta con ambas migraciones tiene **25 tablas, 209 columnas y 34 FK**.
-
-Aplicar exclusivamente con el lector detenido y respaldo comprobado, usando
-`psql -X -v ON_ERROR_STOP=1 --single-transaction -f sql/migraciones/2026-11-19_normalizar_catalogo.sql`.
-No ejecutar el instalador sobre produccion. La migracion rechaza nombres contradictorios para el mismo
-codigo y responsables sin programa en el catalogo. Revisar esos casos; no inventar ni eliminar datos.
-La reversion es `2026-11-19_normalizar_catalogo_revertir.sql`, tambien en una sola transaccion; rechaza
-programas nuevos sin modulos para evitar perderlos. Revertir tambien exige usar el JAR anterior.
-
-El JAR nuevo consulta `programas.nombre` mediante JOIN y valida la estructura antes de leer el buzon.
-**P2 web necesita adaptar sus consultas y escrituras de `catalogo_cache.programa_nombre` a `programas`.**
-No se modifico ni desplego `crm-web/` en esta tarea. Coordinar esa adaptacion antes de ejecutar web
-sobre el esquema normalizado. La API del SIS sigue pendiente; normalizar no la sustituye.
-
-Prueba local reproducible, con una copia anterior del SQL sin credenciales:
-`python scripts/probar_catalogo.py --sql-anterior RUTA_SQL_ANTERIOR`.
-Evidencia: `doc/pruebas/catalogo-normalizado.json`.
 
 ## Catalogo y SIS
 

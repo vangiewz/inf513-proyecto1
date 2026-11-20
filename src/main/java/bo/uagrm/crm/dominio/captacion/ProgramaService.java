@@ -19,7 +19,7 @@ public final class ProgramaService {
       throws SQLException, CrmException {
     if (actor.rol() != Rol.ADMINISTRADOR)
       throw new CrmException("Solo administración puede asignar responsables de programa.");
-    String programa = Valida.texto(codigo, "codigo de programa", 255);
+    String programa = Valida.texto(codigo, "código de programa", 255);
     String responsable = Valida.correo(coordinador);
     return db.enTransaccion(
         c -> {
@@ -34,7 +34,7 @@ public final class ProgramaService {
                   c,
                   r -> 1,
                   "SELECT 1 FROM usuarios WHERE correo=? AND rol='coordinador' AND estado='activo'"
-                      + " AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin",
+                      + " AND " + bo.uagrm.crm.persistencia.DatabaseService.HOY + " BETWEEN fecha_inicio AND fecha_fin",
                   responsable)
               == null) throw new CrmException("El responsable debe ser un coordinador activo.");
           Integer cuantos =

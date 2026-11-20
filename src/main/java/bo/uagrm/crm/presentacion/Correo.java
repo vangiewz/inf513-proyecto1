@@ -36,7 +36,14 @@ public record Correo(
     this(remitente, asunto, csv, automatico, null, null);
   }
 
-  private static final Session SESION = Session.getInstance(new Properties());
+  /** allowutf8: un asunto UTF-8 sin codificar (enviado a mano por telnet) se lee como UTF-8. */
+  private static final Session SESION = Session.getInstance(utf8());
+
+  private static Properties utf8() {
+    Properties p = new Properties();
+    p.setProperty("mail.mime.allowutf8", "true");
+    return p;
+  }
   private static final Pattern DIRECCION =
       Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
 
@@ -57,6 +64,8 @@ public record Correo(
     String auto = cabecera(m, "Auto-Submitted"), prec = cabecera(m, "Precedence");
     boolean automatico =
         (auto != null && !auto.trim().equalsIgnoreCase("no"))
+            || cabecera(m, "X-Autoreply") != null
+            || cabecera(m, "X-Autorespond") != null
             || (prec != null && prec.trim().toLowerCase(Locale.ROOT).matches("bulk|junk|list"))
             || remitente.matches("^(mailer-daemon|postmaster|no-?reply)@.*");
     String csv;
@@ -73,52 +82,9 @@ public record Correo(
       if (archivos.size() > 1) error = "Adjunte un solo comprobante por correo.";
       else if (!archivos.isEmpty()) archivo = archivos.get(0);
     } catch (Exception e) {
-      error =
-          e.getMessage() != null && e.getMessage().contains("demasiado grande")
-              ? "El adjunto supera el límite de 5 MB por archivo."
-              : "No se pudo leer el adjunto: el archivo llegó dañado o mal codificado. Vuelva a"
-                  + " adjuntarlo.";
+      error = "No se pudo leer el adjunto; el límite es 5 MB por archivo.";
     }
     return new Correo(remitente, asunto, csv, automatico, archivo, error);
-  }
-
-  /**
-   * Identidad persistente del contenido y sus cabeceras esenciales. Un Message-ID ajeno no permite
-   * suprimir otro correo con distinto remitente, asunto o cuerpo. Las cabeceras de transporte no
-   * cambian esta identidad al releer o reenviar los mismos bytes MIME.
-   */
-  public static String idMensaje(byte[] crudo) {
-    try {
-      MimeMessage m = new MimeMessage(SESION, new ByteArrayInputStream(crudo));
-      var digest = java.security.MessageDigest.getInstance("SHA-256");
-      digest.update(AutenticidadCorreo.material(m, ""));
-      // Una copia sin firma no puede ocupar la identidad persistente de una solicitud firmada.
-      for (String cabecera : new String[] {AutenticidadCorreo.TIEMPO, AutenticidadCorreo.FIRMA}) {
-        String[] valores = m.getHeader(cabecera);
-        if (valores != null && cabecera.equals(AutenticidadCorreo.FIRMA)) {
-          valores = java.util.Arrays.stream(valores).map(v -> v.toLowerCase(Locale.ROOT)).toArray(String[]::new);
-        }
-        digest.update(("\n" + cabecera + ":" + java.util.Arrays.toString(valores))
-            .getBytes(StandardCharsets.UTF_8));
-      }
-      byte[] d = digest.digest();
-      return "sha256:" + java.util.HexFormat.of().formatHex(d);
-    } catch (Exception e) {
-      try {
-        return "sha256:" + java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(crudo));
-      } catch (java.security.NoSuchAlgorithmException imposible) { throw new IllegalStateException(imposible); }
-    }
-  }
-
-  /** Message-ID de protocolo para In-Reply-To, separado de la clave persistente de deduplicación. */
-  public static String messageIdOriginal(byte[] crudo) {
-    try {
-      var h = new jakarta.mail.internet.InternetHeaders(new ByteArrayInputStream(crudo));
-      String[] valores = h.getHeader("Message-ID");
-      if (valores == null || valores.length != 1) return null;
-      String id = valores[0].replaceAll("\\s+", "");
-      return id.matches("<[^<>]{3,250}>") ? id : null;
-    } catch (MessagingException e) { return null; }
   }
 
   /**
